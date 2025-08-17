@@ -13,5 +13,5 @@ RPMTOP=$(pwd)/dist/rpm/build
 mkdir -p $RPMTOP/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 cp "$TARBALL" $RPMTOP/SOURCES/
 cp "$SPEC" $RPMTOP/SPECS/
-rpmbuild --define "_topdir $RPMTOP" --define "_version $VERSION" --define "_release $RELEASE" -bb $RPMTOP/SPECS/$(basename $SPEC)
+rpmbuild --define "_topdir $RPMTOP" --define "_version $VERSION" --define "_release $RELEASE" --define 'skip_br 1' -bb $RPMTOP/SPECS/$(basename $SPEC)
 ls -1 $RPMTOP/RPMS/* || true

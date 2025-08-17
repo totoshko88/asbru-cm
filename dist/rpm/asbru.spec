@@ -70,9 +70,12 @@ Suggests: telnet
 Suggests: ftp
 Suggests: perl-X11-GUITest
 %endif
+# BuildRequires are skipped when building on Debian-based systems without RPM db
+%if 0%{!?skip_br:1}
 BuildRequires: pkgconfig
 BuildRequires: bash-completion
 BuildRequires: desktop-file-utils
+%endif
 BuildRoot:  %{_topdir}/tmp/%{name}-%{version}-%{release}-root
 
 %description
