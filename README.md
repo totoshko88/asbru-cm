@@ -48,219 +48,84 @@ This version represents a comprehensive modernization of Ásbrú Connection Mana
 
 - **GTK4 Migration**: Complete migration from GTK3 to GTK4 for better performance and modern desktop integration
 - **Wayland Support**: Full compatibility with Wayland display servers
-- **Cosmic Desktop Integration**: Native support for PopOS 24.04's Cosmic desktop environment
-- **Updated Dependencies**: All Perl modules and system dependencies updated to latest stable versions
-- **Enhanced Security**: Modern cryptographic standards and secure password storage
-- **Improved Performance**: Better memory usage and faster startup times
-- **Modern Icon Set**: Migration to Adwaita symbolic icons with automatic Hi-DPI scaling (GDK_SCALE) and optional `ASBRU_LARGE_ICONS=1` override
+# Ásbrú Connection Manager (Focused Fork)
 
-### AI Assistance Disclosure
+Minimal fork for direct local use & packaging. For full history, documentation, issues and upstream development see the original project: https://github.com/asbru-cm/asbru-cm
 
-**Important**: This modernization project was developed with significant assistance from artificial intelligence tools. All AI-assisted modifications have been:
-- Thoroughly reviewed and tested by human developers
-- Documented with clear rationale for each change
-- Validated against the original functionality requirements
-- Tested on target platforms (PopOS 24.04, Ubuntu 24.04, Fedora 40+)
+## Scope
+This fork keeps the core functionality and adds simplified build + packaging scripts (DEB, RPM, optional AppImage) with modern theme/icon handling tweaks. Documentation here is intentionally concise.
 
-The AI assistance was used primarily for:
-- Dependency analysis and updates
-- GTK3 to GTK4 API migration
-- Wayland compatibility implementation
-- Code modernization and security enhancements
-- Documentation and testing framework creation
-
-### Copyright and Attribution
-
-Original Ásbrú Connection Manager:
- Copyright © 2025 Anton Isaiev <totoshko88@gmail.com>
- Copyright © 2017-2022 Ásbrú Connection Manager team
- Copyright © 2010-2016 David Torrejón Vaquerizas
-Modernization Fork:
-- Copyright (C) 2025 Anton Isaiev <totoshko88@gmail.com>
-
-This fork maintains full compatibility with the original project while adding modern platform support.
-
-### Installation
-
-We recommend installing Ásbrú Connection Manager using our latest pre-built packages hosted on [cloudsmith.io](https://cloudsmith.io/).
-
-To do so, execute the following commands:
-
-- Debian / Ubuntu
-
-  ````
-  curl -1sLf 'https://dl.cloudsmith.io/public/asbru-cm/release/cfg/setup/bash.deb.sh' | sudo -E bash
-  sudo apt-get install asbru-cm
-  ````
-
-- Fedora
-
-  ````
-  curl -1sLf 'https://dl.cloudsmith.io/public/asbru-cm/release/cfg/setup/bash.rpm.sh' | sudo -E bash
-  sudo dnf install asbru-cm
-  ````
-
-- Pacman-based (e.g. Arch Linux, Manjaro)
-
-  ````
-  git clone https://aur.archlinux.org/asbru-cm-git.git && cd asbru-cm-git
-  makepkg -si
-  ````
-  
-- MX Linux
-
-  Ásbrú Connection Manager can be installed through the MX Package Installer under the Test Repo tab
-  or by enabling the Test Repo and running
-  ````
-  sudo apt-get install asbru-cm
-  ````
-  
-- Windows
-
-  - Windows 10 Build 19044 and later, or Windows 11
- 
-    See https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps
-
-    tl;dr:
-    
-    1. Install or update WSL.
-    2. Follow the installation instructions for Ubuntu above.
-    3. Ásbrú Connection Manager will then be available in the start menu.
-
-  - Windows 10 before Build 19044, or running older WSL
-
-    It is possible to run Asbru-CM on Windows 10 by enabling WSL and using the application [Asbru-CM Runner](https://github.com/SegiH/Asbru-CM-Runner). If you do not have [WSLG](https://github.com/microsoft/wslg) support, you will need to install [Xming](http://www.straightrunning.com/XmingNotes/). The GitHub page for [Asbru-CM Runner](https://github.com/SegiH/Asbru-CM-Runner) has detailed instructions on how to do this and allows you to run Asbru-CM on Windows 10 without a console window open in the background.
-  
-Once installed on your system, type ````asbru-cm```` in your terminal.
-
-#### Optional: Build Your Own AppImage
-
-If you want to produce the standalone AppImage locally, install either Docker or Podman, then run:
-
-````bash
+## Quick Start (Run From Source)
+```bash
 git clone https://github.com/totoshko88/asbru-cm.git
 cd asbru-cm
-# Build (auto-detects docker then podman)
+perl asbru-cm
+```
+If Gtk/Perl modules are missing, install your distro packages (example Ubuntu / Debian):
+```bash
+sudo apt update
+sudo apt install -y perl libgtk3-perl libvte-2.91-0 libvte-2.91-dev libyaml-libyaml-perl libjson-xs-perl
+```
+
+## Build a Debian Package
+```bash
+./make_debian.sh          # Produces asbru-cm_<version>_all.deb
+sudo dpkg -i asbru-cm_*_all.deb
+sudo apt -f install       # Resolve deps if needed
+```
+
+## Build an RPM (on Debian/Ubuntu host or Fedora)
+```bash
+bash dist/rpm/build_rpm.sh
+ls dist/rpm/build/RPMS/noarch/*.rpm
+```
+
+## Optional: AppImage Build
+Requires Docker or Podman (auto-detected).
+```bash
 bash dist/appimage/make_appimage.sh
 ls dist/release/Asbru-CM*.AppImage
-````
-
-Container engine install examples (choose one):
-
-````bash
-# Docker (Ubuntu / Debian)
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") $(. /etc/os-release; echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# OR Podman (Ubuntu / Debian 24.04+)
-sudo apt-get update
-sudo apt-get install -y podman
-````
-
-If both are present, the build script prefers Docker. To force Podman:
-
-````bash
-command -v docker && sudo systemctl stop docker || true
-bash dist/appimage/make_appimage.sh
-````
-
-### Migration from Version 6.x
-
-If you're upgrading from Ásbrú Connection Manager 6.x, please note:
-
-1. **Configuration Compatibility**: Your existing configuration files will be automatically migrated to the new format
-2. **Password Migration**: Encrypted passwords will be migrated to use modern AES-256-GCM encryption
-3. **Theme Changes**: Some visual elements may appear different due to GTK4 theming changes
-
-### Troubleshooting Common Issues
-
-#### Installation Issues
-
-**Problem**: Package dependency conflicts on modern distributions
 ```
-Solution: Ensure you're using the correct package repository for your distribution version.
-For PopOS 24.04: Use the updated DEB package specifically built for GTK4.
+Install Podman quickly (Ubuntu/Debian): `sudo apt install -y podman`
+
+## Download Prebuilt Packages
+Check the Releases page of THIS fork for uploaded `.deb` (and possibly `.rpm`, `.AppImage`) artifacts for the current tag. After download:
+```bash
+sudo dpkg -i asbru-cm_*.deb || sudo rpm -i asbru-cm-*.rpm
+```
+Verify integrity if `SHA256SUMS` file is provided:
+```bash
+sha256sum -c SHA256SUMS
 ```
 
-**Problem**: Application fails to start with GTK-related errors
-```
-Solution: Verify GTK4 libraries are installed:
-sudo apt install libgtk-4-1 libadwaita-1-0 gir1.2-gtk-4.0
-```
-
-#### Display Issues
-
-**Problem**: System tray icon not appearing in Cosmic desktop
-```
-Solution: This is expected behavior. Use the application menu or create a desktop shortcut.
-Cosmic desktop uses a different panel system that doesn't support traditional system tray icons.
-```
-
-**Problem**: Blurry or incorrectly scaled interface on high-DPI displays
-```
-Solution: GTK4 should handle scaling automatically. If issues persist, try:
-export GDK_SCALE=2  # Adjust value as needed
+## Basic Usage
+Launch from terminal:
+```bash
 asbru-cm
 ```
-
-#### Connection Issues
-
-**Problem**: SSH connections fail after upgrade
-```
-Solution: Check if your SSH keys are still accessible and verify connection settings.
-The modernized version uses updated SSH libraries that may have stricter security requirements.
+or (from source tree without install):
+```bash
+perl asbru-cm
 ```
 
-**Problem**: VNC/RDP connections not working
-```
-Solution: Ensure the required viewer applications are installed:
-sudo apt install remmina tigervnc-viewer  # or your preferred viewers
-```
-
-#### Performance Issues
-
-**Problem**: Slower startup compared to version 6.x
-```
-Solution: This is normal for the first startup as GTK4 initializes new components.
-Subsequent startups should be faster due to improved caching.
+## Environment Variables (Optional)
+```bash
+ASBRU_DEBUG=1                # Verbose debug
+ASBRU_DEBUG_STACK=1          # Include stack traces in debug output
+ASBRU_FORCE_ICON_RESCAN=1    # Force internal icon theme rescan
+ASBRU_LARGE_ICONS=1          # Prefer larger symbolic icons
 ```
 
-For additional support, please check the [Issues](https://github.com/your-username/asbru-cm-modernized/issues) section or refer to the migration guide in the documentation.
+## License
+GPL-3.0 (see `LICENSE`).
 
-### Testing new features
+Upstream authors retain original credits. This fork only adjusts packaging & minor runtime helpers.
 
-Our master and the snapshots are being kept as stable as possible. New features for new major releases are being developed inside the "loki" branch.
+## Support
+For feature requests & extensive help use the upstream issue tracker. This fork focuses on lightweight packaging; issues here should be specific to added scripts or minimal changes.
 
-Beware that [Loki](https://en.wikipedia.org/wiki/Loki) can sometimes behave in an unexpected manner to you.  This is somehow the same concept as the "[Debian sid](https://www.debian.org/releases/sid/)" release.
-
-You are welcome to contribute and test by checking out "loki" or by installing our builds.
-
-If you do not wish to run third party scripts on your systems, you can always access manual install instructions at https://cloudsmith.io/~asbru-cm/repos/loki/setup/
-
-- Debian / Ubuntu
-
-  ````
-   curl -1sLf 'https://dl.cloudsmith.io/public/asbru-cm/loki/cfg/setup/bash.deb.sh' | sudo -E bash
-  ````
-
-- Fedora
-
-  ````
-   curl -1sLf 'https://dl.cloudsmith.io/public/asbru-cm/loki/cfg/setup/bash.rpm.sh' | sudo -E bash
-  ````
-
-
-### Installation of legacy 5.x
-
-- Debian / Ubuntu
-
-  ````
-  $ curl -s https://packagecloud.io/install/repositories/asbru-cm/v5/script.deb.sh | sudo bash
+---
+Minimal README version generated to align with request for a concise, fork-centric document.
   $ sudo apt-get install asbru-cm
   ````
 
