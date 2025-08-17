@@ -5,6 +5,7 @@ package PACUtils;
 #
 # Copyright (C) 2017-2022 Ásbrú Connection Manager team (https://asbru-cm.net)
 # Copyright (C) 2010-2016 David Torrejón Vaquerizas
+# Copyright (C) 2025 Anton Isaiev totoshko88@gmail.com
 #
 # Ásbrú Connection Manager is free software: you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as published by
@@ -35,14 +36,15 @@ use warnings;
 
 use FindBin qw ($RealBin $Bin $Script);
 use POSIX qw (strftime);
+use PACConfigData qw(clone_data serialize_data deserialize_data);
 use Storable qw (freeze thaw dclone);
-use Crypt::CBC;
-use Socket;
-use Socket6;
+use PACCryptoCompat;
+use Socket qw(:all);
+use PACNetworking qw(ping_host resolve_hostname is_ipv4 is_ipv6);
 use Sys::Hostname;
 use Net::ARP;
 use Net::Ping;
-use YAML;
+use YAML::XS;
 use OSSP::uuid;
 use Encode;
 use DynaLoader; # Required for PACTerminal and PACShell modules
@@ -121,7 +123,7 @@ require Exporter;
 # Define GLOBAL CLASS variables
 
 our $APPNAME = 'Ásbrú Connection Manager';
-our $APPVERSION = '6.4.1';
+our $APPVERSION = '7.0.0+modern41';
 our $DEBUG_LEVEL = 1;
 our $ARCH = '';
 my $ARCH_TMP = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/uname -m 2>&1`;
@@ -142,8 +144,10 @@ my $SPLASH_IMG = "$RES_DIR/asbru-logo-400.png";
 my $CFG_DIR = $ENV{"ASBRU_CFG"};
 my $CFG_FILE = "$CFG_DIR/asbru.yml";
 my $R_CFG_FILE = $PACMain::R_CFG_FILE;
+# Modern cryptographic system - AI-assisted modernization 2024
+my $CIPHER = PACCryptoCompat->new(-key => 'PAC Manager (David Torrejon Vaquerizas, david.tv@gmail.com)', -migration => 1) or die "ERROR: Failed to initialize crypto system";
+# Legacy salt constant for compatibility
 my $SALT = '12345678';
-my $CIPHER = Crypt::CBC->new(-key => 'PAC Manager (David Torrejon Vaquerizas, david.tv@gmail.com)', -cipher => 'Blowfish', -salt => pack('Q', $SALT), -pbkdf => 'opensslv1', -nodeprecate => 1) or die "ERROR: $!";
 
 my %WINDOWSPLASH;
 my %WINDOWPROGRESS;
@@ -1489,13 +1493,8 @@ sub _wEnterValue {
         $stock_icon = 'asbru-help';
     }
     # Create the dialog window,
-    $w{window}{data} = Gtk3::Dialog->new_with_buttons(
-        "$APPNAME : Enter data",
-        $parent,
-        'modal',
-        'gtk-cancel' => 'cancel',
-        'gtk-ok' => 'ok'
-    );
+    $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $parent, 'modal');
+    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-entervalue');
@@ -1517,7 +1516,7 @@ sub _wEnterValue {
     $w{window}{gui}{vbox}->pack_start($w{window}{gui}{hbox}, 0, 0, 5);
 
     # Create image
-    $w{window}{gui}{img} = Gtk3::Image->new_from_stock($stock_icon, 'dialog');
+    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('info',$stock_icon);
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 5);
 
     # Create 1st label
@@ -1602,13 +1601,8 @@ sub _wAddRenameNode {
     my $new_title;
 
     # Create the dialog window,
-    $w{window}{data} = Gtk3::Dialog->new_with_buttons(
-        "$APPNAME : Enter data",
-        $PACMain::FUNCS{_MAIN}{_GUI}{main},
-        'modal',
-        'gtk-cancel' => 'cancel',
-        'gtk-ok' => 'ok'
-    );
+    $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $PACMain::FUNCS{_MAIN}{_GUI}{main}, 'modal');
+    require PACIcons; my $btn_cancel2 = Gtk3::Button->new(); $btn_cancel2->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel2->set_always_show_image(1); $btn_cancel2->set_label('Cancel'); my $btn_ok2 = Gtk3::Button->new(); $btn_ok2->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok2->set_always_show_image(1); $btn_ok2->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel2,'cancel'); $w{window}{data}->add_action_widget($btn_ok2,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-renamenode');
@@ -1623,7 +1617,7 @@ sub _wAddRenameNode {
     $w{window}{gui}{hbox}->set_border_width(5);
 
     # Create image
-    $w{window}{gui}{img} = Gtk3::Image->new_from_stock('gtk-edit', 'dialog');
+    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('edit','gtk-edit');
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 0);
 
     # Create 1st label
@@ -1853,7 +1847,7 @@ sub _wMessage {
     }
 
     if ($modal) {
-        $windowConfirm->add_buttons('gtk-ok' => 'ok');
+        require PACIcons; my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
         $windowConfirm->show_all();
         my $close = $windowConfirm->run();
         $windowConfirm->destroy();
@@ -1899,7 +1893,7 @@ sub _wProgress {
         $WINDOWPROGRESS{sep} = Gtk3::HSeparator->new();
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{sep}, 0, 1, 5);
 
-        $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new_from_stock('gtk-cancel');
+    require PACIcons; $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new(); $WINDOWPROGRESS{btnCancel}->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $WINDOWPROGRESS{btnCancel}->set_always_show_image(1);
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{btnCancel}, 0, 1, 5);
 
         $WINDOWPROGRESS{_GUI}->signal_connect('delete_event' => sub {return 1;});
@@ -1957,7 +1951,7 @@ sub _wConfirm {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    $windowConfirm->add_buttons('gtk-cancel'=> 'no', 'gtk-ok' => 'yes');
+    require PACIcons; my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
     $windowConfirm->set_default_response($default);
@@ -1987,7 +1981,7 @@ sub _wYesNoCancel {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    $windowConfirm->add_buttons('gtk-cancel'=> 'cancel','gtk-no'=> 'no','gtk-yes' => 'yes');
+    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('no','gtk-no')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('yes','gtk-yes')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_cancel,'cancel'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
 
@@ -2042,6 +2036,12 @@ sub _cfgSanityCheck {
     my $cfg = shift;
 
     defined $$cfg{'defaults'} or $$cfg{'defaults'} = {};
+    # Ensure new theming keys exist (system theming support)
+    $$cfg{'defaults'}{'theme'} //= 'default';
+    # Don't invent a value for the override; only keep if already set
+    if (exists $$cfg{'defaults'}{'system icon theme override'}) {
+        $$cfg{'defaults'}{'system icon theme override'} = $$cfg{'defaults'}{'system icon theme override'}; # no-op retain
+    }
 
     $$cfg{'defaults'}{'version'} //= $APPVERSION;
     $$cfg{'defaults'}{'config version'} //= 1;
@@ -2142,6 +2142,12 @@ sub _cfgSanityCheck {
     $$cfg{'defaults'}{'show statistics'} //= 1;
     $$cfg{'defaults'}{'protected color'} //= '#FFB022'; #orange
     $$cfg{'defaults'}{'protected set'} //= 'background';
+    
+    # AI-assisted modernization: Cosmic desktop integration defaults
+    $$cfg{'defaults'}{'cosmic_workspace_tracking'} //= 0;
+    $$cfg{'defaults'}{'cosmic_theme_monitoring'} //= 1;
+    $$cfg{'defaults'}{'cosmic_use_system_theme'} //= 1;
+    $$cfg{'defaults'}{'cosmic_panel_integration'} //= 1;
     if ($$cfg{'defaults'}{'version'} lt '4.5.0.1') {
         $$cfg{'defaults'}{'use gui password'} = 0;
         $$cfg{'defaults'}{'gui password'} = '';
@@ -3065,13 +3071,8 @@ sub _wakeOnLan {
     my %w;
 
     # Create the dialog window,
-    $w{window}{data} = Gtk3::Dialog->new_with_buttons(
-        "$APPNAME (v$APPVERSION) : Wake On LAN",
-        undef,
-        'modal',
-        'gtk-cancel' => 'cancel',
-        'gtk-ok' => 'ok'
-    );
+    $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME (v$APPVERSION) : Wake On LAN", undef, 'modal');
+    require PACIcons; my $btn_cancel3 = Gtk3::Button->new(); $btn_cancel3->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel3->set_always_show_image(1); $btn_cancel3->set_label('Cancel'); my $btn_ok3 = Gtk3::Button->new(); $btn_ok3->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok3->set_always_show_image(1); $btn_ok3->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel3,'cancel'); $w{window}{data}->add_action_widget($btn_ok3,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_position('center');
@@ -3113,7 +3114,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entrymac}->grab_focus();
 
     # Create MAC icon widget
-    $w{window}{gui}{iconmac} = Gtk3::Image->new_from_stock('gtk-no', 'menu');
+    require PACIcons; $w{window}{gui}{iconmac} = PACIcons::icon_image('failure','gtk-no');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconmac}, 2, 3, 0, 1);
 
     # Create HOST label
@@ -3129,7 +3130,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entryip}->set_activates_default(0);
 
     # Create IP icon widget
-    $w{window}{gui}{iconip} = Gtk3::Image->new_from_stock('gtk-yes', 'menu');
+    require PACIcons; $w{window}{gui}{iconip} = PACIcons::icon_image('success','gtk-yes');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconip}, 2, 3, 1, 2);
 
     # Create PORT label
@@ -3170,7 +3171,7 @@ sub _wakeOnLan {
             if ($_[0]->get_label ne 'gtk-ok') {
                 return 1;
             }
-            $w{window}{gui}{iconmac}->set_from_stock($w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go ? 'gtk-yes' : 'gtk-no', 'menu');
+            require PACIcons; my $valid = $w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go; my $img = PACIcons::icon_image($valid ? 'success' : 'failure', $valid ? 'gtk-yes' : 'gtk-no'); $w{window}{gui}{iconmac}->set_from_pixbuf($img->get_pixbuf) if $img->get_storage_type eq 'pixbuf';
             $_[0]->set_sensitive($w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go ? 1 : 0);
         });
         return 0;
@@ -3193,7 +3194,7 @@ sub _wakeOnLan {
             $mac = Net::ARP::arp_lookup('', $ip);
             $mac = $mac eq 'unknown' ? '00:00:00:00:00:00' : $mac;
         }
-        $w{window}{gui}{iconip}->set_from_stock($up ? 'gtk-connect' : 'gtk-disconnect', 'menu');
+    require PACIcons; my $img_ip = PACIcons::icon_image($up ? 'status_connected' : 'status_disconnected', $up ? 'gtk-connect' : 'gtk-disconnect'); $w{window}{gui}{iconip}->set_from_pixbuf($img_ip->get_pixbuf) if $img_ip->get_storage_type eq 'pixbuf';
         $w{window}{gui}{entrymac}->set_text($mac);
         $w{window}{gui}{entrymac}->select_region(0, length($mac));
         $w{window}{gui}{lblstatus}->set_text("'$ip' TCP port $ping_port seems to be " . ($up ? 'REACHABLE' : 'UNREACHABLE'));

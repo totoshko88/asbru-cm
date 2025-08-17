@@ -1,6 +1,18 @@
 - Added 'system' icon theme selection: enumerates installed system icon themes, preview button applies instantly, cached 60s. Handles empty system themes directory with inline notice. Early --version exit avoids full GTK init. Transparency auto-disabled if VTE library missing.
 # Changelog
 
+## modern41 - 2025-08-17
+### Added
+- CLI flag `--force-icon-rescan` and env `ASBRU_FORCE_ICON_RESCAN=1` to force internal icon theme directory rescan.
+- Env `ASBRU_DEBUG_STACK=1` gates expensive debug stack traces (separates from generic ASBRU_DEBUG).
+
+### Changed
+- Version bump to modern41.
+- PACIcons duplicate theme scan guard now honors force flag/env.
+
+### Notes
+Stack traces for duplicate scans now emitted only when ASBRU_DEBUG_STACK=1 (reduces noise/perf impact).
+
 ## modern40 - 2025-08-17
 ### Added
 - Functional system icon theme selection: selecting 'system' under Icons Theme now allows specifying a GTK icon theme name which is applied via Gtk3::IconTheme::set_custom_theme on startup.
