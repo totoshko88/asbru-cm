@@ -8,7 +8,7 @@ Release:    %{_release}%{?dist}
 Summary:    A user interface that helps organizing remote terminal sessions and automating repetitive tasks.
 License:    GPLv3+
 URL:        https://asbru-cm.net
-Source0:    https://github.com/asbru-cm/asbru-cm/archive/%{version}.tar.gz
+Source0:    asbru-cm-%{_version}.tar.gz
 BuildArch:  noarch
 Autoreq:    no
 Requires:   perl
@@ -79,7 +79,7 @@ BuildRoot:  %{_topdir}/tmp/%{name}-%{version}-%{release}-root
 Ásbrú Connection Manager is a user interface that helps organizing remote terminal sessions and automating repetitive tasks.
 
 %prep
-%autosetup -n asbru-cm-%{_github_version} -p1
+%setup -q -n asbru-cm-%{_version}
 sed -ri -e "s|\\\$RealBin[ ]*\.[ ]*'|'%{_datadir}/%{name}/lib|g" lib/asbru_conn
 sed -ri -e "s|\\\$RealBin,|'%{_datadir}/%{name}/lib',|g" lib/asbru_conn
 sed -ri -e "s|\\\$RealBin/\.\./|%{_datadir}/%{name}/|g" lib/asbru_conn
