@@ -2,9 +2,9 @@ asbru-cm (7.0.0+modern41) unstable; urgency=medium
 
   * Icons: add force rescan support (--force-icon-rescan CLI or ASBRU_FORCE_ICON_RESCAN=1 env).
   * Debug: introduce ASBRU_DEBUG_STACK to control stack trace emission.
-  * Packaging: bump to modern41.
+  * Packaging: bump to modern41 (Lintian cleanup: ensured dated entry).
 
- -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 16:05:00 +0000
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 16:45:00 +0000
 
 asbru-cm (7.0.0+modern40) unstable; urgency=medium
 
