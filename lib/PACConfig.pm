@@ -1028,7 +1028,7 @@ sub _updateGUIPreferences {
                         _show_theme_warning($self, $sel eq '' ? 'Select a theme first.' : "Theme '$sel' not found.");
                     }
                 });
-                unless (_parent_has_child_named($parent,'btnPreviewSystemIconTheme')) { $parent->pack_start($btn_prev, 0,0,6); }
+                unless (_parent_has_child_named($parent,'btnPreviewSystemIconTheme')) { PACWidgetUtils::safe_pack_start($parent, $btn_prev, 0,0,6); }
                 # Refresh button
                 my $btn_refresh = Gtk3::Button->new_with_label('Refresh');
                 $btn_refresh->set_name('btnRefreshSystemIconTheme');
@@ -1047,11 +1047,11 @@ sub _updateGUIPreferences {
                         if (my $par2 = eval { $combo_sys->get_parent }) {
                             my $lbl2 = Gtk3::Label->new('No system icon themes found in ~/.local/share/icons or /usr/share/icons');
                             $lbl2->set_name('lblNoSystemIconThemes');
-                            $par2->pack_start($lbl2,0,0,6); $lbl2->show_all();
+                            PACWidgetUtils::safe_pack_start($par2, $lbl2, 0,0,6); $lbl2->show_all();
                         }
                     }
                 });
-                unless (_parent_has_child_named($parent,'btnRefreshSystemIconTheme')) { $parent->pack_start($btn_refresh, 0,0,6); }
+                unless (_parent_has_child_named($parent,'btnRefreshSystemIconTheme')) { PACWidgetUtils::safe_pack_start($parent, $btn_refresh, 0,0,6); }
                 $combo_sys->show_all();
                 $btn_prev->show_all();
                 $btn_refresh->show_all();
@@ -1549,7 +1549,7 @@ sub _show_theme_warning {
         my $lbl = Gtk3::Label->new();
         $lbl->set_name('lblThemeWarning');
         $lbl->set_halign('start');
-        $parent->pack_start($lbl, 0,0,6);
+        PACWidgetUtils::safe_pack_start($parent, $lbl, 0,0,6);
         $lbl->show_all();
         $self->{_theme_warn_label} = $lbl;
     }
@@ -1565,7 +1565,7 @@ sub _show_restart_hint {
         my $lbl = Gtk3::Label->new();
         $lbl->set_name('lblRestartHint');
         $lbl->set_halign('start');
-        $parent->pack_start($lbl, 0,0,6);
+        PACWidgetUtils::safe_pack_start($parent, $lbl, 0,0,6);
         $lbl->show_all();
         $self->{_restart_hint_label} = $lbl;
     }

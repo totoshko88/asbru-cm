@@ -375,6 +375,7 @@ sub new {
     my $screen = Gtk3::Gdk::Screen::get_default(); # may be undef
         if ($screen) {
             Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, 600);
+            $$self{_THEME_CSS_PROVIDER} = $css_provider; # Store for later replacement
         } else {
             # Fallback: apply provider to a dummy widget so rules cascade
             my $dummy = Gtk3::Window->new();
@@ -771,7 +772,12 @@ sub _initGUI {
     $$self{_GUI}{scroll1}->set_overlay_scrolling($$self{_CFG}{'defaults'}{'tree overlay scrolling'});
     $$self{_GUI}{nbTreeTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbTreeTabLabel} = create_label();
-    $$self{_GUI}{nbTreeTab}->pack_start(PACIcons::icon_image('folder','asbru-treelist'), 0, 1, 0);
+    my $tree_icon = PACIcons::icon_image('folder','asbru-treelist');
+    if ($tree_icon && eval { $tree_icon->get_parent }) {
+        # Icon already has parent, create a new one
+        $tree_icon = PACIcons::icon_image('folder','asbru-treelist'); 
+    }
+    $$self{_GUI}{nbTreeTab}->pack_start($tree_icon, 0, 1, 0) if $tree_icon;
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbTreeTab}->pack_start($$self{_GUI}{nbTreeTabLabel}, 0, 1, 0);
     }
@@ -4428,6 +4434,32 @@ sub _apply_internal_theme {
     eval { require PACIcons; PACIcons::clear_cache(); };
     eval { PACIcons::set_theme_dir($dir, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
     _registerPACIcons($dir);
+    
+    # Reload CSS styling for theme
+    if (-f "$dir/asbru.css") {
+        my $css_provider = Gtk3::CssProvider->new();
+        eval { $css_provider->load_from_path("$dir/asbru.css"); };
+        unless ($@) {
+            eval {
+                my $screen = Gtk3::Gdk::Screen::get_default();
+                if ($screen) {
+                    # Remove old theme provider if exists
+                    if ($$self{_THEME_CSS_PROVIDER}) {
+                        Gtk3::StyleContext::remove_provider_for_screen($screen, $$self{_THEME_CSS_PROVIDER});
+                    }
+                    # Add new theme provider  
+                    Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, 600);
+                    $$self{_THEME_CSS_PROVIDER} = $css_provider;
+                } else {
+                    my $dummy = Gtk3::Window->new();
+                    $dummy->get_style_context->add_provider($css_provider, 600);
+                }
+                1;
+            } or do { };
+            print STDERR "INFO: Reloaded CSS for theme '$theme'\n" if $ENV{ASBRU_DEBUG};
+        }
+    }
+    
     eval { $self->_refresh_all_icons(); };
     print STDERR "INFO: Applied internal icon theme '$theme'\n" if $ENV{ASBRU_DEBUG};
     return 1;
