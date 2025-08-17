@@ -41,6 +41,7 @@ use Encode;
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 use Gtk3::SimpleList;
 
 # PAC modules
@@ -259,7 +260,7 @@ sub _initGUI {
     my $lbl1 = Gtk3::Label->new;
     $lbl1->set_markup('<b>RUNNING CLUSTERS </b>');
     $tablbl1->pack_start($lbl1, 0, 1, 0);
-    $tablbl1->pack_start(Gtk3::Image->new_from_stock('asbru-terminal-ok-small', 'menu'), 0, 1, 0);
+    $tablbl1->pack_start(PACIcons::icon_image('status_connected','asbru-terminal-ok-small'), 0, 1, 0);
     $tablbl1->show_all;
 
     my $vbox1 = Gtk3::VBox->new(0, 0);
@@ -300,14 +301,14 @@ sub _initGUI {
 
     $$self{_WINDOWCLUSTER}{btnadd} = Gtk3::Button->new_with_label("Add to\nCluster");
     $vbox2->pack_start($$self{_WINDOWCLUSTER}{btnadd}, 1, 1, 0);
-    $$self{_WINDOWCLUSTER}{btnadd}->set_image(Gtk3::Image->new_from_stock('gtk-go-forward', 'GTK_ICON_SIZE_BUTTON') );
+    $$self{_WINDOWCLUSTER}{btnadd}->set_image(PACIcons::icon_image('move_down','go-next'));
     $$self{_WINDOWCLUSTER}{btnadd}->set_image_position('GTK_POS_BOTTOM');
     $$self{_WINDOWCLUSTER}{btnadd}->set_relief('GTK_RELIEF_NONE');
     $$self{_WINDOWCLUSTER}{btnadd}->set_sensitive(0);
 
     $$self{_WINDOWCLUSTER}{btndel} = Gtk3::Button->new_with_label("Del from\nCluster");
     $vbox2->pack_start($$self{_WINDOWCLUSTER}{btndel}, 1, 1, 0);
-    $$self{_WINDOWCLUSTER}{btndel}->set_image(Gtk3::Image->new_from_stock('gtk-go-back', 'GTK_ICON_SIZE_BUTTON') );
+    $$self{_WINDOWCLUSTER}{btndel}->set_image(PACIcons::icon_image('move_up','go-previous'));
     $$self{_WINDOWCLUSTER}{btndel}->set_image_position('GTK_POS_TOP');
     $$self{_WINDOWCLUSTER}{btndel}->set_relief('GTK_RELIEF_NONE');
     $$self{_WINDOWCLUSTER}{btndel}->set_sensitive(0);
@@ -336,11 +337,15 @@ sub _initGUI {
     $hbuttonbox1->set_layout('GTK_BUTTONBOX_EDGE');
     $hbuttonbox1->set_homogeneous(1);
 
-    $$self{_WINDOWCLUSTER}{addCluster} = Gtk3::Button->new_from_stock('gtk-add');
+    $$self{_WINDOWCLUSTER}{addCluster} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{addCluster}->set_image(PACIcons::icon_image('add','list-add'));
+    $$self{_WINDOWCLUSTER}{addCluster}->set_always_show_image(1);
     $hbuttonbox1->add($$self{_WINDOWCLUSTER}{addCluster});
     $$self{_WINDOWCLUSTER}{addCluster}->set('can-focus' => 0);
 
-    $$self{_WINDOWCLUSTER}{delCluster} = Gtk3::Button->new_from_stock('gtk-delete');
+    $$self{_WINDOWCLUSTER}{delCluster} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{delCluster}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $$self{_WINDOWCLUSTER}{delCluster}->set_always_show_image(1);
     $hbuttonbox1->add($$self{_WINDOWCLUSTER}{delCluster});
     $$self{_WINDOWCLUSTER}{delCluster}->set('can-focus' => 0);
     $$self{_WINDOWCLUSTER}{delCluster}->set_sensitive(0);
@@ -377,7 +382,7 @@ sub _initGUI {
     my $lbl2 = Gtk3::Label->new;
     $lbl2->set_markup('<b>Saved Clusters </b>');
     $tablbl2->pack_start($lbl2, 0, 1, 0);
-    $tablbl2->pack_start(Gtk3::Image->new_from_stock('asbru-cluster-manager', 'menu'), 0, 1, 0);
+    $tablbl2->pack_start(PACIcons::icon_image('cluster','applications-system'), 0, 1, 0);
     $tablbl2->show_all;
 
     my $hboxclu = Gtk3::HBox->new(0, 0);
@@ -418,14 +423,14 @@ sub _initGUI {
 
     $$self{_WINDOWCLUSTER}{btnadd1} = Gtk3::Button->new_with_label("Add to\nCluster");
     $vboxclu1->pack_start($$self{_WINDOWCLUSTER}{btnadd1}, 1, 1, 0);
-    $$self{_WINDOWCLUSTER}{btnadd1}->set_image(Gtk3::Image->new_from_stock('gtk-go-forward', 'GTK_ICON_SIZE_BUTTON') );
+    $$self{_WINDOWCLUSTER}{btnadd1}->set_image(PACIcons::icon_image('move_down','go-next'));
     $$self{_WINDOWCLUSTER}{btnadd1}->set_image_position('GTK_POS_BOTTOM');
     $$self{_WINDOWCLUSTER}{btnadd1}->set_relief('GTK_RELIEF_NONE');
     $$self{_WINDOWCLUSTER}{btnadd1}->set_sensitive(0);
 
     $$self{_WINDOWCLUSTER}{btndel1} = Gtk3::Button->new_with_label("Del from\nCluster");
     $vboxclu1->pack_start($$self{_WINDOWCLUSTER}{btndel1}, 1, 1, 0);
-    $$self{_WINDOWCLUSTER}{btndel1}->set_image(Gtk3::Image->new_from_stock('gtk-go-back', 'GTK_ICON_SIZE_BUTTON') );
+    $$self{_WINDOWCLUSTER}{btndel1}->set_image(PACIcons::icon_image('move_up','go-previous'));
     $$self{_WINDOWCLUSTER}{btndel1}->set_image_position('GTK_POS_TOP');
     $$self{_WINDOWCLUSTER}{btndel1}->set_relief('GTK_RELIEF_NONE');
     $$self{_WINDOWCLUSTER}{btndel1}->set_sensitive(0);
@@ -453,17 +458,21 @@ sub _initGUI {
     $hbuttonbox1clu->set_layout('GTK_BUTTONBOX_EDGE');
     $hbuttonbox1clu->set_homogeneous(1);
 
-    $$self{_WINDOWCLUSTER}{addCluster1} = Gtk3::Button->new_from_stock('gtk-add');
+    $$self{_WINDOWCLUSTER}{addCluster1} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{addCluster1}->set_image(PACIcons::icon_image('add','list-add'));
+    $$self{_WINDOWCLUSTER}{addCluster1}->set_always_show_image(1);
     $hbuttonbox1clu->add($$self{_WINDOWCLUSTER}{addCluster1});
     $$self{_WINDOWCLUSTER}{addCluster1}->set('can-focus' => 0);
 
     $$self{_WINDOWCLUSTER}{renCluster1} = Gtk3::Button->new;
     $hbuttonbox1clu->add($$self{_WINDOWCLUSTER}{renCluster1});
-    $$self{_WINDOWCLUSTER}{renCluster1}->set_image(Gtk3::Image->new_from_stock('gtk-edit', 'button') );
+    $$self{_WINDOWCLUSTER}{renCluster1}->set_image(PACIcons::icon_image('edit','document-edit'));
     $$self{_WINDOWCLUSTER}{renCluster1}->set_label('Rename');
     $$self{_WINDOWCLUSTER}{renCluster1}->set('can-focus' => 0);
 
-    $$self{_WINDOWCLUSTER}{delCluster1} = Gtk3::Button->new_from_stock('gtk-delete');
+    $$self{_WINDOWCLUSTER}{delCluster1} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{delCluster1}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $$self{_WINDOWCLUSTER}{delCluster1}->set_always_show_image(1);
     $hbuttonbox1clu->add($$self{_WINDOWCLUSTER}{delCluster1});
     $$self{_WINDOWCLUSTER}{delCluster1}->set('can-focus' => 0);
     $$self{_WINDOWCLUSTER}{delCluster1}->set_sensitive(0);
@@ -497,7 +506,7 @@ sub _initGUI {
     my $lbl3 = Gtk3::Label->new;
     $lbl3->set_markup('<b>Auto Clusters </b>');
     $tablbl3->pack_start($lbl3, 0, 1, 0);
-    $tablbl3->pack_start(Gtk3::Image->new_from_stock('asbru-cluster-manager2', 'menu'), 0, 1, 0);
+    $tablbl3->pack_start(PACIcons::icon_image('cluster','applications-system'), 0, 1, 0);
     $tablbl3->show_all;
 
     my $hboxautoclu = Gtk3::HBox->new(0, 0);
@@ -509,17 +518,21 @@ sub _initGUI {
     my $hboxaclistbtns = Gtk3::HBox->new;
     $vboxaclist->pack_start($hboxaclistbtns, 0, 1, 0);
 
-    $$self{_WINDOWCLUSTER}{addAC} = Gtk3::Button->new_from_stock('gtk-add');
+    $$self{_WINDOWCLUSTER}{addAC} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{addAC}->set_image(PACIcons::icon_image('add','list-add'));
+    $$self{_WINDOWCLUSTER}{addAC}->set_always_show_image(1);
     $hboxaclistbtns->add($$self{_WINDOWCLUSTER}{addAC});
     $$self{_WINDOWCLUSTER}{addAC}->set('can-focus' => 0);
 
     $$self{_WINDOWCLUSTER}{renAC} = Gtk3::Button->new;
     $hboxaclistbtns->add($$self{_WINDOWCLUSTER}{renAC});
-    $$self{_WINDOWCLUSTER}{renAC}->set_image(Gtk3::Image->new_from_stock('gtk-edit', 'button') );
+    $$self{_WINDOWCLUSTER}{renAC}->set_image(PACIcons::icon_image('edit','document-edit'));
     $$self{_WINDOWCLUSTER}{renAC}->set_label('Rename');
     $$self{_WINDOWCLUSTER}{renAC}->set('can-focus' => 0);
 
-    $$self{_WINDOWCLUSTER}{delAC} = Gtk3::Button->new_from_stock('gtk-delete');
+    $$self{_WINDOWCLUSTER}{delAC} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{delAC}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $$self{_WINDOWCLUSTER}{delAC}->set_always_show_image(1);
     $hboxaclistbtns->add($$self{_WINDOWCLUSTER}{delAC});
     $$self{_WINDOWCLUSTER}{delAC}->set('can-focus' => 0);
 
@@ -564,13 +577,13 @@ sub _initGUI {
     $hboxacpdesc->pack_start($$self{_WINDOWCLUSTER}{entrydesc} = Gtk3::Entry->new, 1, 1, 0);
 
     $$self{_WINDOWCLUSTER}{btnCheckAC} = Gtk3::Button->new;
-    $$self{_WINDOWCLUSTER}{btnCheckAC}->set_image(Gtk3::Image->new_from_stock('gtk-find', 'button') );
+    $$self{_WINDOWCLUSTER}{btnCheckAC}->set_image(PACIcons::icon_image('search','system-search'));
     $$self{_WINDOWCLUSTER}{btnCheckAC}->set_label('Check Auto Cluster conditions');
     $$self{_WINDOWCLUSTER}{btnCheckAC}->set('can-focus', 0);
     $vboxacprops->pack_start($$self{_WINDOWCLUSTER}{btnCheckAC} , 1, 1, 5);
 
     $$self{_WINDOWCLUSTER}{buttonPCC} = Gtk3::Button->new_with_mnemonic('_Power Cluster Controller');
-    $$self{_WINDOWCLUSTER}{buttonPCC}->set_image(Gtk3::Image->new_from_stock('gtk-justify-fill', 'button') );
+    $$self{_WINDOWCLUSTER}{buttonPCC}->set_image(PACIcons::icon_image('cluster','applications-system'));
     $vbox0->pack_start($$self{_WINDOWCLUSTER}{buttonPCC}, 0, 1, 5);
 
     $vbox0->pack_start(Gtk3::HSeparator->new, 0, 1, 0);
@@ -578,7 +591,9 @@ sub _initGUI {
     my $hbbox1 = Gtk3::HButtonBox->new;
     $vbox0->pack_start($hbbox1, 0, 1, 5);
 
-    $$self{_WINDOWCLUSTER}{btnOK} = Gtk3::Button->new_from_stock('gtk-ok');
+    $$self{_WINDOWCLUSTER}{btnOK} = Gtk3::Button->new();
+    $$self{_WINDOWCLUSTER}{btnOK}->set_image(PACIcons::icon_image('close','emblem-ok'));
+    $$self{_WINDOWCLUSTER}{btnOK}->set_always_show_image(1);
     $hbbox1->set_layout('GTK_BUTTONBOX_END');
     $hbbox1->add($$self{_WINDOWCLUSTER}{btnOK});
 
@@ -1343,7 +1358,7 @@ sub _setupCallbacks {
         $windowConfirm->set_markup("Terminals matching Auto Cluster <b>$cluster</b> conditions:$cond");
         $windowConfirm->set_icon_name('asbru-app-big');
         $windowConfirm->set_title("$APPNAME (v$APPVERSION) : Auto Cluster matching");
-        $windowConfirm->add_buttons('gtk-ok' => 'ok');
+    require PACIcons; my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
         $windowConfirm->set_size_request(640, 400);
 
         my $hboxjarl = Gtk3::HBox->new(0, 0);
@@ -1464,7 +1479,7 @@ sub addToCluster {
 
     $$self{_RUNNING}{$uuid}{'terminal'}{_CLUSTER} = $cluster;
     if (defined $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}) {
-        $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_from_stock('asbru-cluster-manager', 'button');
+    require PACIcons; my $img_on = PACIcons::icon_image('status_cluster_on','asbru-cluster-manager'); $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_from_pixbuf($img_on->get_pixbuf) if $img_on->get_storage_type eq 'pixbuf';
     }
     if (defined $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}) {
         $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_tooltip_text("In CLUSTER: $cluster");
@@ -1481,7 +1496,7 @@ sub delFromCluster {
 
     $$self{_RUNNING}{$uuid}{'terminal'}{_CLUSTER} = '';
     if (defined $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}) {
-        $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_from_stock('asbru-cluster-manager-off', 'button');
+    require PACIcons; my $img_off = PACIcons::icon_image('status_cluster_off','asbru-cluster-manager-off'); $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_from_pixbuf($img_off->get_pixbuf) if $img_off->get_storage_type eq 'pixbuf';
     }
     if (defined $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}) {
         $$self{_RUNNING}{$uuid}{'terminal'}{_GUI}{statusCluster}->set_tooltip_text("Unclustered");

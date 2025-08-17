@@ -38,6 +38,7 @@ use File::Copy;
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -166,7 +167,7 @@ sub _buildScreenshotsGUI {
     $w{btnadd}->add($w{hboxbtnadd});
     $w{btnadd}->set('can_focus', 0);
 
-    $w{hboxbtnadd}->pack_start(Gtk3::Image->new_from_stock('gtk-add', 'menu'), 0, 1, 5);
+    $w{hboxbtnadd}->pack_start(PACIcons::icon_image('add_row','list-add'), 0, 1, 5);
     $w{hboxbtnadd}->pack_start(Gtk3::Label->new("Add\nScreenshot"), 0, 1, 5);
 
 
@@ -178,7 +179,7 @@ sub _buildScreenshotsGUI {
     $w{btnopenfolder}->add($w{hboxbtnopenfolder});
     $w{btnopenfolder}->set('can_focus', 0);
 
-    $w{hboxbtnopenfolder}->pack_start(Gtk3::Image->new_from_stock('gtk-open', 'menu'), 0, 1, 5);
+    $w{hboxbtnopenfolder}->pack_start(PACIcons::icon_image('folder','document-open'), 0, 1, 5);
     $w{hboxbtnopenfolder}->pack_start(Gtk3::Label->new("Open Folder"), 0, 1, 5);
 
 
@@ -283,7 +284,7 @@ sub _buildScreenshots {
             my @screenshot_menu_items;
             push(@screenshot_menu_items, {
                 label => 'Change Screenshot file...',
-                stockicon => 'gtk-edit',
+                logical_icon => 'edit', stockicon => 'gtk-edit',
                 code => sub {
                     my $file = $self->_chooseScreenshot;
                     if ($file) {
@@ -298,18 +299,17 @@ sub _buildScreenshots {
             push(@screenshot_menu_items, {
                 label => 'Save picture as...',
                 sensitive => $w{imageScreenshot}->get_storage_type ne 'stock',
-                stockicon => 'gtk-save',
+                logical_icon => 'save', stockicon => 'gtk-save',
                 code => sub {
                     my $new_file = $APPNAME . '-' . ($self->{cfg}->{name} || 'SCREENSHOT') . '-' . ($self->{cfg}->{uuid} || 'FILE') . '.png';
                     $new_file =~ s/\s+/_/go;
 
-                    my $dialog = Gtk3::FileChooserDialog->new (
+                    my $dialog = Gtk3::FileChooserDialog->new(
                         'Select file to save screenshot',
                         undef,
-                        'select-folder',
-                        'gtk-cancel' => 'GTK_RESPONSE_CANCEL',
-                        'gtk-ok' => 'GTK_RESPONSE_OK'
+                        'select-folder'
                     );
+                    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $dialog->add_action_widget($btn_cancel,'cancel'); $dialog->add_action_widget($btn_ok,'ok');
                     $dialog->set_action('GTK_FILE_CHOOSER_ACTION_SAVE');
                     $dialog->set_do_overwrite_confirmation(1);
                     $dialog->set_current_folder($ENV{'HOME'});
@@ -329,7 +329,7 @@ sub _buildScreenshots {
             push(@screenshot_menu_items, {
                 label => 'Remove Screenshot',
                 sensitive => $w{imageScreenshot}->get_storage_type ne 'stock',
-                stockicon => 'gtk-delete',
+                logical_icon => 'delete_action', stockicon => 'gtk-delete',
                 code => sub {
                     return 1 unless _wConfirm(undef, "Remove Screenshot file '$w{file}'?");
 

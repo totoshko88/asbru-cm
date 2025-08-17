@@ -39,6 +39,9 @@ use FindBin qw ($RealBin $Bin $Script);
 use Gtk3 '-init';
 
 # PAC modules
+use PACIcons; # symbolic icon mapping
+
+# PAC modules
 use PACUtils;
 
 # END: Import Modules
@@ -166,7 +169,9 @@ sub _buildExecGUI {
     $w{bbox}->set_layout('GTK_BUTTONBOX_START');
 
     # Build 'add' button
-    $w{btnadd} = Gtk3::Button->new_from_stock('gtk-add');
+    $w{btnadd} = Gtk3::Button->new();
+    $w{btnadd}->set_image(PACIcons::icon_image('add_row','list-add'));
+    $w{btnadd}->set_always_show_image(1);
     $w{bbox}->add($w{btnadd});
     if ($$self{where}) {
         if ($$self{where} eq 'local') {
@@ -184,7 +189,7 @@ sub _buildExecGUI {
         $w{help}->set_label('');
         $w{help}->set_tooltip_text('Open Online Help');
         $w{help}->set_always_show_image(1);
-        $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
     }
 
     # Build a separator
@@ -317,12 +322,16 @@ sub _buildExec {
     $w{keybind}->set_placeholder_text("Set Keybinding");
 
     # Build delete button
-    $w{btn} = Gtk3::Button->new_from_stock('gtk-delete');
+    $w{btn} = Gtk3::Button->new();
+    $w{btn}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $w{btn}->set_always_show_image(1);
     $w{hbox3}->pack_start($w{btn}, 0, 0, 0);
 
     if ($$self{'where'} eq 'local') {
         # Build exec button
-        $w{btnExec} = Gtk3::Button->new_from_stock('gtk-execute');
+    $w{btnExec} = Gtk3::Button->new();
+    $w{btnExec}->set_image(PACIcons::icon_image('exec_run','system-run'));
+    $w{btnExec}->set_always_show_image(1);
         $w{hbox4}->pack_start($w{btnExec}, 0, 0, 0);
     }
 

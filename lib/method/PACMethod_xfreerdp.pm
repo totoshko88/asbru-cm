@@ -163,6 +163,35 @@ sub get_cfg {
     $options{startupshell} = $$self{gui}{entryStartupShell}->get_chars(0, -1);
     $options{otherOptions} = $$self{gui}{entryOtherOptions}->get_chars(0, -1);
 
+    # Auto-infer an initial geometry when using dynamic-resolution without any
+    # explicit fullscreen / percent / widthxheight selection. Providing an explicit
+    # WxH forces a large initial framebuffer immediately while keeping EMBED mode semantics.
+    if ($options{dynamicResolution} && !$options{fullScreen} && !$options{percent} && !$options{wh}) {
+        eval {
+            my ($w,$h);
+            # Prefer the current allocation of the container (embed target) if realized.
+            if (defined $self->{container} && $self->{container}->get_realized) {
+                my $alloc = $self->{container}->get_allocation; # Gtk3::Gdk::Rectangle
+                $w = $alloc->{width};
+                $h = $alloc->{height};
+            }
+            # Fallback to screen dimensions.
+            my $screen = eval { Gtk3::Gdk::Screen::get_default() };
+            if ((!$w || !$h) && $screen) {
+                $w ||= eval { $screen->get_width() };
+                $h ||= eval { $screen->get_height() };
+            }
+            if ($w && $h) {
+                # Leave a small margin for panels / decorations if using full screen dims.
+                $w = int($w * 0.98);
+                $h = int($h * 0.96);
+                $options{autoWidth}  = $w if $w > 0;
+                $options{autoHeight} = $h if $h > 0;
+                print STDERR "RDP_AUTO_SIZE: computed initial ${w}x${h}\n" if $ENV{ASBRU_DEBUG};
+            }
+        };
+    }
+
     foreach my $w (@{$$self{listRedir}}) {
         my %hash;
         $hash{'redirDiskShare'} = $$w{entryRedirShare}->get_chars(0, -1) || '';
@@ -206,7 +235,7 @@ sub _parseCfgToOptions {
     $hash{nofastPath} = 0;
     $hash{rfx} = 0;
     $hash{nsCodec} = 0;
-    $hash{dynamicResolution} = 0;
+    $hash{dynamicResolution} = 1; # enable dynamic resolution by default
     $hash{noRDP} = 0;
     $hash{noTLS} = 0;
     $hash{noNLA} = 0;
@@ -266,12 +295,39 @@ sub _parseOptionsToCfg {
     $txt .= ' /admin' if $$hash{attachToConsole};
     $txt .= ' +compression' if $$hash{useCompression};
     $txt .= ' /f' if $$hash{fullScreen};
-    if ($$hash{percent})
-    {
-        $txt .= ' /size:' . $$hash{geometry} . '%';
+    # Auto-compute a near-full initial geometry if dynamic resolution active and user provided no explicit size/fullscreen
+    if ($$hash{dynamicResolution} && !$$hash{fullScreen} && !$$hash{percent} && !$$hash{wh} && !defined $$hash{autoWidth}) {
+        eval {
+            my ($aw,$ah);
+            my $screen = eval { Gtk3::Gdk::Screen::get_default() };
+            if ($screen) {
+                my ($sw,$sh) = (eval { $screen->get_width() }, eval { $screen->get_height() });
+                if ($sw && $sh) { $aw = int($sw * 0.98); $ah = int($sh * 0.96); }
+            }
+            $$hash{autoWidth} = $aw if $aw;
+            $$hash{autoHeight} = $ah if $ah;
+        };
     }
-    elsif ($$hash{wh})
-    {
+    if ($$hash{dynamicResolution}) {
+        # Enable dynamic resolution plus scaling
+        $txt .= ' /dynamic-resolution /scale-desktop:100 /scale-device:100';
+    }
+    if ($$hash{percent}) {
+        $txt .= ' /size:' . ($$hash{geometry}||90) . '%';
+    } elsif (!$$hash{fullScreen} && !$$hash{percent} && !$$hash{wh}) {
+        if ($ENV{ASBRU_RDP_FORCE_SIZE}) {
+            my $forced = $ENV{ASBRU_RDP_FORCE_SIZE};
+            if ($forced =~ /^\d+x\d+$/ || $forced =~ /^\d+%$/) {
+                $txt .= ' /size:' . $forced;
+            } else {
+                print STDERR "ASBRU_DEBUG: Ignoring invalid ASBRU_RDP_FORCE_SIZE value '$forced' (expected WxH or NN%)\n" if $ENV{ASBRU_DEBUG};
+            }
+        } elsif (defined $$hash{autoWidth} && defined $$hash{autoHeight}) {
+            $txt .= ' /size:' . $$hash{autoWidth} . 'x' . $$hash{autoHeight};
+        } else {
+            $txt .= ' /size:100%';
+        }
+    } elsif ($$hash{wh}) {
         $txt .= ' /size:' . $$hash{width} . 'x' . $$hash{height};
     }
     $txt .= ' /kbd:' . $$hash{keyboardLocale} if $$hash{keyboardLocale} ne '';
@@ -284,18 +340,14 @@ sub _parseOptionsToCfg {
     $txt .= ' -fast-path' if $$hash{nofastPath};
     $txt .= ' /rfx' if $$hash{rfx};
     $txt .= ' /nsc' if $$hash{nsCodec};
-    $txt .= ' /dynamic-resolution' if $$hash{dynamicResolution};
     $txt .= ' -sec-rdp' if $$hash{noRDP};
     $txt .= ' -sec-tls' if $$hash{noTLS};
     $txt .= ' -sec-nla' if $$hash{noNLA};
     $txt .= ' /tls-seclevel:' . $$hash{tlsSecLevel} if $$hash{tlsSecLevel}>0;
     $txt .= ' +fonts' if $$hash{fontSmooth};
     $txt .= ' -grab-keyboard' if $$hash{noGrabKbd};
-
-    foreach my $redir (@{$$hash{redirDisk}}) {$txt .= " /drive:$$redir{redirDiskShare},$$redir{redirDiskPath}";}
-
+    foreach my $redir (@{$$hash{redirDisk}}) { $txt .= " /drive:$$redir{redirDiskShare},$$redir{redirDiskPath}"; }
     $txt .= ' ' . $$hash{otherOptions} if $$hash{otherOptions} ne '';
-
     return $txt;
 }
 
@@ -496,7 +548,7 @@ sub _buildGUI {
             $w{frameRedirDisk}->add($w{vbox_enesimo},);
 
                 # Build 'add' button
-                $w{btnadd} = Gtk3::Button->new_from_stock('gtk-add');
+                require PACIcons; $w{btnadd} = Gtk3::Button->new(); $w{btnadd}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnadd}->set_always_show_image(1);
                 $w{vbox_enesimo}->pack_start($w{btnadd}, 0, 1, 0);
 
                 # Build a scrolled window
@@ -561,7 +613,7 @@ sub _buildRedir {
         $w{hbox}->pack_start($w{fcForwardPath}, 1, 1, 0);
 
         # Build delete button
-        $w{btn} = Gtk3::Button->new_from_stock('gtk-delete');
+    $w{btn} = Gtk3::Button->new(); $w{btn}->set_image(PACIcons::icon_image('delete_row','gtk-delete')); $w{btn}->set_always_show_image(1);
         $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 
     # Add built control to main container

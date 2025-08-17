@@ -1,0 +1,66 @@
+# Test connection configurations for Ásbrú Connection Manager test suite
+# This file contains sample connection data for testing purposes
+
+defaults:
+  version: "7.0.0"
+  layout: "Standard"
+  theme: "default"
+  display_server: "auto"
+  desktop_environment: "auto"
+  modernization_info:
+    ai_assisted: true
+    migration_date: "2024-12-16"
+    original_version: "6.4.1"
+
+environments:
+  test-ssh-connection:
+    name: "Test SSH Server"
+    method: "SSH"
+    host: "test.example.com"
+    port: 22
+    user: "testuser"
+    auth_type: "password"
+    password: "encrypted_test_password"
+    description: "Test SSH connection for automated testing"
+    
+  test-rdp-connection:
+    name: "Test Windows Server"
+    method: "RDP"
+    host: "windows.example.com"
+    port: 3389
+    user: "testuser"
+    password: "encrypted_test_password"
+    domain: "TESTDOMAIN"
+    width: 1920
+    height: 1080
+    color_depth: 32
+    description: "Test RDP connection for automated testing"
+    
+  test-vnc-connection:
+    name: "Test VNC Server"
+    method: "VNC"
+    host: "vnc.example.com"
+    port: 5901
+    password: "encrypted_vnc_password"
+    display: 1
+    quality: "high"
+    compression: 6
+    description: "Test VNC connection for automated testing"
+    
+  test-ssh-key-connection:
+    name: "Test SSH with Key"
+    method: "SSH"
+    host: "keyauth.example.com"
+    port: 22
+    user: "keyuser"
+    auth_type: "publickey"
+    private_key: "/path/to/test/key.pem"
+    description: "Test SSH connection with key authentication"
+    
+  test-cluster-connection:
+    name: "Test Cluster"
+    method: "CLUSTER"
+    description: "Test cluster for connection grouping"
+    children:
+      - "test-ssh-connection"
+      - "test-rdp-connection"

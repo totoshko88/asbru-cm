@@ -98,7 +98,8 @@ BEGIN {
 use FindBin qw ($RealBin $Bin $Script);
 use lib "$RealBin/lib", "$RealBin/lib/ex", "$RealBin/lib/edit";
 use File::Copy;
-use YAML qw (LoadFile);
+use PACConfigData qw(load_yaml_config);
+use YAML::XS;
 use PACMain;
 use PACUtils qw (_appName);
 use File::Temp qw (tempdir);
@@ -133,6 +134,13 @@ our $VERBOSE        = 0;
 print "INFO: $APP_NAME ($Script) started with PID $$\n";
 $ENV{'VERBOSE'} = 0;
 
+# Early --version handling (avoid full GUI init)
+if (grep { /^--version$/ } @ARGV) {
+    require PACUtils; # ensure version symbol loaded
+    print "$APP_NAME $PACUtils::APPVERSION\n";
+    exit 0;
+}
+
 foreach my $arg (@ARGV) {
     if ($arg =~ /-{1,2}verbose/) {
         $VERBOSE = 1;
@@ -143,6 +151,17 @@ foreach my $arg (@ARGV) {
 # Detect language
 print STDERR "INFO: Language detected : $ENV{'LANG'}, forcing to ${ASBRU_LANG}\n";
 $ENV{'LANG'} = $ASBRU_LANG;
+
+# Display server detection (Wayland vs X11) - modernization 2025
+my $display_server = 'unknown';
+if ($ENV{WAYLAND_DISPLAY}) {
+    $display_server = 'Wayland';
+} elsif (($ENV{XDG_SESSION_TYPE} // '') eq 'wayland') {
+    $display_server = 'Wayland';
+} elsif ($ENV{DISPLAY}) {
+    $display_server = 'X11';
+}
+print STDERR "INFO: Display server detected: $display_server\n";
 
 # Check for Unity's systray-whitelist presence of 'asbru'
 my $wl = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} gsettings get com.canonical.Unity.Panel systray-whitelist 2>/dev/null`;
@@ -246,18 +265,26 @@ sub config_migration {
 
 sub getDesktopEnvironment {
     my $c;
-    # An attempt to find desktop environment
-    foreach my $d ('gnome-shell','cinnamon','lxde','xfce','unity') {
-        $c = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ps -eo 'comm=' | grep '$d' | wc -l`;
-        if ($c + 0) {
-            $ENV{'ASBRU_DESKTOP'} = $d;
-            last;
+    # Fast path: explicit Cosmic indicators
+    if (($ENV{XDG_CURRENT_DESKTOP} && $ENV{XDG_CURRENT_DESKTOP} =~ /COSMIC/i) ||
+        ($ENV{XDG_SESSION_DESKTOP} && $ENV{XDG_SESSION_DESKTOP} =~ /COSMIC/i) ||
+        ($ENV{ORIGINAL_XDG_CURRENT_DESKTOP} && $ENV{ORIGINAL_XDG_CURRENT_DESKTOP} =~ /COSMIC/i) ||
+        $ENV{COSMIC_SESSION} || $ENV{POP_OS_COSMIC}) {
+        $ENV{'ASBRU_DESKTOP'} = 'cosmic';
+    }
+    # Legacy process name probing if still unknown
+    if (!$ENV{'ASBRU_DESKTOP'}) {
+        foreach my $d ('gnome-shell','cinnamon','lxde','xfce','unity') {
+            $c = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ps -eo 'comm=' | grep '$d' | wc -l`;
+            if ($c + 0) {
+                $ENV{'ASBRU_DESKTOP'} = $d;
+                last;
+            }
         }
     }
     if (!$ENV{'ASBRU_DESKTOP'}) {
         $ENV{'ASBRU_DESKTOP'} = 'other';
     } elsif ($ENV{'ASBRU_DESKTOP'} eq 'gnome-shell') {
-        # Test to see it has the unite extension installed
         if (defined $ENV{'XDG_SESSION_DESKTOP'}) {
             $ENV{'ASBRU_DESKTOP'} .= ":$ENV{'XDG_SESSION_DESKTOP'}";
         }
@@ -268,7 +295,8 @@ sub getDesktopEnvironment {
             }
         }
     }
-    print STDERR "INFO: Desktop environment detected : $ENV{'ASBRU_DESKTOP'}\n";
+    # Desktop environment detected (logging deferred to PACMain->start to avoid duplicates)
+    $ENV{ASBRU_DESKTOP_DETECTED} = 1; # mark detected so PACMain can still gate if needed
 }
 
 sub CheckConfigurationFile {
@@ -285,7 +313,7 @@ sub CheckConfigurationFile {
         return;
     }
     eval {
-        $cfg = YAML::LoadFile($CFG_FILE);
+        $cfg = PACConfigData::load_yaml_config($CFG_FILE);
     };
     if ($@ || !$cfg) {
         my $OK = 0;
@@ -299,7 +327,7 @@ sub CheckConfigurationFile {
             }
             print "INFO: Testing recovery file $CFG_FILE_NAME.$n...\n";
             eval {
-                $cfg = YAML::LoadFile("$BACKUP_CFG_FILE.$n");
+                $cfg = PACConfigData::load_yaml_config("$BACKUP_CFG_FILE.$n");
             };
             if (!$@ && $cfg) {
                 print "INFO: Found valid file $CFG_FILE_NAME.$n, recovering...\n";

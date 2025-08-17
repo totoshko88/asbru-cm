@@ -30,6 +30,11 @@ $|++;
 
 use strict;
 use warnings;
+BEGIN {
+    if ($ENV{ASBRU_TEST_VERBOSE}) {
+        eval { print STDERR "TEST_DIAG: asbru_conn start pid=$$ perl=$^X args=[@ARGV]\n"; };
+    }
+}
 
 use FindBin qw ($RealBin $Bin $Script);
 use lib $RealBin, "$RealBin/ex", "$RealBin/edit";
@@ -38,7 +43,8 @@ use Expect;
 use Glib::IO; # GSettings
 use POSIX qw (strftime);
 use Encode qw (encode decode);
-use IO::Socket::INET;
+use IO::Socket::IP;  # Modern replacement with IPv6 support
+use PACNetworking qw(create_tcp_socket ping_host);
 use Encode;
 use PACKeePass;
 use PACUtils;
@@ -132,6 +138,14 @@ $GETCMD = shift // 0;
 
 # Load the 'freezed' configuration
 $CFG = retrieve($CFG_FILE) or die "ERROR: Could not load config file '$CFG_FILE': $!";
+if ($ENV{ASBRU_TEST_VERBOSE}) {
+    eval {
+        my $u = $UUID // 'undef';
+        my $has = (exists $CFG->{'environments'}{$u}) ? 1 : 0;
+        my $m = $has ? ($CFG->{'environments'}{$u}{'method'} // 'nomethod') : 'missing';
+        print STDERR "TEST_DIAG: asbru_conn loaded cfg uuid=$u present=$has method=$m keys_env=" . scalar(keys %{$CFG->{'environments'}}) . "\n";
+    };
+}
 
 # Check some command line options
 defined $$CFG{'environments'}{$UUID} or die("ERROR: Profile '$UUID' does not exist!!");
@@ -1200,6 +1214,12 @@ if (defined $METHOD) {
     ##############################################
     elsif ($METHOD =~ /^.*RDP \((.+)\).*$/) {
         $HIDE_TERMINAL = 1;
+            # Debug + safety: clamp geometry if tiny
+            if ( ( ($$CFG{'tmp'}{'width'}||0) < 200 ) || ( ($$CFG{'tmp'}{'height'}||0) < 150 ) ) {
+                print STDERR "RDP_EMBED_WARN: tiny pre-size=$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} -> 1024x768 fallback\n" if $ENV{ASBRU_DEBUG};
+                $$CFG{'tmp'}{'width'} = 1024; $$CFG{'tmp'}{'height'} = 768;
+            }
+            print STDERR "RDP_EMBED: xid=$$CFG{'tmp'}{'xid'} size=$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} user=$USER dynres=".( ($CONNECT_OPTS =~ /dynamic-resolution/) ? 1:0 )."\n" if $ENV{ASBRU_DEBUG};
         $METHOD = $1;
         _setProxy('RDP');
         if ((defined $$CFG{'tmp'}{'xid'}) && ($METHOD eq 'rdesktop')) {
@@ -1246,6 +1266,8 @@ if (defined $METHOD) {
             $connection_cmd = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER") . " $IP:$PORT -T \"$TITLE\"";
             $connection_txt = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER") . " $IP:$PORT -T \"$TITLE\"";
         }
+    ctrl("RDP_METHOD:$METHOD");
+    ctrl("RDP_CMD:$connection_txt");
     }
     elsif (($METHOD =~ /^.*vncviewer$/) || ($METHOD eq 'VNC')) {
         $METHOD = 'vncviewer';
@@ -1261,6 +1283,8 @@ if (defined $METHOD) {
         } elsif (`$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | $ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/grep TigerVNC`) {
             $method = 'TigerVNC';
         }
+    # Diagnostics for Ásbrú runtime (captured by main => helps automated tests)
+    ctrl("VNC_METHOD:$method");
         _setProxy($method);
         if ($method eq 'TigerVNC') {
             my $pfile = "$CFG_DIR/tmp/asbru_conn_{$$}_$UUID";
@@ -1284,6 +1308,7 @@ if (defined $METHOD) {
             $connection_cmd = "echo \"" . _doShellEscape($PASS) . "\" | $vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
             $connection_txt = "echo \"<<hidden_password>>\" | $vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
         }
+    ctrl("VNC_CMD:$connection_txt");
     }
     ##############################################
     # GENERIC METHOD (simple command line)

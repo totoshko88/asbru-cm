@@ -8,7 +8,7 @@ File::KeePass - Interface to KeePass V1 and V2 database files
 
 use strict;
 use warnings;
-use Crypt::Rijndael;
+use Crypt::Cipher::AES;
 use Digest::SHA qw(sha256);
 
 use constant DB_HEADSIZE_V1 => 124;
@@ -613,7 +613,8 @@ sub _master_key {
     $head->{'seed_key'}   ||= sha256(time.rand(2**32-1).$$);
     $head->{'rounds'} ||= $self->{'rounds'} || ($head->{'version'} && $head->{'version'} eq '2' ? 6_000 : 50_000);
 
-    my $cipher = Crypt::Rijndael->new($head->{'seed_key'}, Crypt::Rijndael::MODE_ECB());
+    # AI-assisted modernization: Replace Rijndael with AES
+    my $cipher = Crypt::Cipher::AES->new($head->{'seed_key'});
     $key = $cipher->encrypt($key) for 1 .. $head->{'rounds'};
     $key = sha256($key);
     $key = sha256($head->{'seed_rand'}, $key);
@@ -1042,22 +1043,31 @@ sub slurp {
 
 sub decrypt_rijndael_cbc {
     my ($self, $buffer, $key, $enc_iv) = @_;
-    #use Crypt::CBC; return Crypt::CBC->new(-cipher => 'Rijndael', -key => $key, -iv => $enc_iv, -regenerate_key => 0, -prepend_iv => 0)->decrypt($buffer);
-    my $cipher = Crypt::Rijndael->new($key, Crypt::Rijndael::MODE_CBC());
-    $cipher->set_iv($enc_iv);
-    $buffer = $cipher->decrypt($buffer);
-    my $extra = ord(substr $buffer, -1, 1);
-    substr($buffer, length($buffer) - $extra, $extra, '');
-    return $buffer;
+    # AI-assisted modernization: Replace Rijndael with modern AES-CBC
+    # Use Crypt::CBC for proper CBC mode with AES
+    use Crypt::CBC;
+    my $cipher = Crypt::CBC->new(
+        -cipher => 'Cipher::AES',
+        -key => $key,
+        -iv => $enc_iv,
+        -header => 'none',
+        -padding => 'standard'
+    );
+    return $cipher->decrypt($buffer);
 }
 
 sub encrypt_rijndael_cbc {
     my ($self, $buffer, $key, $enc_iv) = @_;
-    #use Crypt::CBC; return Crypt::CBC->new(-cipher => 'Rijndael', -key => $key, -iv => $enc_iv, -regenerate_key => 0, -prepend_iv => 0)->encrypt($buffer);
-    my $cipher = Crypt::Rijndael->new($key, Crypt::Rijndael::MODE_CBC());
-    $cipher->set_iv($enc_iv);
-    my $extra = (16 - length($buffer) % 16) || 16; # always pad so we can always trim
-    $buffer .= chr($extra) for 1 .. $extra;
+    # AI-assisted modernization: Replace Rijndael with modern AES-CBC
+    # Use Crypt::CBC for proper CBC mode with AES
+    use Crypt::CBC;
+    my $cipher = Crypt::CBC->new(
+        -cipher => 'Cipher::AES',
+        -key => $key,
+        -iv => $enc_iv,
+        -header => 'none',
+        -padding => 'standard'
+    );
     return $cipher->encrypt($buffer);
 }
 

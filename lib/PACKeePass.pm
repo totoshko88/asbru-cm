@@ -343,13 +343,8 @@ sub listEntries {
         }
     }
     # Create the dialog window,
-    $w{window}{data} = Gtk3::Dialog->new_with_buttons(
-        "KeePassXC Search",
-        $parent,
-        'modal',
-        'gtk-cancel' => 'cancel',
-        'gtk-ok' => 'ok'
-    );
+    $w{window}{data} = Gtk3::Dialog->new_with_buttons("KeePassXC Search", $parent, 'modal');
+    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_icon_name('asbru-app-big');
@@ -593,7 +588,7 @@ sub _buildKeePassGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    require PACIcons; $w{help}->set_image(PACIcons::icon_image('help','asbru-help'));
 
     # Hbox to arrange first
     $w{hbox} = Gtk3::HBox->new(1,0);

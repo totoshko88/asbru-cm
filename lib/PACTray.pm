@@ -39,6 +39,7 @@ use Gtk3 '-init';
 
 # PAC modules
 use PACUtils;
+use Glib qw/TRUE FALSE/;
 
 # END: Import Modules
 ###################################################################
@@ -135,10 +136,67 @@ sub _initGUI {
     my $self = shift;
 
     $$self{_TRAY} = Gtk3::StatusIcon->new_from_file($TRAYICON) or die "ERROR: Could not create tray icon: $!";
-    # Tray available (not Gnome-shell)?
     $$self{_TRAY}->set_property('tooltip-markup', "<b>$APPNAME</b> (v.$APPVERSION)");
     $$self{_TRAY}->set_visible($$self{_MAIN}{_CFG}{defaults}{'show tray icon'});
-    $$self{_MAIN}{_CFG}{'tmp'}{'tray available'} = $$self{_TRAY}->is_embedded() ? 1 : 'warning';
+    my $embedded = $$self{_TRAY}->is_embedded();
+    $$self{_MAIN}{_CFG}{'tmp'}{'tray available'} = $embedded ? 1 : 'warning';
+
+    # Cosmic shell (Pop!_OS) no legacy tray: provide small helper window substitute
+    if (!$embedded && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /COSMIC/i)) {
+        my $helper = Gtk3::Window->new('popup');
+        $helper->set_title($APPNAME . ' Tray');
+        $helper->set_resizable(FALSE);
+        my $img = Gtk3::Image->new_from_file($TRAYICON);
+        my $ebox = Gtk3::EventBox->new();
+        $ebox->add($img);
+        $helper->add($ebox);
+        $helper->set_default_size(24,24);
+        $helper->set_decorated(FALSE);
+        $helper->set_keep_above(TRUE);
+        $helper->stick;
+        $ebox->set_events(['button-press-mask','button-release-mask','pointer-motion-mask']);
+        my ($dragging,$dx,$dy) = (0,0,0);
+        $ebox->signal_connect('button-press-event' => sub {
+            my ($w,$ev) = @_;
+            if ($ev->button == 1) {
+                $dragging = 1; ($dx,$dy) = ($ev->x_root, $ev->y_root);
+            } elsif ($ev->button == 3) {
+                $self->_trayMenu($w,$ev);
+            }
+            return 1;
+        });
+        $ebox->signal_connect('button-release-event' => sub {
+            my ($w,$ev) = @_;
+            if ($ev->button == 1 && $dragging) {
+                $dragging = 0;
+                # Toggle main window if it was a click (no movement)
+                if (abs($ev->x_root - $dx) < 3 && abs($ev->y_root - $dy) < 3) {
+                    if ($$self{_MAIN}{_GUI}{main}->get_visible()) { $$self{_MAIN}->_hideConnectionsList(); }
+                    else { $$self{_MAIN}->_showConnectionsList(); }
+                }
+            }
+            return 1;
+        });
+        $ebox->signal_connect('motion-notify-event' => sub {
+            my ($w,$ev) = @_;
+            return 0 unless $dragging;
+            my $nx = $ev->x_root - 12; my $ny = $ev->y_root - 12;
+            $helper->move($nx,$ny);
+            return 1;
+        });
+        $helper->show_all();
+        # Position top-right after first frame (guard screen availability)
+    my $screen = eval { Gtk3::Gdk::Screen::get_default(); };
+        Glib::Idle->add(sub {
+            my $w = 800; # fallback width
+            if ($screen) {
+                eval { $w = $screen->get_width; 1 } or do { $w = 800; };
+            }
+            $helper->move($w-32,8);
+            0;
+        });
+        $$self{_TRAY_HELPER} = $helper;
+    }
 
     return 1;
 }
@@ -219,19 +277,19 @@ sub _trayMenu {
 
     my @m;
 
-    push(@m, {label => 'Local Shell', stockicon => 'gtk-home', code => sub {$PACMain::FUNCS{_MAIN}{_GUI}{shellBtn}->clicked();}});
+    push(@m, {label => 'Local Shell', logical_icon => 'home_action', stockicon => 'gtk-home', code => sub {$PACMain::FUNCS{_MAIN}{_GUI}{shellBtn}->clicked();}});
     push(@m, {separator => 1});
     push(@m, {label => 'Clusters', stockicon => 'asbru-cluster-manager', submenu => _menuClusterConnections});
     push(@m, {label => 'Favourites', stockicon => 'asbru-favourite-on', submenu => _menuFavouriteConnections});
     push(@m, {label => 'Connect to', stockicon => 'asbru-group', submenu => _menuAvailableConnections($PACMain::FUNCS{_MAIN}{_GUI}{treeConnections}{data})});
     push(@m, {separator => 1});
-    push(@m, {label => 'Preferences...', stockicon => 'gtk-preferences', code => sub {$$self{_MAIN}{_CONFIG}->show();}});
-    push(@m, {label => 'Clusters...', stockicon => 'gtk-justify-fill', code => sub {$$self{_MAIN}{_CLUSTER}->show();}});
-    push(@m, {label => 'PCC', stockicon => 'gtk-justify-fill', code => sub {$$self{_MAIN}{_PCC}->show();}});
-    push(@m, {label => 'Show Window', stockicon => 'gtk-home', code => sub {$$self{_MAIN}->_showConnectionsList();}});
+    push(@m, {label => 'Preferences...', logical_icon => 'preferences', stockicon => 'gtk-preferences', code => sub {$$self{_MAIN}{_CONFIG}->show();}});
+    push(@m, {label => 'Clusters...', logical_icon => 'cluster', stockicon => 'gtk-justify-fill', code => sub {$$self{_MAIN}{_CLUSTER}->show();}});
+    push(@m, {label => 'PCC', logical_icon => 'cluster', stockicon => 'gtk-justify-fill', code => sub {$$self{_MAIN}{_PCC}->show();}});
+    push(@m, {label => 'Show Window', logical_icon => 'home_action', stockicon => 'gtk-home', code => sub {$$self{_MAIN}->_showConnectionsList();}});
     push(@m, {separator => 1});
-    push(@m, {label => 'About', stockicon => 'gtk-about', code => sub {$$self{_MAIN}->_showAboutWindow();}});
-    push(@m, {label => 'Exit', stockicon => 'gtk-quit', code => sub {$$self{_MAIN}->_quitProgram();}});
+    push(@m, {label => 'About', logical_icon => 'about_action', stockicon => 'gtk-about', code => sub {$$self{_MAIN}->_showAboutWindow();}});
+    push(@m, {label => 'Exit', logical_icon => 'quit_action', stockicon => 'gtk-quit', code => sub {$$self{_MAIN}->_quitProgram();}});
 
     _wPopUpMenu(\@m, $event, 'below calling widget');
 

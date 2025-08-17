@@ -553,7 +553,7 @@ sub _buildGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    require PACIcons; $w{help}->set_image(PACIcons::icon_image('help','asbru-help'));
     $w{hbox}->pack_start($w{help}, 1, 1, 0);
 
     $w{scroll} = Gtk3::ScrolledWindow->new();

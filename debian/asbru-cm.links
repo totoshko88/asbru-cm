@@ -1,0 +1,2 @@
+# Link installed icon from share tree (source path inside package build root)
+/usr/share/asbru/res/asbru-logo.svg /usr/share/icons/hicolor/scalable/apps/asbru-cm.svg

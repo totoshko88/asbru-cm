@@ -37,6 +37,7 @@ use FindBin qw ($RealBin $Bin $Script);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -427,7 +428,7 @@ sub _buildTermOptsGUI {
 
     $w{btnResetDefaults} = Gtk3::Button->new_with_label('Reset to DEFAULT values');
     $w{vbox1}->pack_start($w{btnResetDefaults}, 0, 1, 0);
-    $w{btnResetDefaults}->set_image(Gtk3::Image->new_from_stock('gtk-undo', 'menu') );
+    $w{btnResetDefaults}->set_image(PACIcons::icon_image('reset_defaults','edit-undo'));
 
     $$self{container} = $w{vbox};
     $$self{gui} = \%w;

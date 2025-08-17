@@ -44,6 +44,7 @@ my $SOURCEVIEW = ! $@;
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -434,7 +435,7 @@ sub _initGUI {
 
                     my $tablbl = Gtk3::HBox->new(0, 0);
                     $tablbl->pack_start(Gtk3::Label->new(' Script Editor '), 1, 1, 0);
-                    $tablbl->pack_start(Gtk3::Image->new_from_stock('asbru-script', 'menu'), 0, 1, 0);
+                    $tablbl->pack_start(PACIcons::icon_image('scripts','text-x-script'), 0, 1, 0);
                     $tablbl->show_all;
 
                     $$self{_WINDOWSCRIPTS}{gui}{hpanededitfunc} = Gtk3::HPaned->new;
@@ -535,7 +536,7 @@ sub _initGUI {
 
                     my $tablbl2 = Gtk3::HBox->new(0, 0);
                     $tablbl2->pack_start(Gtk3::Label->new(' Ásbrú Script Help '), 1, 1, 0);
-                    $tablbl2->pack_start(Gtk3::Image->new_from_stock('gtk-help', 'menu'), 0, 1, 0);
+                    $tablbl2->pack_start(PACIcons::icon_image('help_link','help-browser'), 0, 1, 0);
                     $tablbl2->show_all;
 
                     $$self{_WINDOWSCRIPTS}{gui}{vboxhelp} = Gtk3::VBox->new(0, 0);
@@ -590,38 +591,48 @@ sub _initGUI {
 
                 # Put a 'execute' button
                 $$self{_WINDOWSCRIPTS}{gui}{btnexec} = Gtk3::Button->new('E_xecute');
-                $$self{_WINDOWSCRIPTS}{gui}{btnexec}->set_image(Gtk3::Image->new_from_stock('gtk-media-play', 'button') );
+                $$self{_WINDOWSCRIPTS}{gui}{btnexec}->set_image(PACIcons::icon_image('exec_run','media-playback-start'));
                 $$self{_WINDOWSCRIPTS}{gui}{btnexec}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnexec}, 1, 1, 0);
 
                 # Put a 'add' button
-                $$self{_WINDOWSCRIPTS}{gui}{btnadd} = Gtk3::Button->new_from_stock('gtk-new');
+                $$self{_WINDOWSCRIPTS}{gui}{btnadd} = Gtk3::Button->new();
+                $$self{_WINDOWSCRIPTS}{gui}{btnadd}->set_image(PACIcons::icon_image('add','list-add'));
+                $$self{_WINDOWSCRIPTS}{gui}{btnadd}->set_always_show_image(1);
                 $$self{_WINDOWSCRIPTS}{gui}{btnadd}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnadd}, 1, 1, 0);
 
                 # Put a 'import' button
                 $$self{_WINDOWSCRIPTS}{gui}{btnimport} = Gtk3::Button->new('Import...');
                 $$self{_WINDOWSCRIPTS}{gui}{btnimport}->set('can_focus', 0);
-                $$self{_WINDOWSCRIPTS}{gui}{btnimport}->set_image(Gtk3::Image->new_from_stock('gtk-open', 'button') );
+                $$self{_WINDOWSCRIPTS}{gui}{btnimport}->set_image(PACIcons::icon_image('folder','document-open'));
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnimport}, 1, 1, 0);
 
                 # Put a 'remove' button
-                $$self{_WINDOWSCRIPTS}{gui}{btnremove} = Gtk3::Button->new_from_stock('gtk-delete');
+                $$self{_WINDOWSCRIPTS}{gui}{btnremove} = Gtk3::Button->new();
+                $$self{_WINDOWSCRIPTS}{gui}{btnremove}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+                $$self{_WINDOWSCRIPTS}{gui}{btnremove}->set_always_show_image(1);
                 $$self{_WINDOWSCRIPTS}{gui}{btnremove}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnremove}, 1, 1, 0);
 
                 # Put a 'reload' button
-                $$self{_WINDOWSCRIPTS}{gui}{btnreload} = Gtk3::Button->new_from_stock('gtk-refresh');
+                $$self{_WINDOWSCRIPTS}{gui}{btnreload} = Gtk3::Button->new();
+                $$self{_WINDOWSCRIPTS}{gui}{btnreload}->set_image(PACIcons::icon_image('refresh','view-refresh'));
+                $$self{_WINDOWSCRIPTS}{gui}{btnreload}->set_always_show_image(1);
                 $$self{_WINDOWSCRIPTS}{gui}{btnreload}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnreload}, 1, 1, 0);
 
                 # Put a 'save' button
-                $$self{_WINDOWSCRIPTS}{gui}{btnsave} = Gtk3::Button->new_from_stock('gtk-save');
+                $$self{_WINDOWSCRIPTS}{gui}{btnsave} = Gtk3::Button->new();
+                $$self{_WINDOWSCRIPTS}{gui}{btnsave}->set_image(PACIcons::icon_image('save','document-save'));
+                $$self{_WINDOWSCRIPTS}{gui}{btnsave}->set_always_show_image(1);
                 $$self{_WINDOWSCRIPTS}{gui}{btnsave}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnsave}, 1, 1, 0);
 
                 # Put a 'close' button
-                $$self{_WINDOWSCRIPTS}{gui}{btnclose} = Gtk3::Button->new_from_stock('gtk-close');
+                $$self{_WINDOWSCRIPTS}{gui}{btnclose} = Gtk3::Button->new();
+                $$self{_WINDOWSCRIPTS}{gui}{btnclose}->set_image(PACIcons::icon_image('close','window-close'));
+                $$self{_WINDOWSCRIPTS}{gui}{btnclose}->set_always_show_image(1);
                 $$self{_WINDOWSCRIPTS}{gui}{btnclose}->set('can_focus', 0);
                 $$self{_WINDOWSCRIPTS}{gui}{btnbox}->pack_start($$self{_WINDOWSCRIPTS}{gui}{btnclose}, 1, 1, 0);
 

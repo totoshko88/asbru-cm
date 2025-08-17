@@ -5,6 +5,7 @@ package PACConfig;
 #
 # Copyright (C) 2017-2022 Ásbrú Connection Manager team (https://asbru-cm.net)
 # Copyright (C) 2010-2016 David Torrejon Vaquerizas
+# Copyright (C) 2025 Anton Isaiev totoshko88@gmail.com
 #
 # Ásbrú Connection Manager is free software: you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as published by
@@ -34,14 +35,16 @@ use strict;
 use warnings;
 
 use FindBin qw ($RealBin $Bin $Script);
-use YAML qw (LoadFile DumpFile);
+use PACConfigData qw(load_yaml_config save_yaml_config clone_data validate_config_structure);
+use YAML::XS;  # Modern YAML processor
 use Storable;
 use Glib::IO; # GSettings
-use Crypt::CBC;
+use PACCryptoCompat;
 
 # GTK
 use Gtk3 '-init';
 use Gtk3::SimpleList;
+use PACIcons; # Modern symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -65,8 +68,12 @@ my $GLADE_FILE = "$RealBin/res/asbru.glade";
 my $CFG_DIR = $ENV{"ASBRU_CFG"};
 my $RES_DIR = "$RealBin/res";
 my $THEME_DIR = "$RES_DIR/themes/default";
+# Modern cryptographic system - AI-assisted modernization 2024
+my $CIPHER = PACCryptoCompat->new(-key => 'PAC Manager (David Torrejon Vaquerizas, david.tv@gmail.com)', -migration => 1) or die "ERROR: Failed to initialize crypto system";
+# Legacy salt constant for compatibility
 my $SALT = '12345678';
-my $CIPHER = Crypt::CBC->new(-key => 'PAC Manager (David Torrejon Vaquerizas, david.tv@gmail.com)', -cipher => 'Blowfish', -salt => pack('Q', $SALT), -pbkdf => 'opensslv1', -nodeprecate => 1) or die "ERROR: $!";
+ # Cache for system icon themes enumeration
+our ($CACHED_ICON_THEMES, $CACHED_ICON_SCAN_TIME); $CACHED_ICON_SCAN_TIME ||= 0;
 
 # END: Define GLOBAL CLASS variables
 ###################################################################
@@ -157,31 +164,31 @@ sub _initGUI {
     # Initialize main window
     $$self{_WINDOWCONFIG}->set_icon_name('asbru-app-big');
 
-    _($self, 'btnResetDefaults')->set_image(Gtk3::Image->new_from_stock('gtk-undo', 'button'));
+    _($self, 'btnResetDefaults')->set_image(PACIcons::icon_image('reset_defaults','edit-undo'));
     _($self, 'btnResetDefaults')->set_label('_Reset to DEFAULT values');
     foreach my $o ('MO', 'TO') {
         foreach my $t ('BE', 'LF', 'AD') {
             _($self, "linkHelp$o$t")->set_label('');
-            _($self, "linkHelp$o$t")->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+            _($self, "linkHelp$o$t")->set_image(PACIcons::icon_image('help_link','help-browser'));
         }
     }
     foreach my $t ('linkHelpLocalShell', 'linkHelpGlobalNetwork') {
         _($self, $t)->set_label('');
-        _($self, $t)->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    _($self, $t)->set_image(PACIcons::icon_image('help_link','help-browser'));
     }
 
-    # Option currently disabled
-    #_($self, 'btnCheckVersion')->set_image(Gtk3::Image->new_from_stock('gtk-refresh', 'button') );
-    #_($self, 'btnCheckVersion')->set_label('Check _now');
+    # Option currently disabled (legacy Gtk3 stock image call removed)
+    # _($self, 'btnCheckVersion')->set_image(PACIcons::icon_image('refresh','view-refresh'));
+    # _($self, 'btnCheckVersion')->set_label('Check _now');
 
-    _($self, 'rbCfgStartTreeConn')->set_image(Gtk3::Image->new_from_stock('asbru-treelist', 'button'));
-    _($self, 'rbCfgStartTreeFavs')->set_image(Gtk3::Image->new_from_stock('asbru-favourite-on', 'button'));
-    _($self, 'rbCfgStartTreeHist')->set_image(Gtk3::Image->new_from_stock('asbru-history', 'button'));
-    _($self, 'rbCfgStartTreeCluster')->set_image(Gtk3::Image->new_from_stock('asbru-cluster-manager', 'button'));
-    _($self, 'imgKeePassOpts')->set_from_stock('asbru-keepass', 'button');
-    _($self, 'btnCfgSetGUIPassword')->set_image(Gtk3::Image->new_from_stock('asbru-protected', 'button'));
+    _($self, 'rbCfgStartTreeConn')->set_image(PACIcons::icon_image('treelist','view-list'));
+    _($self, 'rbCfgStartTreeFavs')->set_image(PACIcons::icon_image('favourite_start','starred'));
+    _($self, 'rbCfgStartTreeHist')->set_image(PACIcons::icon_image('history_start','document-open-recent'));
+    _($self, 'rbCfgStartTreeCluster')->set_image(PACIcons::icon_image('cluster_start','applications-system'));
+    require PACIcons; my $img_kp = PACIcons::icon_image('keepass','asbru-keepass'); _($self, 'imgKeePassOpts')->set_from_pixbuf($img_kp->get_pixbuf) if $img_kp->get_storage_type eq 'pixbuf';
+    _($self, 'btnCfgSetGUIPassword')->set_image(PACIcons::icon_image('protected','changes-prevent'));
     _($self, 'btnCfgSetGUIPassword')->set_label('Set...');
-    _($self, 'btnExportYAML')->set_image(Gtk3::Image->new_from_stock('gtk-save-as', 'button'));
+    _($self, 'btnExportYAML')->set_image(PACIcons::icon_image('save_as','document-save-as'));
     _($self, 'btnExportYAML')->set_label('Export config...');
     _($self, 'alignShellOpts')->add(($$self{_SHELL} = PACTermOpts->new())->{container});
     _($self, 'alignGlobalVar')->add(($$self{_VARIABLES} = PACGlobalVarEntry->new())->{container});
@@ -191,7 +198,7 @@ sub _initGUI {
     _($self, 'alignKeyBindings')->add(($$self{_KEYBINDS} = PACKeyBindings->new($$self{_CFG}{defaults}{keybindings}, $$self{_WINDOWCONFIG}))->{container});
     _($self, 'nbPreferences')->show_all();
 
-    _($self, 'btnCfgProxyCheckKPX')->set_image(Gtk3::Image->new_from_stock('asbru-keepass', 'button') );
+    _($self, 'btnCfgProxyCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
     _($self, 'btnCfgProxyCheckKPX')->set_label('');
 
     $$self{cbShowHidden} = Gtk3::CheckButton->new_with_mnemonic('Show _hidden files');
@@ -214,7 +221,6 @@ sub _initGUI {
 
     # Show preferences
     _updateGUIPreferences($self);
-
     return 1;
 }
 
@@ -286,7 +292,7 @@ sub _setupCallbacks {
         _($self, 'cfgLblCharEncode')->set_markup($desc);
     });
     _($self, 'cbCfgBWTrayIcon')->signal_connect('toggled' => sub {
-        _($self, 'imgTrayIcon')->set_from_stock(_($self, 'cbCfgBWTrayIcon')->get_active() ? 'asbru-tray-bw' : 'asbru-tray', 'menu');
+    my $logical = _($self, 'cbCfgBWTrayIcon')->get_active() ? 'tray_bw' : 'tray_color'; require PACIcons; my $img_tray = PACIcons::icon_image($logical, _($self, 'cbCfgBWTrayIcon')->get_active() ? 'asbru-tray-bw' : 'asbru-tray'); _($self, 'imgTrayIcon')->set_from_pixbuf($img_tray->get_pixbuf) if $img_tray->get_storage_type eq 'pixbuf';
     });
     _($self, 'cbCfgShowSudoPassword')->signal_connect('toggled' => sub {
         _($self, 'entryCfgSudoPassword')->set_visibility(_($self, 'cbCfgShowSudoPassword')->get_active());
@@ -769,8 +775,42 @@ sub _resetDefaults {
 sub _updateGUIPreferences {
     my $self = shift;
     my $cfg = shift // $$self{_CFG};
+    
+    # Prevent recursion
+    return if $self->{_updating_gui_preferences};
+    local $self->{_updating_gui_preferences} = 1;
+    
     my %layout = ('Traditional', 0, 'Compact', 1);
-    my %theme = ('default', 0, 'asbru-color', 1, 'asbru-dark', 2, 'system', 3);
+    # NOTE: Theme order in Glade must match this list. To avoid mismatch issues when
+    # Glade order changes, we no longer rely exclusively on this static index map
+    # when selecting; instead we will look up the active row by text. We keep the
+    # hash for backwards compatibility if order still matches.
+    # Dynamic themes: scan res/themes for directories (prefix asbru- or default) and add 'system'
+    my %theme; # keep index mapping only for legacy fallback
+    if (my $combo_theme_obj = eval { _($self,'comboTheme') }) {
+        my $store = eval { $combo_theme_obj->get_model };
+        if ($store && eval { $store->can('clear') }) {
+            eval { $store->clear; };
+            my $idx = 0;
+            my $res_dir = $PACMain::FUNCS{_MAIN}->{_RES_DIR} || 'res';
+            my $themes_root = "$res_dir/themes";
+            if (-d $themes_root) {
+                opendir(my $dh,$themes_root);
+                my @dirs = grep { -d "$themes_root/$_" && !/^\./ } readdir($dh);
+                closedir $dh;
+                # Prioritize default first, then others sorted
+                my @ordered = ('default', sort grep { $_ ne 'default' } @dirs);
+                for my $t (@ordered) {
+                    next unless $t =~ /^(default|asbru-[-a-z0-9]+)$/i;
+                    eval { $combo_theme_obj->append_text($t); };
+                    $theme{$t} = $idx++;
+                }
+            }
+            eval { $combo_theme_obj->append_text('system'); $theme{'system'} = $idx++; };
+        }
+    } else {
+        %theme = ('default',0,'asbru-color',1,'asbru-dark',2,'system',3);
+    }
 
     if (!defined $$cfg{'defaults'}{'layout'}) {
         $$cfg{'defaults'}{'layout'} = 'Traditional';
@@ -810,9 +850,7 @@ sub _updateGUIPreferences {
     _($self, 'entryCfgExternalViewer')->set_sensitive($$cfg{'defaults'}{'screenshots use external viewer'});
     _($self, 'cbCfgTabsInMain')->set_active($$cfg{'defaults'}{'tabs in main window'});
     _($self, 'cbCfgConnectionsAutoHide')->set_active($$cfg{'defaults'}{'auto hide connections list'});
-    _($self, 'cbCfgConnectionsAutoHide')->set_sensitive(_($self, 'cbCfgTabsInMain')->get_active());
     _($self, 'cbCfgButtonBarAutoHide')->set_active($$cfg{'defaults'}{'auto hide button bar'});
-    _($self, 'cbCfgButtonBarAutoHide')->set_sensitive(_($self, 'cbCfgTabsInMain')->get_active());
     _($self, 'cbCfgPreventMOShowTree')->set_sensitive(_($self, 'cbCfgTabsInMain')->get_active());
     _($self, 'cbCfgStatusBar')->set_active($$cfg{'defaults'}{'info in status bar'});
     _($self, 'rbCfgStatusShort')->set_active(! $$cfg{'defaults'}{'forwarding short names'});
@@ -858,7 +896,7 @@ sub _updateGUIPreferences {
     _($self, 'cbCfgShowTreeTooltips')->set_active($$cfg{'defaults'}{'show connections tooltips'});
     _($self, 'cbCfgUseShellToConnect')->set_active($$cfg{'defaults'}{'use login shell to connect'});
     _($self, 'cbCfgAutoAppendGroupName')->set_active($$cfg{'defaults'}{'append group name'});
-    _($self, 'imgTrayIcon')->set_from_stock($$cfg{'defaults'}{'use bw icon'} ? 'asbru-tray-bw' : 'asbru-tray', 'menu');
+    my $logical2 = $$cfg{'defaults'}{'use bw icon'} ? 'tray_bw' : 'tray_color'; require PACIcons; my $img_tray2 = PACIcons::icon_image($logical2, $$cfg{'defaults'}{'use bw icon'} ? 'asbru-tray-bw' : 'asbru-tray'); _($self, 'imgTrayIcon')->set_from_pixbuf($img_tray2->get_pixbuf) if $img_tray2->get_storage_type eq 'pixbuf';
     _($self, 'rbOnNoTabsNothing')->set_active($$cfg{'defaults'}{'when no more tabs'} == 0);
     _($self, 'rbOnNoTabsClose')->set_active($$cfg{'defaults'}{'when no more tabs'} == 1);
     _($self, 'rbOnNoTabsHide')->set_active($$cfg{'defaults'}{'when no more tabs'} == 2);
@@ -867,8 +905,173 @@ sub _updateGUIPreferences {
     _($self, 'cbCfgLogTimestam')->set_active($$cfg{'defaults'}{'log timestamp'});
     _($self, 'cbCfgAllowMoreInstances')->set_active($$cfg{'defaults'}{'allow more instances'});
     _($self, 'cbCfgShowFavOnUnity')->set_active($$cfg{'defaults'}{'show favourites in unity'});
-    _($self, 'comboLayout')->set_active($layout{$$cfg{'defaults'}{'layout'}});
-    _($self, 'comboTheme')->set_active($theme{$$cfg{'defaults'}{'theme'}});
+    my $layout_idx = exists $layout{$$cfg{'defaults'}{'layout'}} ? $layout{$$cfg{'defaults'}{'layout'}} : 0;
+    my $theme_key = $$cfg{'defaults'}{'theme'} // 'default';
+    _($self, 'comboLayout')->set_active($layout_idx);
+    # Robust theme selection: search combo entries by text instead of trusting index
+    if (my $combo_theme = eval { _($self, 'comboTheme') }) {
+        my $model = eval { $combo_theme->get_model }; my $iter = ($model && eval { $model->can('get_iter_first') }) ? $model->get_iter_first : undef;
+        my $idx = 0; my $found = -1;
+    while ($iter) { my $val = eval { $model->get($iter,0) }; last if !defined $val && $@; if (defined $val && $val eq $theme_key) { $found = $idx; last; } $idx++; $iter = $model->iter_next($iter); }
+        if ($found >= 0) { eval { $combo_theme->set_active($found); }; }
+    else { eval { $combo_theme->set_active(exists $theme{$theme_key} ? $theme{$theme_key} : 0); }; }
+        # Connect change handler once (idempotent)
+        if (!$self->{_combo_theme_connected}) {
+            $combo_theme->signal_connect(changed => sub {
+                my $sel = eval { $combo_theme->get_active_text } // '';
+                $sel =~ s/\s+$//; $sel =~ s/^\s+//;
+                return if $sel eq '';
+                
+                # Prevent recursion by checking if we're already updating
+                return if $self->{_updating_gui_preferences};
+                
+                $$self{_CFG}{'defaults'}{'theme'} = $sel;
+                if ($sel eq 'system') {
+                    # Trigger rebuild of system icon theme widgets (avoid recursion)
+                    eval { $PACMain::FUNCS{_MAIN}->_refresh_all_icons(); };
+                } else {
+                    # Apply internal theme immediately
+                    eval { $PACMain::FUNCS{_MAIN}->_apply_internal_theme($sel); };
+                }
+                # Persist selection (system override saved separately when chosen)
+                eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
+            });
+            $self->{_combo_theme_connected} = 1;
+        }
+        # Inject force-internal-icons checkbox (idempotent)
+        my $parent = eval { $combo_theme->get_parent };
+        if ($parent && !$self->{_force_internal_icons_added}) {
+            # Skip if already present (duplicate rebuild)
+            unless (_parent_has_child_named($parent,'cbForceInternalIcons')) {
+                my $chk = Gtk3::CheckButton->new_with_label('Force internal icon files (override system icons)');
+                $chk->set_name('cbForceInternalIcons');
+                $chk->set_active( $$cfg{'defaults'}{'force_internal_icons'} ? 1 : 0 );
+                $parent->pack_start($chk, 0,0,4);
+                $chk->signal_connect(toggled => sub {
+                    my $val = $chk->get_active ? 1 : 0;
+                    $$self{_CFG}{'defaults'}{'force_internal_icons'} = $val;
+                    eval { require PACIcons; PACIcons::clear_cache(); };
+                    eval { $PACMain::FUNCS{_MAIN}->_refresh_all_icons(); };
+                    eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
+                });
+                $chk->show_all();
+            }
+            $self->{_force_internal_icons_added} = 1;
+        }
+        # If 'system' theme chosen, ensure a combo with enumerated GTK system icon themes is available
+        if ($theme_key eq 'system') {
+            my $combo_theme = eval { _($self, 'comboTheme') };
+            my $parent = $combo_theme ? eval { $combo_theme->get_parent } : undef;
+            if ($parent) {
+                # Always purge existing dynamic widgets to guarantee no duplication
+                my @children = eval { $parent->get_children };
+                for my $ch (@children) {
+                    my $nm = eval { $ch->get_name } // '';
+                    next unless $nm =~ /^(comboSystemIconTheme|btnPreviewSystemIconTheme|btnRefreshSystemIconTheme|lblNoSystemIconThemes)$/;
+                    eval { $parent->remove($ch) };
+                    eval { $ch->destroy };
+                }
+                return if $self->{_building_system_theme_widgets};
+                local $self->{_building_system_theme_widgets} = 1;
+                my $themes = _enumerate_system_icon_themes();
+                if (!$themes || !@$themes) {
+                    unless (_parent_has_child_named($parent,'lblNoSystemIconThemes')) {
+                    my $lbl = Gtk3::Label->new('No system icon themes found in ~/.local/share/icons or /usr/share/icons');
+                    $lbl->set_name('lblNoSystemIconThemes');
+                    $parent->pack_start($lbl,0,0,6);
+                    $lbl->show_all();
+                }
+                }
+                my $combo_sys = Gtk3::ComboBoxText->new();
+                $combo_sys->set_name('comboSystemIconTheme');
+                $combo_sys->append_text('');
+                foreach my $t (@$themes) { $combo_sys->append_text($t); }
+                # Avoid duplicate pack if already exists (race)
+                unless (_parent_has_child_named($parent,'comboSystemIconTheme')) {
+                $parent->pack_start($combo_sys, 0,0,6);
+                }
+                my $saved = $$cfg{'defaults'}{'system icon theme override'} // '';
+                if ($saved ne '') {
+                    my $idx = 0; my $found = 0; my $model = eval { $combo_sys->get_model }; my $iter = ($model && eval { $model->can('get_iter_first') }) ? $model->get_iter_first : undef;
+                    while ($iter) {
+                        my $val = eval { $model->get($iter,0) }; last if !defined $val && $@;
+                        if (defined $val && $val eq $saved) { eval { $combo_sys->set_active($idx); }; $found=1; last; }
+                        $idx++; $iter = $model->iter_next($iter);
+                    }
+                    if (!$found) { $combo_sys->append_text($saved); eval { $combo_sys->set_active($idx); }; }
+                } else { eval { $combo_sys->set_active(0); }; }
+                # Also persist when user changes active item in the system theme combo (without pressing preview)
+                $combo_sys->signal_connect(changed => sub {
+                    my $sel = $combo_sys->get_active_text // '';
+                    $sel =~ s/^\s+|\s+$//g;
+                    if ($sel ne '' && _validate_system_icon_theme($sel)) {
+                        $$cfg{'defaults'}{'system icon theme override'} = $sel;
+                        $$cfg{'defaults'}{'theme'} = 'system';
+                        eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
+                    }
+                });
+                # Create Preview button (declare before use)
+                my $btn_prev = Gtk3::Button->new_with_label('Preview');
+                $btn_prev->set_name('btnPreviewSystemIconTheme');
+                eval { $btn_prev->set_tooltip_text('Preview & apply the selected system icon theme now'); };
+                eval { $combo_sys->set_tooltip_text('List of detected system icon themes (from ~/.local/share/icons, /usr/share/icons)'); };
+                $btn_prev->signal_connect(clicked => sub {
+                    my $sel = $combo_sys->get_active_text // '';
+                    $sel =~ s/^\s+|\s+$//g;
+                    if ($sel ne '' && _validate_system_icon_theme($sel)) {
+                        eval { $PACMain::FUNCS{_MAIN}->_apply_system_icon_theme($sel); };
+                        $$cfg{'defaults'}{'system icon theme override'} = $sel;
+                        $$cfg{'defaults'}{'theme'} = 'system';
+                        eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
+                    } else {
+                        _show_theme_warning($self, $sel eq '' ? 'Select a theme first.' : "Theme '$sel' not found.");
+                    }
+                });
+                unless (_parent_has_child_named($parent,'btnPreviewSystemIconTheme')) { $parent->pack_start($btn_prev, 0,0,6); }
+                # Refresh button
+                my $btn_refresh = Gtk3::Button->new_with_label('Refresh');
+                $btn_refresh->set_name('btnRefreshSystemIconTheme');
+                eval { $btn_refresh->set_tooltip_text('Re-scan system icon themes (clears 60s cache)'); };
+                $btn_refresh->signal_connect(clicked => sub {
+                    $CACHED_ICON_THEMES = undef; $CACHED_ICON_SCAN_TIME = 0;
+                    my $themes_new = _enumerate_system_icon_themes();
+                    if (my $par = eval { $combo_sys->get_parent }) {
+                        my @chs = eval { $par->get_children };
+                        for my $c (@chs) { my $nm = eval { $c->get_name } // ''; next unless $nm eq 'lblNoSystemIconThemes'; eval { $par->remove($c) }; eval { $c->destroy }; }
+                    }
+                    eval { $combo_sys->remove_text(0) while 1; };
+                    $combo_sys->append_text('');
+                    foreach my $t (@$themes_new) { $combo_sys->append_text($t); }
+                    if (!$themes_new || !@$themes_new) {
+                        if (my $par2 = eval { $combo_sys->get_parent }) {
+                            my $lbl2 = Gtk3::Label->new('No system icon themes found in ~/.local/share/icons or /usr/share/icons');
+                            $lbl2->set_name('lblNoSystemIconThemes');
+                            $par2->pack_start($lbl2,0,0,6); $lbl2->show_all();
+                        }
+                    }
+                });
+                unless (_parent_has_child_named($parent,'btnRefreshSystemIconTheme')) { $parent->pack_start($btn_refresh, 0,0,6); }
+                $combo_sys->show_all();
+                $btn_prev->show_all();
+                $btn_refresh->show_all();
+            }
+        } else {
+            # Theme changed away from 'system': remove dynamic system icon theme widgets scanning container
+            if (my $combo_theme = eval { _($self,'comboTheme') }) {
+                if (my $parent = eval { $combo_theme->get_parent }) {
+                    my @children = eval { $parent->get_children };
+                    for my $ch (@children) {
+                        my $nm = eval { $ch->get_name } // '';
+                        next unless $nm =~ /^(comboSystemIconTheme|btnPreviewSystemIconTheme|btnRefreshSystemIconTheme|lblThemeWarning|lblRestartHint|lblNoSystemIconThemes)$/;
+                        eval { $parent->remove($ch) };
+                        eval { $ch->destroy }; # finalize
+                    }
+                    delete $self->{_theme_warn_label};
+                    delete $self->{_restart_hint_label};
+                }
+            }
+        }
+    }
 
     # Terminal Options
     _($self, 'spCfgTmoutConnect')->set_value($$cfg{'defaults'}{'timeout connect'});
@@ -1030,6 +1233,9 @@ sub _closeConfiguration {
 sub _saveConfiguration {
     my $self = shift;
 
+    my $old_theme = $$self{_CFG}{'defaults'}{'theme'};
+    my $old_sys = $$self{_CFG}{'defaults'}{'system icon theme override'};
+
     # Increase and document config version changes
     $$self{_CFG}{'config version'} = 2;
     $$self{_CFG}{'config version change'} = 'Added keybindings settings';
@@ -1175,7 +1381,6 @@ sub _saveConfiguration {
     $$self{_CFG}{'defaults'}{'use login shell to connect'} = _($self, 'cbCfgUseShellToConnect')->get_active();
     $$self{_CFG}{'defaults'}{'audible bell'} = _($self, 'cbCfgAudibleBell')->get_active();
     $$self{_CFG}{'defaults'}{'terminal show status bar'} = _($self, 'cbCfgShowTerminalStatus')->get_active();
-    $$self{_CFG}{'defaults'}{'append group name'} = _($self, 'cbCfgAutoAppendGroupName')->get_active();
     $$self{_CFG}{'defaults'}{'change main title'} = _($self, 'cbCfgChangeMainTitle')->get_active();
     $$self{_CFG}{'defaults'}{'when no more tabs'} = _($self, 'rbOnNoTabsNothing')->get_active() ? 'last' : 'next';
     $$self{_CFG}{'defaults'}{'selection to clipboard'} = _($self, 'cbCfgSelectionToClipboard')->get_active();
@@ -1185,6 +1390,20 @@ sub _saveConfiguration {
     $$self{_CFG}{'defaults'}{'show favourites in unity'} = _($self, 'cbCfgShowFavOnUnity')->get_active();
     $$self{_CFG}{'defaults'}{'layout'} = _($self, 'comboLayout')->get_active_text();
     $$self{_CFG}{'defaults'}{'theme'} = _($self, 'comboTheme')->get_active_text();
+    if ($$self{_CFG}{'defaults'}{'theme'} eq 'system') {
+        my $combo_sys = eval { _($self, 'comboSystemIconTheme') };
+        if ($combo_sys) {
+            my $txt = $combo_sys->get_active_text // '';
+            $txt =~ s/^\s+|\s+$//g;
+            if ($txt ne '') { $$self{_CFG}{'defaults'}{'system icon theme override'} = $txt; }
+            else { delete $$self{_CFG}{'defaults'}{'system icon theme override'}; }
+            if ($txt ne '' && !_validate_system_icon_theme($txt)) {
+                _show_theme_warning($self, "Icon theme '$txt' not found (will fall back)." );
+            }
+        } else { delete $$self{_CFG}{'defaults'}{'system icon theme override'}; }
+    } else {
+        delete $$self{_CFG}{'defaults'}{'system icon theme override'};
+    }
 
     # Terminal colors
     $$self{_CFG}{'defaults'}{'color black'} = _($self, 'colorBlack')->get_color()->to_string();
@@ -1261,6 +1480,12 @@ sub _saveConfiguration {
     $self->_updateGUIPreferences();
 
     $PACMain::FUNCS{_MAIN}->_updateGUIPreferences();
+    # Refresh only when theme or override changed
+    my $changed = ($old_theme // '') ne ($$self{_CFG}{'defaults'}{'theme'} // '') || ($old_sys // '') ne ($$self{_CFG}{'defaults'}{'system icon theme override'} // '');
+    if ($changed) { eval { $PACMain::FUNCS{_MAIN}->_refresh_all_icons(); }; }
+    if ($changed) {
+        _show_restart_hint($self);
+    }
 
     # Send a signal to every started terminal for this $uuid to realize the new global CFG
     map {eval {$$_{'terminal'}->_updateCFG;};} (values %PACMain::RUNNING);
@@ -1282,5 +1507,80 @@ sub _updateCfgProxyKeePass {
 
 # END: Define PRIVATE CLASS functions
 ###################################################################
+
+# Enumerate available system icon themes (simple directory scan)
+sub _enumerate_system_icon_themes {
+    # Re-scan at most every 60 seconds
+    if ($CACHED_ICON_THEMES && (time - $CACHED_ICON_SCAN_TIME) < 60) {
+        return $CACHED_ICON_THEMES;
+    }
+    my @dirs = ("$ENV{HOME}/.local/share/icons", '/usr/share/icons');
+    my %themes;
+    for my $d (@dirs) {
+        next unless -d $d;
+        opendir(my $dh, $d) or next;
+        while (my $entry = readdir($dh)) {
+            next if $entry =~ /^\./;
+            my $path = "$d/$entry";
+            next unless -d $path;
+            if (-f "$path/index.theme") { $themes{$entry} = 1; }
+        }
+        closedir $dh;
+    }
+    my @list = sort grep { $_ !~ /cursor/i } keys %themes;
+    $CACHED_ICON_THEMES = \@list; $CACHED_ICON_SCAN_TIME = time;
+    return $CACHED_ICON_THEMES;
+}
+
+sub _validate_system_icon_theme {
+    my ($name) = @_;
+    return 1 unless defined $name && length $name;
+    my @dirs = ("$ENV{HOME}/.local/share/icons", '/usr/share/icons');
+    for my $d (@dirs) { return 1 if -f "$d/$name/index.theme"; }
+    return 0;
+}
+
+sub _show_theme_warning {
+    my ($self, $msg) = @_;
+    my $parent = eval { _($self, 'comboTheme')->get_parent } or return;
+    # Reuse existing label if present
+    if (!$self->{_theme_warn_label}) {
+        my $lbl = Gtk3::Label->new();
+        $lbl->set_name('lblThemeWarning');
+        $lbl->set_halign('start');
+        $parent->pack_start($lbl, 0,0,6);
+        $lbl->show_all();
+        $self->{_theme_warn_label} = $lbl;
+    }
+    $self->{_theme_warn_label}->set_markup('<span foreground="orange" size="small">' . Glib::Markup::escape_text($msg) . '</span>');
+    # Auto-clear after 6 seconds
+    Glib::Timeout->add(6000, sub { if ($self->{_theme_warn_label}) { $self->{_theme_warn_label}->set_text(''); } 0; });
+}
+
+sub _show_restart_hint {
+    my ($self) = @_;
+    my $parent = eval { _($self, 'comboTheme')->get_parent } or return;
+    if (!$self->{_restart_hint_label}) {
+        my $lbl = Gtk3::Label->new();
+        $lbl->set_name('lblRestartHint');
+        $lbl->set_halign('start');
+        $parent->pack_start($lbl, 0,0,6);
+        $lbl->show_all();
+        $self->{_restart_hint_label} = $lbl;
+    }
+    $self->{_restart_hint_label}->set_markup('<span foreground="steelblue" size="small">Some icons may require restart to fully update.</span>');
+}
+
+# After global vars, inject utility (idempotent) to guard duplicate packing
+our $_PACCONFIG__HAVE_WIDGET_BY_NAME ||= 1;
+sub _parent_has_child_named {
+    my ($parent,$name)=@_;
+    return 0 unless $parent && $parent->can('get_children');
+    my @chs = eval { $parent->get_children };
+    for my $c (@chs){
+        my $nm = eval { $c->get_name } // ''; return 1 if $nm eq $name;
+    }
+    return 0;
+}
 
 1;

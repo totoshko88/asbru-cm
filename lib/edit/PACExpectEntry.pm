@@ -37,6 +37,7 @@ use FindBin qw ($RealBin $Bin $Script);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -155,7 +156,9 @@ sub _buildExpectGUI {
     $w{bbox}->set_layout('GTK_BUTTONBOX_START');
 
     # Build 'add' button
-    $w{btnadd} = Gtk3::Button->new_from_stock('gtk-add');
+    $w{btnadd} = Gtk3::Button->new();
+    $w{btnadd}->set_image(PACIcons::icon_image('add_row','list-add'));
+    $w{btnadd}->set_always_show_image(1);
     $w{bbox}->add($w{btnadd});
 
     $w{help} = Gtk3::LinkButton->new('https://docs.asbru-cm.net/Manual/Connections/SSH/#expect');
@@ -163,7 +166,7 @@ sub _buildExpectGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
     $w{hbox}->pack_start($w{help}, 0, 1, 0);
 
     # Build a separator
@@ -249,12 +252,12 @@ sub _buildExpect {
     # Build first event_box and add a go-up arrow
     $w{ebup} = Gtk3::EventBox->new;
     $w{vbox1}->pack_start($w{ebup}, 1, 1, 0);
-    $w{ebup}->add(Gtk3::Image->new_from_stock('gtk-go-up', 'small-toolbar') );
+    $w{ebup}->add(PACIcons::icon_image('move_up','go-up'));
 
     # Build first event_box and add a go-down arrow
     $w{ebdown} = Gtk3::EventBox->new;
     $w{vbox1}->pack_start($w{ebdown}, 1, 1, 0);
-    $w{ebdown}->add(Gtk3::Image->new_from_stock('gtk-go-down', 'small-toolbar') );
+    $w{ebdown}->add(PACIcons::icon_image('move_down','go-down'));
 
     # Build a vbox for expect and send entries
     $w{vbox2} = Gtk3::VBox->new(0, 3);
@@ -368,7 +371,9 @@ sub _buildExpect {
     $w{onfailhbox}->pack_start($w{rbOnFailStop}, 1, 1, 0);
 
     # Build delete button
-    $w{btn} = Gtk3::Button->new_from_stock('gtk-delete');
+    $w{btn} = Gtk3::Button->new();
+    $w{btn}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $w{btn}->set_always_show_image(1);
     $w{btn}->set_valign('GTK_ALIGN_START');
     $w{hbox1}->pack_start($w{btn}, 0, 0, 0);
 
@@ -434,7 +439,7 @@ sub _buildExpect {
         # Copy
         push(@exec_menu_items, {
             label => 'Copy',
-            stockicon => 'gtk-copy',
+            logical_icon => 'copy_action', stockicon => 'gtk-copy',
             sensitive => ($w{active}->get_active()),
             code => sub {
                 $self->{_COPY_EXPECT}{'expect'} = $w{expect}->get_chars(0, -1);
@@ -456,7 +461,7 @@ sub _buildExpect {
         # Cut
         push(@exec_menu_items, {
             label => 'Cut',
-            stockicon => 'gtk-cut',
+            logical_icon => 'cut_action', stockicon => 'gtk-cut',
             sensitive => ($w{active}->get_active()),
             code => sub {
                 $self->{_COPY_EXPECT}{'expect'} = $w{expect}->get_chars(0, -1);
@@ -482,7 +487,7 @@ sub _buildExpect {
         # Paste ?
         push(@exec_menu_items, {
             label => 'Paste',
-            stockicon => 'gtk-paste',
+            logical_icon => 'paste_action', stockicon => 'gtk-paste',
             sensitive => (defined $self->{_COPY_EXPECT}),
             code => sub {
                 $w{expect}->set_text($self->{_COPY_EXPECT}{'expect'});
@@ -505,7 +510,7 @@ sub _buildExpect {
         # Delete
         push(@exec_menu_items, {
             label => 'Delete',
-            stockicon => 'gtk-delete',
+            logical_icon => 'delete_action', stockicon => 'gtk-delete',
             code => sub {
                 $$self{cfg} = $self->get_cfg();
                 splice(@{$$self{list}}, $w{position}, 1);
@@ -689,7 +694,7 @@ sub _buildExpect {
         push(@menu_items, {
             label => 'Use a command output as value',
             tooltip => 'The given command line will be locally executed, and its output (both STDOUT and STDERR) will be used to replace this value',
-            stockicon => 'gtk-execute',
+            logical_icon => 'execute_action', stockicon => 'gtk-execute',
             code => sub {
                 my $pos = $w{expect}->get_property('cursor_position');
                 $w{expect}->insert_text('<CMD:command to launch>', -1, $w{expect}->get_position);
@@ -782,7 +787,7 @@ sub _buildExpect {
         push(@menu_items, {
             label => 'Interactive user input',
             tooltip => 'User will be prompted to provide a value with a text box (free data type)',
-            stockicon => 'gtk-dialog-question',
+            logical_icon => 'question_action', stockicon => 'gtk-dialog-question',
             code => sub {
                 my $pos = $w{send}->get_property('cursor_position');
                 $w{send}->insert_text('<ASK:number>', -1, $w{send}->get_position);
@@ -794,7 +799,7 @@ sub _buildExpect {
         push(@menu_items, {
             label => 'Interactive user choose from list',
             tooltip => 'User will be prompted to choose a value form a user defined list separated with "|" (pipes without quotes)',
-            stockicon => 'gtk-dialog-question',
+            logical_icon => 'question_action', stockicon => 'gtk-dialog-question',
             code => sub {
                 my $pos = $w{send}->get_property('cursor_position');
                 $w{send}->insert_text('<ASK:descriptive line|opt1|opt2|...|optN>', -1, $w{send}->get_position);
@@ -806,7 +811,7 @@ sub _buildExpect {
         push(@menu_items, {
             label => 'Use a command output as value',
             tooltip => 'The given command line will be locally executed, and its output (both STDOUT and STDERR) will be used to replace this value',
-            stockicon => 'gtk-execute',
+            logical_icon => 'execute_action', stockicon => 'gtk-execute',
             code => sub {
                 my $pos = $w{send}->get_property('cursor_position');
                 $w{send}->insert_text('<CMD:command to launch>', -1, $w{send}->get_position);

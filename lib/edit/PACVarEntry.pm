@@ -37,6 +37,7 @@ use FindBin qw ($RealBin $Bin $Script);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -125,7 +126,9 @@ sub _buildVarGUI {
     $w{bbox}->set_layout('GTK_BUTTONBOX_START');
 
     # Build 'add' button
-    $w{btnadd} = Gtk3::Button->new_from_stock('gtk-add');
+    $w{btnadd} = Gtk3::Button->new();
+    $w{btnadd}->set_image(PACIcons::icon_image('add_row','list-add'));
+    $w{btnadd}->set_always_show_image(1);
     $w{bbox}->add($w{btnadd});
 
     $w{help} = Gtk3::LinkButton->new('https://docs.asbru-cm.net/Manual/Connections/SSH/#user-variables');
@@ -133,7 +136,7 @@ sub _buildVarGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
     $w{hbox}->pack_start($w{help}, 0, 1, 0);
 
     # Build a separator
@@ -217,7 +220,9 @@ sub _buildVar {
     $w{txt}->set_visibility(! $w{hide}->get_active);
 
     # Build delete button
-    $w{btn} = Gtk3::Button->new_from_stock('gtk-delete');
+    $w{btn} = Gtk3::Button->new();
+    $w{btn}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $w{btn}->set_always_show_image(1);
     $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 
     # Add built control to main container

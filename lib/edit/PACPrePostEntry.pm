@@ -37,6 +37,7 @@ use FindBin qw ($RealBin $Bin $Script);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -134,7 +135,9 @@ sub _buildPrePostGUI {
     $w{bbox}->set_layout('GTK_BUTTONBOX_START');
 
     # Build 'add' button
-    $w{btnadd} = Gtk3::Button->new_from_stock('gtk-add');
+    $w{btnadd} = Gtk3::Button->new();
+    $w{btnadd}->set_image(PACIcons::icon_image('add_row','list-add'));
+    $w{btnadd}->set_always_show_image(1);
     $w{bbox}->add($w{btnadd});
 
     $w{help} = Gtk3::LinkButton->new('https://docs.asbru-cm.net/Manual/Connections/SSH/#pre-post-exec');
@@ -142,7 +145,7 @@ sub _buildPrePostGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
     $w{hbox}->pack_start($w{help}, 0, 1, 0);
 
     # Build a separator
@@ -220,7 +223,9 @@ sub _buildPrePost {
     $w{default}->set_sensitive($command ne '');
 
     # Build delete button
-    $w{btn} = Gtk3::Button->new_from_stock('gtk-delete');
+    $w{btn} = Gtk3::Button->new();
+    $w{btn}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $w{btn}->set_always_show_image(1);
     $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 
     # Add built control to main container
@@ -315,7 +320,7 @@ sub _buildPrePost {
         push(@menu_items, {
             label => 'Use a command output as value',
             tooltip => 'The given command line will be locally executed, and its output (both STDOUT and STDERR) will be used to replace this value',
-            stockicon => 'gtk-execute',
+            logical_icon => 'execute_action', stockicon => 'gtk-execute',
             code => sub {
                 my $pos = $w{command}->get_property('cursor_position');
                 $w{command}->insert_text('<CMD:command to launch>', -1, $w{command}->get_position);

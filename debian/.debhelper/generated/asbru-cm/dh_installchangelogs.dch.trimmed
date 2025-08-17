@@ -1,0 +1,211 @@
+asbru-cm (7.0.0+modern28) unstable; urgency=medium
+
+  * RDP (xfreerdp): Improve initial dynamic-resolution startup size. Compute
+    near-full embed/container (or screen) WxH (~98%x96%) and pass explicit
+    /size:WxH instead of /size:100% to avoid tiny initial framebuffer.
+  * RDP (xfreerdp): Add ASBRU_DEBUG diagnostic line (RDP_AUTO_SIZE) with chosen size.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 08:40:00 +0300
+
+asbru-cm (7.0.0+modern27) unstable; urgency=medium
+
+  * Cosmic theme: guard Gtk4 priority constant (avoid bareword under strict).
+  * Cosmic SNI: use session connection request_name fallback (fix init error).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 08:25:00 +0300
+
+asbru-cm (7.0.0+modern26) unstable; urgency=medium
+
+  * Tray: debug print of active integration mode in PACMain.
+  * Cosmic SNI: refactor groundwork (previous release) – additional validation.
+  * RDP (xfreerdp): dynamic-resolution now adds /scale-desktop:100 /scale-device:100 and default /size:100% for full initial window.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 08:05:00 +0300
+
+asbru-cm (7.0.0+modern25) unstable; urgency=medium
+
+  * Cosmic tray: refactor SNI implementation (clean duplicated code, stable Introspect, retry logic).
+  * Cosmic tray: flush output after SNI registration for immediate logs.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 07:45:00 +0300
+
+asbru-cm (7.0.0+modern24) unstable; urgency=medium
+
+  * Cosmic tray: add ASBRU_FORCE_SNI env to force StatusNotifierItem mode.
+  * Cosmic tray: SNI registration retries with watcher + basic Introspect.
+  * Cosmic tray: robust ListNames handling (arrayref or scalar) and deferred watcher registration.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 07:30:00 +0300
+
+asbru-cm (7.0.0+modern23) unstable; urgency=medium
+
+  * Cosmic tray: fix SNI detection (use org.freedesktop.DBus ListNames instead of list_names).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 07:15:00 +0300
+
+asbru-cm (7.0.0+modern22) unstable; urgency=medium
+
+  * Cosmic tray: initial StatusNotifierItem (SNI) stub implementation via Net::DBus.
+  * Cosmic tray: auto-select SNI when watcher present and AppIndicator missing.
+  * Packaging: add libnet-dbus-perl dependency.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 07:00:00 +0300
+
+asbru-cm (7.0.0+modern21) unstable; urgency=medium
+
+  * Cosmic tray: add StatusNotifierWatcher presence detection + logging (SNI groundwork).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 06:40:00 +0300
+
+asbru-cm (7.0.0+modern20) unstable; urgency=medium
+
+  * Cosmic tray: add Gtk3 init (missing previously causing potential uninitialized widgets).
+  * Cosmic tray: verify AppIndicator::Indicator symbol exists; give install hint if missing.
+  * Cosmic tray: reuse Unity-style AppIndicator::Indicator creation for compatibility.
+  * Cosmic tray: safer fallback when AppIndicator unavailable or creation fails.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 06:25:00 +0300
+
+asbru-cm (7.0.0+modern19) unstable; urgency=medium
+
+  * Cosmic tray: correct AppIndicator introspection (use AppIndicator::Indicator factory).
+  * Cosmic tray: unified legacy/Ayatana detection order (legacy first, then Ayatana).
+
+asbru-cm (7.0.0+modern18) unstable; urgency=medium
+
+  * Cosmic: fix dual-GTK theme init (remove invalid conditional use syntax).
+  * Cosmic tray: bless object before detection (avoids method call on unblessed ref).
+  * Robust Cosmic integration: theme failure no longer aborts tray init.
+  * Env toggles: ASBRU_FORCE_APPINDICATOR / ASBRU_FORCE_NO_APPINDICATOR.
+  * Extended diagnostics: report integration mode & AppIndicator package.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 05:40:00 +0300
+
+asbru-cm (7.0.0+modern17) unstable; urgency=medium
+
+  * Cosmic: fix theme module syntax causing fallback to legacy tray.
+  * Make Cosmic theme load optional (failure no longer disables tray logic).
+  * Add env toggles: ASBRU_FORCE_APPINDICATOR / ASBRU_FORCE_NO_APPINDICATOR.
+  * Extended logging: integration mode + AppIndicator package reported.
+  * AppIndicator init now explicit and debuggable; safer dual Gtk3/4 init.
+  * Packaging refresh for Cosmic tray diagnostics.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 05:25:00 +0300
+
+asbru-cm (7.0.0+modern16) unstable; urgency=medium
+
+  * Cosmic: native Ayatana/AppIndicator tray integration (fallback to menubar).
+  * Connection method icons scaled to 16x16 using bundled SVG for theme independence.
+  * Added Recommends on gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 05:05:00 +0300
+
+asbru-cm (7.0.0+modern15) unstable; urgency=medium
+
+  * Icon system: complete logical_icon coverage across menus, tray, screenshots.
+  * Per-method tree icons: SSH/RDP/VNC/SFTP/Telnet/FTP distinct defaults.
+  * Licensing: update modernization fork copyright & email in LICENSE,
+    README, release notes, and about dialog.
+  * Lint: prepare stricter check for residual stockicon => 'gtk-*' without
+    logical_icon (added but initially non-fatal; will flip to fatal next).
+  * Packaging: version bump to modern15.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 03:05:00 +0300
+
+asbru-cm (7.0.0+modern14) unstable; urgency=medium
+
+  * Packaging: bump version to modern14 to clear lintian reused-version warning.
+  * Clean rebuild will remove stale orig.tar.xz to drop 'stable' distribution in .changes.
+  * No code changes; prep for menu logical_icon migration & further lint.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 02:45:00 +0300
+
+asbru-cm (7.0.0+modern13) unstable; urgency=medium
+
+  * Packaging: fix debian/tests/control duplicate Tests field (merge
+    lint-icons into primary stanza) so dpkg-source no longer errors.
+  * Autopkgtests: ensure lint-icons runs alongside smoke/vnc/rdp tests.
+  * Prep for menu logical_icon migration phase (no functional delta yet).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 02:05:00 +0300
+
+asbru-cm (7.0.0+modern12) unstable; urgency=medium
+
+  * Continue icon modernization: migrate PACPipe, PACPCC, PACCluster to
+    PACIcons (replace all Gtk3 stock usages) and extend lint-icons coverage.
+  * Complete icon migration: PACKeePass, PACKeyBindings, PACUtils dialogs,
+    method modules (SSH/SFTP/RDP/rdesktop/xfreerdp); add dialog/status
+    logical icons (ok/cancel/warning/error/question/yes/no/success/failure).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 01:35:00 +0300
+
+asbru-cm (7.0.0+modern11) unstable; urgency=medium
+
+  * Add modernization fork notice with repo link to LICENSE and README.
+  * Fix connections tree: leaf nodes were missing 'value' causing only groups to display.
+  * Add ASBRU_TREE_DEBUG env to log loaded connection nodes.
+  * Begin migration to Adwaita symbolic icons (group/add/edit/rename/delete buttons) via PACIcons.
+  * Continue migration: replaced remaining toolbar and tab icons with symbolic equivalents.
+  * Favourite toggle now swaps symbolic on/off icons via PACIcons.
+  * Add modern-icons.css and ASBRU_LARGE_ICONS env toggle for scalable icon sizing.
+  * Extend icon map (history/previous/next/save/wol/quick/cluster/scripts) and auto hi-dpi (GDK_SCALE>=2).
+  * Migrate lock/about/quit icons to symbolic (lock_on/off, about, quit).
+  * Add autopkgtest lint-icons to prevent regression to Gtk3 stock icon usage
+    in PACMain toolbar (foundation for future broader icon linting).
+  * Begin PACTerminal symbolic icon migration (execute, button bar toggle,
+    info tab, find dialog buttons) via PACIcons.
+  * Continue PACTerminal migration: status (connected/disconnected/expect/
+    cluster), tab close icons, button bar toggle dynamic updates.
+  * Complete PACTerminal stock icon removal (remaining tab close buttons,
+    dynamic button bar toggle, residual dialog elements).
+  * Migrate PACConfig icons (reset defaults, help links, start tree radio,
+    KeePass/protected/export YAML, proxy KPX) to symbolic via PACIcons.
+  * Migrate PACEdit icons (quick/save/close/help/keepass/term opts status) to
+    symbolic via PACIcons.
+  * Migrate edit/ submodules (ExecEntry, VarEntry, PrePostEntry, ExpectEntry,
+    TermOpts) to symbolic icons; mirror changes into installed copies.
+  * Expand lint-icons autopkgtest to cover PACTerminal, PACConfig, PACEdit and
+    migrated edit/ submodules ensuring zero Gtk3 stock usage regression.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 01:20:00 +0300
+
+asbru-cm (7.0.0+modern10) unstable; urgency=medium
+
+  * Add VNC runtime diagnostics (VNC_METHOD / VNC_CMD).
+  * Add DIAG about to spawn asbru_conn (full args/env).
+  * Add early DIAG in asbru_conn start.
+  * Add asbru_conn post-retrieve diagnostics.
+  * Wrap diagnostics behind ASBRU_TEST_VERBOSE and add autopkgtest vnc-
+    detect.
+  * autopkgtest vnc-detect: allow more instances + isolated DBus.
+  * autopkgtest vnc-detect: adjust grep to TEST_DIAG prefix.
+  * Add RDP diagnostics & autopkgtest rdp-detect.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 17 Aug 2025 01:02:23 +0300
+
+asbru-cm (7.0.0+modern2) trixie; urgency=medium
+
+  * Packaging: move RDP & VNC clients from Suggests to Depends to ensure
+    freerdp / rdesktop alternative and tigervnc / tightvnc viewers are
+    installed by default for out-of-the-box desktop session support.
+  * Prep for automated VNC method detection tests (TigerVNC vs RealVNC)
+    by guaranteeing viewer availability at install time.
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 16 Aug 2025 12:30:00 +0000
+
+asbru-cm (7.0.0+modern1) trixie; urgency=medium
+
+  * Modernization fork: GTK4/Wayland compatibility, Cosmic desktop guards
+  * Added author attribution (Anton Isaiev) and updated About dialog
+  * Stability fixes for Cosmic integration (guarded workspace/theme code)
+  * Added display server detection logging
+  * Fixed PACTrayCosmic constructor hash dereference bug
+  * Added optional ASBRU_DISABLE_COSMIC env to disable Cosmic features
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 16 Aug 2025 12:00:00 +0000
+
+asbru-cm (6.4.0+baseline) unstable; urgency=medium
+
+  * Upstream 6.4.0 baseline for modernization fork
+
+ -- Ásbrú Project Team <contact@asbru-cm.net>  Sun, 13 Nov 2022 22:00:00 +0100

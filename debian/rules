@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+
+# Minimal debhelper rules (AI-assisted modernization cleanup)
+
+
+%:
+	dh $@
+
+override_dh_install:
+	dh_install
+	# Install launcher wrapper to /usr/bin
+	mkdir -p debian/asbru-cm/usr/bin
+	echo '#!/bin/sh' > debian/asbru-cm/usr/bin/asbru-cm
+	echo 'exec perl /usr/share/asbru/asbru-cm "$$@"' >> debian/asbru-cm/usr/bin/asbru-cm
+	chmod 755 debian/asbru-cm/usr/bin/asbru-cm
+	# Ensure helper scripts are executable
+	chmod 755 debian/asbru-cm/usr/share/asbru/utils/anonymize.pl || true
+

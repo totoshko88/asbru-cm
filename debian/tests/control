@@ -1,0 +1,3 @@
+Tests: smoke, vnc-detect, rdp-detect, lint-icons
+Depends: @, tigervnc-viewer | xtightvncviewer, freerdp2-wayland | freerdp-x11, procps, perl, libgtk-3-perl
+Restrictions: superficial

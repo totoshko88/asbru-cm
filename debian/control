@@ -1,0 +1,23 @@
+# AI-ASSISTED MODERNIZATION: This packaging file was updated with AI assistance
+# for Ásbrú Connection Manager v7.0.0 to support GTK4 and modern dependencies
+Source: asbru-cm
+Section: net
+Priority: optional
+Maintainer: Anton Isaiev <totoshko88@gmail.com>
+Uploaders: Ásbrú Project Team <contact@asbru-cm.net>
+Build-Depends: debhelper-compat (= 13), libgtk-4-dev | libgtk-3-dev, libadwaita-1-dev, libvte-2.91-gtk4-dev | libvte-2.91-dev, gir1.2-gtk-4.0 | gir1.2-gtk-3.0, gir1.2-vte-3.91 | gir1.2-vte-2.91
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://www.asbru-cm.net
+Vcs-Git: https://github.com/asbru-cm/asbru-cm.git
+Vcs-Browser: https://github.com/asbru-cm/asbru-cm.git
+
+Package: asbru-cm
+Architecture: all
+# Added RDP & VNC clients (freerdp, rdesktop alternatives; tigervnc/tightvnc) to Depends so they are always available at runtime.
+Depends: ${perl:Depends}, ${misc:Depends}, perl, python3, libvte-2.91-gtk4-0 | libvte-2.91-0, libcairo-perl, libglib-perl, libpango-perl, libsocket6-perl, libexpect-perl, libyaml-perl, libcrypt-cbc-perl, libcryptx-perl, libgtk4-perl | libgtk3-perl, libnet-arp-perl, libossp-uuid-perl, openssh-client, libcrypt-rijndael-perl, libxml-parser-perl, libcanberra-gtk3-module | libcanberra-gtk-module, xdg-desktop-portal, libgtk4-simplelist-perl | libgtk3-simplelist-perl, gir1.2-vte-3.91 | gir1.2-vte-2.91, gir1.2-gtk-4.0 | gir1.2-gtk-3.0, libadwaita-1-0, ncat | nmap, libfile-which-perl, libcrypt-pbkdf2-perl, libio-socket-ssl-perl, libnet-ssleay-perl, libcrypt-x509-perl, libconvert-asn1-perl, freerdp2-wayland | freerdp-x11 | rdesktop, tigervnc-viewer | xtightvncviewer, libnet-dbus-perl
+Recommends: keepassxc, wl-clipboard, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1
+Suggests: telnet, ftp, mosh, cu | remote-tty, libx11-guitest-perl
+Description: Free and open-source connection manager
+ Ásbrú Connection Manager is a user interface that helps organizing
+ remote terminal sessions and automating repetitive tasks.

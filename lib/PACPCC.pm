@@ -38,6 +38,7 @@ use Encode;
 
 # GTK
 use Gtk3 '-init';
+use PACIcons; # symbolic icon mapping
 eval {require Gtk3::SourceView2;};
 my $SOURCEVIEW = ! $@;
 
@@ -215,13 +216,13 @@ sub _initGUI {
     $$self{_WINDOWPCC}{btnRestartAll} = Gtk3::Button->new_with_mnemonic('_Restart all');
     $hbox1->pack_start($$self{_WINDOWPCC}{btnRestartAll}, 0, 1, 0);
     $$self{_WINDOWPCC}{btnRestartAll}->set_tooltip_text("Restart (stop->start) *every* terminal in selected cluster");
-    $$self{_WINDOWPCC}{btnRestartAll}->set_image(Gtk3::Image->new_from_stock('gtk-refresh', 'button') );
+    $$self{_WINDOWPCC}{btnRestartAll}->set_image(PACIcons::icon_image('refresh','view-refresh'));
     $$self{_WINDOWPCC}{btnRestartAll}->set('can_focus', 0);
 
     $$self{_WINDOWPCC}{btnCloseAll} = Gtk3::Button->new_with_mnemonic('Close _ALL');
     $hbox1->pack_start($$self{_WINDOWPCC}{btnCloseAll}, 0, 1, 0);
     $$self{_WINDOWPCC}{btnCloseAll}->set_tooltip_text("Close *every* terminal in selected cluster");
-    $$self{_WINDOWPCC}{btnCloseAll}->set_image(Gtk3::Image->new_from_stock('gtk-close', 'button') );
+    $$self{_WINDOWPCC}{btnCloseAll}->set_image(PACIcons::icon_image('close','window-close'));
     $$self{_WINDOWPCC}{btnCloseAll}->set('can_focus', 0);
 
     $vbox1->pack_start(Gtk3::HSeparator->new, 1, 1, 0);
@@ -257,7 +258,7 @@ sub _initGUI {
 
     $$self{_WINDOWPCC}{entryData} = Gtk3::Entry->new;
     $$self{_WINDOWPCC}{hboxData}->pack_start($$self{_WINDOWPCC}{entryData}, 1, 1, 0);
-    $$self{_WINDOWPCC}{entryData}->set_icon_from_stock('primary', 'gtk-edit');
+    $$self{_WINDOWPCC}{entryData}->set_icon_from_icon_name('primary', 'document-edit-symbolic');
     $$self{_WINDOWPCC}{entryData}->drag_dest_unset;
 
     $$self{_WINDOWPCC}{cbApplyOnIntro} = Gtk3::CheckButton->new_with_label('Send on <INTRO>');
@@ -276,13 +277,13 @@ sub _initGUI {
 
     $$self{_WINDOWPCC}{btnLoadFile} = Gtk3::Button->new_with_mnemonic('_Open');
     $$self{_WINDOWPCC}{btnLoadFile}->set_tooltip_text('Load a text file');
-    $$self{_WINDOWPCC}{btnLoadFile}->set_image(Gtk3::Image->new_from_stock('gtk-open', 'button') );
+    $$self{_WINDOWPCC}{btnLoadFile}->set_image(PACIcons::icon_image('folder','document-open'));
     $$self{_WINDOWPCC}{btnLoadFile}->set('can_focus', 0);
     $hbTextBtn->pack_start($$self{_WINDOWPCC}{btnLoadFile}, 0, 0, 5);
 
     $$self{_WINDOWPCC}{btnSaveAsFile} = Gtk3::Button->new_with_mnemonic('_Save as...');
     $$self{_WINDOWPCC}{btnSaveAsFile}->set_tooltip_text('Save as a text file');
-    $$self{_WINDOWPCC}{btnSaveAsFile}->set_image(Gtk3::Image->new_from_stock('gtk-save-as', 'button') );
+    $$self{_WINDOWPCC}{btnSaveAsFile}->set_image(PACIcons::icon_image('save_as','document-save-as'));
     $$self{_WINDOWPCC}{btnSaveAsFile}->set('can_focus', 0);
     $hbTextBtn->pack_start($$self{_WINDOWPCC}{btnSaveAsFile}, 0, 0, 5);
 
@@ -310,7 +311,7 @@ sub _initGUI {
 
     $$self{_WINDOWPCC}{btnClearFile} = Gtk3::Button->new_with_mnemonic('Clea_r');
     $$self{_WINDOWPCC}{btnClearFile}->set_tooltip_text('Clear out all the data from the edit box');
-    $$self{_WINDOWPCC}{btnClearFile}->set_image(Gtk3::Image->new_from_stock('gtk-clear', 'button') );
+    $$self{_WINDOWPCC}{btnClearFile}->set_image(PACIcons::icon_image('delete','edit-clear'));
     $$self{_WINDOWPCC}{btnClearFile}->set('can_focus', 0);
     $hbTextBtn->pack_start($$self{_WINDOWPCC}{btnClearFile}, 0, 0, 5);
 
@@ -352,17 +353,17 @@ sub _initGUI {
 
     $$self{_WINDOWPCC}{btnAll} = Gtk3::Button->new_with_mnemonic('A_ll');
     $$self{_WINDOWPCC}{btnAll}->set_tooltip_text('Send the *all* the text to cluster (<Ctrl><INTRO>)');
-    $$self{_WINDOWPCC}{btnAll}->set_image(Gtk3::Image->new_from_stock('gtk-media-play', 'button') );
+    $$self{_WINDOWPCC}{btnAll}->set_image(PACIcons::icon_image('exec_run','media-playback-start'));
     $$self{_WINDOWPCC}{btnAll}->set('can_focus', 0);
     $hbbox0->pack_start($$self{_WINDOWPCC}{btnAll}, 0, 1, 0);
     $$self{_WINDOWPCC}{btnBlock} = Gtk3::Button->new_with_mnemonic('_Block');
     $$self{_WINDOWPCC}{btnBlock}->set_tooltip_text('Send current *block* text (that separated with blank lines up and down from the cursor position) to cluster (<Alt><INTRO>)');
-    $$self{_WINDOWPCC}{btnBlock}->set_image(Gtk3::Image->new_from_stock('gtk-indent', 'button') );
+    $$self{_WINDOWPCC}{btnBlock}->set_image(PACIcons::icon_image('edit','format-indent-more'));
     $$self{_WINDOWPCC}{btnBlock}->set('can_focus', 0);
     $hbbox0->pack_start($$self{_WINDOWPCC}{btnBlock}, 0, 1, 0);
     $$self{_WINDOWPCC}{btnSelection} = Gtk3::Button->new_with_mnemonic('_Selection');
     $$self{_WINDOWPCC}{btnSelection}->set_tooltip_text('Send the *selected* text to cluster');
-    $$self{_WINDOWPCC}{btnSelection}->set_image(Gtk3::Image->new_from_stock('gtk-select-all', 'button') );
+    $$self{_WINDOWPCC}{btnSelection}->set_image(PACIcons::icon_image('selection','edit-select-all'));
     $$self{_WINDOWPCC}{btnSelection}->set('can_focus', 0);
     $hbbox0->pack_start($$self{_WINDOWPCC}{btnSelection}, 0, 1, 0);
     $$self{_WINDOWPCC}{cbSubstitute} = Gtk3::CheckButton->new_with_label('Use Ásbrú variables');
@@ -376,23 +377,25 @@ sub _initGUI {
     my $hbbox1 = Gtk3::HButtonBox->new;
     $vbox0->pack_start($hbbox1, 0, 1, 5);
 
-    $$self{_WINDOWPCC}{btnClose} = Gtk3::Button->new_from_stock('gtk-close');
+    $$self{_WINDOWPCC}{btnClose} = Gtk3::Button->new();
+    $$self{_WINDOWPCC}{btnClose}->set_image(PACIcons::icon_image('close','window-close'));
+    $$self{_WINDOWPCC}{btnClose}->set_always_show_image(1);
     $$self{_WINDOWPCC}{btnClose}->set('can_focus', 0);
     $$self{_WINDOWPCC}{btnClusterAdmin} = Gtk3::Button->new_with_mnemonic('Cl_usters');
     $$self{_WINDOWPCC}{btnClusterAdmin}->set('can_focus', 0);
-    $$self{_WINDOWPCC}{btnClusterAdmin}->set_image(Gtk3::Image->new_from_stock('asbru-cluster-manager', 'button') );
+    $$self{_WINDOWPCC}{btnClusterAdmin}->set_image(PACIcons::icon_image('cluster','applications-system'));
     $$self{_WINDOWPCC}{btnSeparate} = Gtk3::Button->new_with_mnemonic('_Explode');
     $$self{_WINDOWPCC}{btnSeparate}->set('can_focus', 0);
     $$self{_WINDOWPCC}{btnSeparate}->set_tooltip_text("Separate and resize clustered windows to fit screen");
-    $$self{_WINDOWPCC}{btnSeparate}->set_image(Gtk3::Image->new_from_stock('gtk-fullscreen', 'button') );
+    $$self{_WINDOWPCC}{btnSeparate}->set_image(PACIcons::icon_image('execute','view-fullscreen'));
     $$self{_WINDOWPCC}{btnReTab} = Gtk3::Button->new_with_mnemonic('Re_Tab');
     $$self{_WINDOWPCC}{btnReTab}->set('can_focus', 0);
     $$self{_WINDOWPCC}{btnReTab}->set_tooltip_text("Put every independent connection window in PAC's main TAB");
-    $$self{_WINDOWPCC}{btnReTab}->set_image(Gtk3::Image->new_from_stock('gtk-leave-fullscreen', 'button') );
+    $$self{_WINDOWPCC}{btnReTab}->set_image(PACIcons::icon_image('close','view-restore'));
     $$self{_WINDOWPCC}{btnShowPipe} = Gtk3::Button->new_with_mnemonic('_Piped Output');
     $$self{_WINDOWPCC}{btnShowPipe}->set('can_focus', 0);
     $$self{_WINDOWPCC}{btnShowPipe}->set_tooltip_text("Show the window with the locally piped data");
-    $$self{_WINDOWPCC}{btnShowPipe}->set_image(Gtk3::Image->new_from_stock('gtk-index', 'button') );
+    $$self{_WINDOWPCC}{btnShowPipe}->set_image(PACIcons::icon_image('treelist','view-list'));
     $hbbox1->set_layout('GTK_BUTTONBOX_EDGE');
     $hbbox1->add($$self{_WINDOWPCC}{btnShowPipe});
     $hbbox1->add($$self{_WINDOWPCC}{btnSeparate});
@@ -826,9 +829,13 @@ sub _setupCallbacks {
 
     # Capture 'Explode' button clicked
     $$self{_WINDOWPCC}{btnSeparate}->signal_connect('clicked' => sub {
-        my $screen = Gtk3::Gdk::Screen::get_default();
-        my $sw = $screen->get_width();
-        my $sh = $screen->get_height() - 100;
+        my ($sw,$sh);
+        eval {
+            my $screen = Gtk3::Gdk::Screen::get_default();
+            if ($screen) { $sw = eval { $screen->get_width() }; $sh = eval { $screen->get_height() } }
+            1;
+        };
+        $sw ||= 1280; $sh = ($sh && $sh>200) ? ($sh-100) : 720;
         my $cluster = $$self{_WINDOWPCC}{comboTerminals}->get_active_text() // '';
         my $total = scalar(keys %{$$self{_WINDOWPCC}{cbSendToAll}->get_active() ? $$self{_RUNNING} : $$self{_CLUSTERS}{$cluster}}) or return 1;
 

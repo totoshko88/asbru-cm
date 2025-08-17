@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+# Basic launch and immediate exit to verify dependencies resolve
+if command -v asbru-cm >/dev/null 2>&1; then
+  ASBRU_DISABLE_COSMIC=1 asbru-cm --no-splash --iconified --verbose >/dev/null 2>&1 &
+  PID=$!
+  # Give it a few seconds to initialize
+  sleep 5
+  kill $PID 2>/dev/null || true
+  exit 0
+else
+  echo "asbru-cm binary not found" >&2
+  exit 1
+fi

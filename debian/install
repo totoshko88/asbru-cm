@@ -1,0 +1,8 @@
+asbru-cm /usr/share/asbru/
+lib /usr/share/asbru/
+res /usr/share/asbru/
+utils /usr/share/asbru/
+res/asbru-cm.desktop /usr/share/applications/
+res/org.asbru.cm.appdata.xml /usr/share/metainfo/
+res/asbru-cm.1 /usr/share/man/man1/
+res/asbru_bash_completion /usr/share/bash-completion/completions/asbru-cm

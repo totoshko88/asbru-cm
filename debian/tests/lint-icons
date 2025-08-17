@@ -1,0 +1,62 @@
+#!/bin/sh
+set -e
+
+# Lint to ensure we no longer use deprecated Gtk3 stock icons in PACMain toolbar area.
+# Fails build/autopkgtest if Gtk3::Image->new_from_stock appears in PACMain.pm
+# Extend later to other modules once migrated.
+
+modules="PACMain.pm PACTerminal.pm PACConfig.pm PACEdit.pm PACScreenshots.pm PACStatistics.pm PACScripts.pm PACPipe.pm PACPCC.pm PACCluster.pm PACKeePass.pm PACKeyBindings.pm PACUtils.pm method/PACMethod_ssh.pm method/PACMethod_sftp.pm method/PACMethod_rdesktop.pm method/PACMethod_xfreerdp.pm edit/PACExecEntry.pm edit/PACVarEntry.pm edit/PACPrePostEntry.pm edit/PACExpectEntry.pm edit/PACTermOpts.pm PACGlobalVarEntry.pm"
+
+echo "[lint-icons] Scanning migrated modules for legacy Gtk3::Image->new_from_stock calls"
+failed=0
+for m in $modules; do
+  if grep -q "Gtk3::Image->new_from_stock" lib/$m 2>/dev/null; then
+    echo "ERROR: Found legacy new_from_stock usages in lib/$m" >&2
+    grep -n "Gtk3::Image->new_from_stock" lib/$m >&2 || true
+    failed=1
+  fi
+  if grep -q "Gtk3::Button->new_from_stock" lib/$m 2>/dev/null; then
+    echo "ERROR: Found legacy new_from_stock button usages in lib/$m" >&2
+    grep -n "Gtk3::Button->new_from_stock" lib/$m >&2 || true
+    failed=1
+  fi
+  if grep -q "set_from_stock" lib/$m 2>/dev/null; then
+    echo "ERROR: Found legacy set_from_stock usages in lib/$m" >&2
+    grep -n "set_from_stock" lib/$m >&2 || true
+    failed=1
+  fi
+  if grep -Eq "add_buttons\(.*gtk-" lib/$m 2>/dev/null; then
+    echo "ERROR: Found legacy add_buttons gtk-* stock specifiers in lib/$m" >&2
+    grep -n "add_buttons" lib/$m | grep gtk- || true
+    failed=1
+  fi
+  if grep -Eq "new_with_buttons\(.*gtk-" lib/$m 2>/dev/null; then
+    echo "ERROR: Found legacy new_with_buttons gtk-* stock specifiers in lib/$m" >&2
+    grep -n "new_with_buttons" lib/$m | grep gtk- || true
+    failed=1
+  fi
+done
+
+# Phase 2: detect stockicon => 'gtk-*' entries lacking logical_icon (warning for now)
+legacy_missing=0
+for m in $modules; do
+  if grep -n "stockicon => 'gtk-" lib/$m 2>/dev/null | grep -v logical_icon >/tmp/lint_icons_tmp.$$ 2>/dev/null; then
+    if [ -s /tmp/lint_icons_tmp.$$ ]; then
+      echo "WARN: stockicon gtk-* without logical_icon in lib/$m:" >&2
+      cat /tmp/lint_icons_tmp.$$ >&2
+      legacy_missing=1
+    fi
+  fi
+done
+rm -f /tmp/lint_icons_tmp.$$
+
+if [ $failed -eq 1 ]; then
+  echo "[lint-icons] FAIL: legacy stock icon API detected" >&2
+  exit 1
+fi
+
+if [ $legacy_missing -eq 1 ]; then
+  echo "[lint-icons] OK (with warnings) - legacy stockicon references still present (gtk-*) but all critical APIs removed" >&2
+else
+  echo "[lint-icons] OK - no legacy stock icon calls detected in migrated modules" >&2
+fi

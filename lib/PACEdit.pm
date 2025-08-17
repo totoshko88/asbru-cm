@@ -47,6 +47,7 @@ use Config;
 # GTK
 use Gtk3 '-init';
 use Gtk3::SimpleList;
+use PACIcons; # Modern symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -68,7 +69,7 @@ my $APPNAME = $PACUtils::APPNAME;
 my $APPVERSION = $PACUtils::APPVERSION;
 my $RES_DIR = "$RealBin/res";
 my $AUTOSTART_FILE = "$RES_DIR/asbru_start.desktop";
-my $THEME_DIR = "$RES_DIR/themes/defualt";
+my $THEME_DIR = "$RES_DIR/themes/default";
 my $GLADE_FILE = "$RES_DIR/asbru.glade";
 my $INIT_CFG_FILE = "$RES_DIR/asbru.yml";
 my $CFG_DIR = $ENV{"ASBRU_CFG"};
@@ -137,15 +138,15 @@ sub show {
     my $title;
     if ($$self{_IS_NEW} eq 'quick') {
         _($self, 'btnSaveEdit')->set_label('_Start Connection');
-        _($self, 'btnSaveEdit')->set_image(Gtk3::Image->new_from_stock('asbru-quick-connect', 'button') );
+    _($self, 'btnSaveEdit')->set_image(PACIcons::icon_image('quick','system-run'));
         _($self, 'btnCloseEdit')->set_label('_Cancel Quick connect');
-        _($self, 'btnCloseEdit')->set_image(Gtk3::Image->new_from_stock('gtk-close', 'button') );
+    _($self, 'btnCloseEdit')->set_image(PACIcons::icon_image('close','window-close'));
         $title = "Quick Connect : $APPNAME (v$APPVERSION)";
     } else {
         _($self, 'btnSaveEdit')->set_label('_Save and Close');
-        _($self, 'btnSaveEdit')->set_image(Gtk3::Image->new_from_stock('gtk-save', 'button') );
+    _($self, 'btnSaveEdit')->set_image(PACIcons::icon_image('save','document-save'));
         _($self, 'btnCloseEdit')->set_label('_Close without saving');
-        _($self, 'btnCloseEdit')->set_image(Gtk3::Image->new_from_stock('gtk-close', 'button') );
+    _($self, 'btnCloseEdit')->set_image(PACIcons::icon_image('close','window-close'));
         $title = "Editing '$PACMain::FUNCS{_MAIN}{_CFG}{'environments'}{$$self{_UUID}}{'name'}' : $APPNAME (v$APPVERSION)";
     }
 
@@ -180,17 +181,17 @@ sub _initGUI {
 
     _($self, 'imgBannerEditIcon')->set_from_file($THEME_DIR . '/asbru-edit.svg');
     _($self, "linkHelpConn1")->set_label('');
-    _($self, "linkHelpConn1")->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    _($self, "linkHelpConn1")->set_image(PACIcons::icon_image('help_link','help-browser'));
     _($self, "linkHelpNetwokSettings")->set_label('');
-    _($self, "linkHelpNetwokSettings")->set_image(Gtk3::Image->new_from_stock('asbru-help', 'button'));
+    _($self, "linkHelpNetwokSettings")->set_image(PACIcons::icon_image('help_link','help-browser'));
 
     _($self, 'btnEditNetworkSettingsCheckKPX')->set_label('');
-    _($self, 'btnEditNetworkSettingsCheckKPX')->set_image(Gtk3::Image->new_from_stock('asbru-keepass', 'button') );
+    _($self, 'btnEditNetworkSettingsCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
 
     $$self{_SPECIFIC} = PACMethod->new();
     _($self, 'alignSpecific')->add($PACMethod::CONTAINER);
     _($self, 'alignTermOpts')->add(($$self{_TERMOPTS} = PACTermOpts->new())->{container});
-    _($self, 'imgTermOpts')->set_from_stock('asbru-terminal-ok-small', 'button');
+    _($self, 'imgTermOpts')->set_from_icon_name(PACIcons::icon_image('status_connected','network-transmit-receive')->get_icon_name,'button');
     _($self, 'alignVar')->add(($$self{_VARIABLES} = PACVarEntry->new())->{container});
     _($self, 'alignPreExec')->add(($$self{_PRE_EXEC} = PACPrePostEntry->new())->{container});
     _($self, 'alignPostExec')->add(($$self{_POST_EXEC} = PACPrePostEntry->new())->{container});
@@ -216,7 +217,7 @@ sub _initGUI {
     $$self{cbLogsShowHidden} = Gtk3::CheckButton->new_with_mnemonic('Show _hidden files');
     _($self, 'btnEditSaveSessionLogs')->set_extra_widget($$self{cbLogsShowHidden});
 
-    _($self, 'btnCheckKPX')->set_image(Gtk3::Image->new_from_stock('asbru-keepass', 'button') );
+    _($self, 'btnCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
     _($self, 'btnCheckKPX')->set_label('');
 
     _($self, 'btnSaveEdit')->set_use_underline(1);
@@ -737,7 +738,7 @@ sub _updateGUIPreferences {
     _($self, 'entryPassword')->set_text($$self{_CFG}{'environments'}{$uuid}{'pass'});
     _($self, 'cbCfgAuthFallback')->set_active(! $$self{_CFG}{'environments'}{$uuid}{'auth fallback'});
     _($self, 'comboMethod')->set_active($$self{_METHODS}{$$self{_CFG}{'environments'}{$uuid}{'method'}}{'position'} // 4);
-    _($self, 'imageMethod')->set_from_stock('asbru-' . $$self{_CFG}{'environments'}{$uuid}{'method'}, 'button');
+    require PACIcons; my $img_method = PACIcons::icon_image($$self{_CFG}{'environments'}{$uuid}{'method'}, 'asbru-' . $$self{_CFG}{'environments'}{$uuid}{'method'}); _($self, 'imageMethod')->set_from_pixbuf($img_method->get_pixbuf) if $img_method->get_storage_type eq 'pixbuf';
     _($self, 'entryTabWindowTitle')->set_text($$self{_CFG}{'environments'}{$uuid}{'title'} || "$$self{_CFG}{'environments'}{$uuid}{'name'} ");
     _($self, 'cbEditSendString')->set_active($$self{_CFG}{'environments'}{$uuid}{'send string active'});
     _($self, 'hboxEditSendString')->set_sensitive($$self{_CFG}{'environments'}{$uuid}{'send string active'});
@@ -797,11 +798,11 @@ sub _updateGUIPreferences {
     $self->__checkRBAuth();
 
     if ($$self{_CFG}{'environments'}{$uuid}{'_protected'}) {
-        _($self, 'imgProtectedEdit')->set_from_stock('asbru-protected', 'button');
+    require PACIcons; my $img_prot = PACIcons::icon_image('protected','asbru-protected'); _($self, 'imgProtectedEdit')->set_from_pixbuf($img_prot->get_pixbuf) if $img_prot->get_storage_type eq 'pixbuf';
         _($self, 'btnSaveEdit')->set_sensitive(0);
         _($self, 'lblProtectedEdit')->set_markup('Connection is <b><span foreground="#E60023">PROTECTED</span></b> against changes. You <b>can not</b> save changes.');
     } else {
-        _($self, 'imgProtectedEdit')->set_from_stock('asbru-unprotected', 'button');
+    require PACIcons; my $img_unprot = PACIcons::icon_image('lock_off','asbru-unprotected'); _($self, 'imgProtectedEdit')->set_from_pixbuf($img_unprot->get_pixbuf) if $img_unprot->get_storage_type eq 'pixbuf';
         _($self, 'btnSaveEdit')->set_sensitive(1);
         _($self, 'lblProtectedEdit')->set_markup('Connection is <b><span foreground="#04C100">UNPROTECTED</span></b> against changes. You <b>can</b> save changes.');
     }
