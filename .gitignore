@@ -3,3 +3,38 @@
 lib/lib
 lib/res
 /out
+
+# Build & packaging artifacts
+build/
+build_production/
+dist/deb/build/
+*.deb
+*.dsc
+*.tar.xz
+*.build
+*.buildinfo
+*.changes
+*.orig.tar.*
+build_*.log
+package_quality_report.txt
+lintian_detailed_report.txt
+current_application_test_log.md
+
+# Generated legacy or temporary source drops
+orig_*/
+legacy_6_4_0/
+
+# Tool/work directories
+packpack/
+pkginspect/
+deb/
+rpm/
+appimage/
+
+# Local config / debug helpers
+debug_config.pl
+test_config.pl
+scripts/gen_vnc_env.pl
+
+# Ignore editor state directories
+.kiro/
