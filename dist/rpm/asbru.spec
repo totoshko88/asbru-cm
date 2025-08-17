@@ -103,10 +103,17 @@ desktop-file-validate res/asbru-cm.desktop
 
 %install
 rm -rf %{buildroot}
-mkdir -p %{buildroot}/{%{_mandir}/man1,%{_bindir}}
-mkdir -p %{buildroot}/%{_datadir}/{%{name}/{lib,res,utils},applications}
-mkdir -p %{buildroot}/%{_bashcompletiondir}
-mkdir -p %{buildroot}/%{_datadir}/icons/hicolor/{24x24,64x64,256x256,scalable}/apps
+mkdir -p %{buildroot}%{_mandir}/man1
+mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_datadir}/%{name}/lib
+mkdir -p %{buildroot}%{_datadir}/%{name}/res
+mkdir -p %{buildroot}%{_datadir}/%{name}/utils
+mkdir -p %{buildroot}%{_datadir}/applications
+mkdir -p %{buildroot}%{_bashcompletiondir}
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/24x24/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/64x64/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/256x256/apps
+mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
 
 install -m 755 asbru-cm %{buildroot}/%{_bindir}/%{name}
 
