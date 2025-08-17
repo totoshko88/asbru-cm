@@ -30,6 +30,12 @@ pkginspect/
 deb/
 rpm/
 appimage/
+!dist/rpm/
+dist/rpm/build/
+dist/rpm/*.tar.gz
+!dist/rpm/asbru.spec
+!dist/rpm/build_rpm.sh
+!dist/rpm/BUILD_NOTE.txt
 
 # Local config / debug helpers
 debug_config.pl

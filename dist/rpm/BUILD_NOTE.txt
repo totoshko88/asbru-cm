@@ -1,0 +1,1 @@
+Source tarball ready for RPM build: dist/rpm/asbru-cm-7.0.0+modern41.tar.gz
