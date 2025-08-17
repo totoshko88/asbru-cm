@@ -61,7 +61,17 @@ use PACCompat;  # AI-assisted modernization: GTK3/GTK4 compatibility layer
 
 # VteTerminal (terminal widget)
 my $HAVE_VTE = 1;
-eval { require Vte; Vte->import(); 1 } or do { warn "WARNING: VTE not available ($@). Terminal functionality reduced.\n"; $HAVE_VTE=0; };
+# Check if VTE is already loaded (from ex/Vte.pm)
+if (defined $Vte::VTE_VERSION) {
+    # VTE already loaded successfully
+    $HAVE_VTE = 1;
+} else {
+    # Try to load VTE directly
+    eval { require Vte; Vte->import(); 1 } or do { 
+        warn "WARNING: VTE not available ($@). Terminal functionality reduced.\n"; 
+        $HAVE_VTE = 0; 
+    };
+}
 
 # END: Import Modules
 ###################################################################

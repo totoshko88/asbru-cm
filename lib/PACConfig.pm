@@ -48,6 +48,7 @@ use PACIcons; # Modern symbolic icon mapping
 
 # PAC modules
 use PACUtils;
+use PACWidgetUtils;
 use PACTermOpts;
 use PACGlobalVarEntry;
 use PACExecEntry;
@@ -946,7 +947,7 @@ sub _updateGUIPreferences {
                 my $chk = Gtk3::CheckButton->new_with_label('Force internal icon files (override system icons)');
                 $chk->set_name('cbForceInternalIcons');
                 $chk->set_active( $$cfg{'defaults'}{'force_internal_icons'} ? 1 : 0 );
-                $parent->pack_start($chk, 0,0,4);
+                PACWidgetUtils::safe_pack_start($parent, $chk, 0,0,4);
                 $chk->signal_connect(toggled => sub {
                     my $val = $chk->get_active ? 1 : 0;
                     $$self{_CFG}{'defaults'}{'force_internal_icons'} = $val;
@@ -978,7 +979,7 @@ sub _updateGUIPreferences {
                     unless (_parent_has_child_named($parent,'lblNoSystemIconThemes')) {
                     my $lbl = Gtk3::Label->new('No system icon themes found in ~/.local/share/icons or /usr/share/icons');
                     $lbl->set_name('lblNoSystemIconThemes');
-                    $parent->pack_start($lbl,0,0,6);
+                    PACWidgetUtils::safe_pack_start($parent, $lbl, 0,0,6);
                     $lbl->show_all();
                 }
                 }
@@ -988,7 +989,7 @@ sub _updateGUIPreferences {
                 foreach my $t (@$themes) { $combo_sys->append_text($t); }
                 # Avoid duplicate pack if already exists (race)
                 unless (_parent_has_child_named($parent,'comboSystemIconTheme')) {
-                $parent->pack_start($combo_sys, 0,0,6);
+                PACWidgetUtils::safe_pack_start($parent, $combo_sys, 0,0,6);
                 }
                 my $saved = $$cfg{'defaults'}{'system icon theme override'} // '';
                 if ($saved ne '') {

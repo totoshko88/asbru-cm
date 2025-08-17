@@ -47,23 +47,18 @@ sub import {
     };
     
     # If VTE 3.91 fails, fall back to VTE 2.91
-        if (!$vte_loaded) {
-            my $VTE_OK=0;
-            eval {
-                local $SIG{ALRM} = sub { die "VTE_INTROSPECTION_TIMEOUT" };
-                alarm 3;
-                Glib::Object::Introspection->setup(
-                    basename => 'Vte',
-                    version  => '2.91',
-                    package  => 'Vte'
-                );
-                alarm 0;
-                $VTE_OK=1;
-            };
-            if(!$VTE_OK){
-                warn "WARNING: VTE introspection failed or timed out ($@). Continuing without enhanced VTE bindings.\n";
-            }
-        }
+    if (!$vte_loaded) {
+        eval {
+            Glib::Object::Introspection->setup(
+                basename => 'Vte',
+                version => '2.91',
+                package => 'Vte'
+            );
+            $VTE_VERSION = '2.91';
+            $VTE_PACKAGE = 'Vte';
+            $vte_loaded = 1;
+        };
+    }
     
     # If neither version loads, die with helpful error
     if (!$vte_loaded) {
