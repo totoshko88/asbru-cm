@@ -29,7 +29,9 @@ packpack/
 pkginspect/
 deb/
 rpm/
-appimage/
+# AppImage scripts (track directory but ignore binary outputs)
+dist/appimage/build/*.AppImage
+dist/appimage/build/*.cid
 !dist/rpm/
 dist/rpm/build/
 dist/rpm/*.tar.gz
