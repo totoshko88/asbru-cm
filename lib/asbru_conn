@@ -1271,7 +1271,7 @@ if (defined $METHOD) {
         my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
         
         if ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD eq 'rdesktop')) {
-            # Enable rdesktop embedding - accept XID even if it seems invalid on Wayland
+            # Enhanced rdesktop embedding with Xwayland compatibility
             if ($module_guitest eq 'Y') {
                 my ($xpos, $ypos, $Xwidth, $Xheight, $borderWidth, $_screen) = GetWindowPos($$CFG{'tmp'}{'xid'});
                 if ($Xwidth > 3 && $Xheight > 1) {
@@ -1279,13 +1279,34 @@ if (defined $METHOD) {
                     $$CFG{'tmp'}{'height'} = $Xheight;
                 }
             }
-            # For rdesktop embedding, use direct password instead of stdin to avoid embedding issues
+            
+            # Enhanced rdesktop command for Wayland/Xwayland compatibility
+            my $rdesktop_opts = $CONNECT_OPTS;
+            
+            if ($is_wayland) {
+                # Wayland-specific rdesktop improvements
+                PACLogger::log_info("🔧 Optimizing rdesktop for Xwayland embedding...") if $ENV{ASBRU_DEBUG};
+                
+                # Add specific flags for better Xwayland compatibility
+                $rdesktop_opts .= " -P";  # Enable persistent bitmap caching for better performance
+                $rdesktop_opts .= " -z";  # Enable compression for Xwayland
+                $rdesktop_opts .= " -x l"; # Use LAN connection quality for Xwayland
+                
+                # Force specific color depth for better Xwayland embedding
+                if ($rdesktop_opts !~ /-a\s+\d+/) {
+                    $rdesktop_opts .= " -a 24";  # Force 24-bit color depth
+                }
+                
+                PACLogger::log_debug("🎨 Xwayland rdesktop opts: '$rdesktop_opts'") if $ENV{ASBRU_DEBUG};
+            }
+            
+            # Build rdesktop command with enhanced Xwayland support
             if ($MANUAL) {
-                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS $IP:$PORT";
-                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS $IP:$PORT";
+                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts $IP:$PORT";
+                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts $IP:$PORT";
             } else {
-                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '$PASS' $IP:$PORT";
-                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' $IP:$PORT";
+                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -u '$USER' -p '$PASS' $IP:$PORT";
+                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -u '$USER' -p '<<hidden_password>>' $IP:$PORT";
             }
         } elsif ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD =~ /^.*freerdp$/)) {
             # Enable xfreerdp embedding with improved Wayland support
@@ -1327,13 +1348,23 @@ if (defined $METHOD) {
             }
         } elsif (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '' && $$CFG{'tmp'}{'xid'} > 0) {
             if ($METHOD eq 'rdesktop') {
-                # rdesktop embedding syntax with direct password for embedding compatibility
+                # Enhanced rdesktop embedding fallback with Xwayland optimization
+                my $rdesktop_opts = $CONNECT_OPTS;
+                
+                if ($is_wayland) {
+                    PACLogger::log_info("🔧 Fallback: rdesktop Xwayland embedding optimization...") if $ENV{ASBRU_DEBUG};
+                    $rdesktop_opts .= " -P -z -x l";  # Performance flags for Xwayland
+                    if ($rdesktop_opts !~ /-a\s+\d+/) {
+                        $rdesktop_opts .= " -a 24";
+                    }
+                }
+                
                 if ($MANUAL) {
-                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
-                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -T \"$TITLE\" $IP:$PORT";
+                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -T \"$TITLE\" $IP:$PORT";
                 } else {
-                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
-                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
+                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
+                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $rdesktop_opts -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
                 }
             } else {
                 # xfreerdp embedding syntax
@@ -1341,13 +1372,29 @@ if (defined $METHOD) {
                 $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
             }
         } elsif ($METHOD eq 'rdesktop') {
-            # rdesktop without embedding - use direct password for consistency
+            # Enhanced rdesktop without embedding - optimized for Wayland
+            my $rdesktop_opts = $CONNECT_OPTS;
+            
+            if ($is_wayland) {
+                PACLogger::log_info("🖥️ Optimizing rdesktop for Xwayland (no embedding)...") if $ENV{ASBRU_DEBUG};
+                
+                # Add Xwayland optimization flags
+                $rdesktop_opts .= " -P";  # Persistent bitmap caching
+                $rdesktop_opts .= " -z";  # Compression
+                $rdesktop_opts .= " -x l"; # LAN connection quality
+                
+                # Ensure color depth is set for Xwayland
+                if ($rdesktop_opts !~ /-a\s+\d+/) {
+                    $rdesktop_opts .= " -a 24";
+                }
+            }
+            
             if ($MANUAL) {
-                $connection_cmd = "$METHOD $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
-                $connection_txt = "$METHOD $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+                $connection_cmd = "$METHOD $rdesktop_opts -T \"$TITLE\" $IP:$PORT";
+                $connection_txt = "$METHOD $rdesktop_opts -T \"$TITLE\" $IP:$PORT";
             } else {
-                $connection_cmd = "$METHOD $CONNECT_OPTS -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
-                $connection_txt = "$METHOD $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
+                $connection_cmd = "$METHOD $rdesktop_opts -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
+                $connection_txt = "$METHOD $rdesktop_opts -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
             }
         } elsif (($METHOD =~ /^.*freerdp$/) && (defined $PASS)) {
             $connection_cmd = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " /u:$USER /p:'$PASS'") . " /t:\"$TITLE\" /v:$IP:$PORT";
@@ -1512,6 +1559,18 @@ if ($METHOD ne 'PACShell') {
 # Spawn the session
 ctrl("SPAWNING:$connection_txt");
 my $external_dir = $ENV{'ASBRU_SUB_CWD'} // '.';
+
+# Special handling for rdesktop on Wayland - ensure proper DISPLAY
+if ($METHOD eq 'rdesktop' && $is_wayland) {
+    # Find Xwayland display for rdesktop
+    my $xwayland_display = $ENV{DISPLAY} || ':0';
+    if ($xwayland_display =~ /^:(\d+)$/) {
+        my $display_num = $1;
+        PACLogger::log_info("🎯 Setting DISPLAY=$xwayland_display for rdesktop on Xwayland") if $ENV{ASBRU_DEBUG};
+        $do_connection_cmd = "DISPLAY=$xwayland_display $do_connection_cmd";
+    }
+}
+
 $do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
 if (!$ENV{ASBRU_DEBUG}) {
     PACLogger::log_start("🚀 Establishing $METHOD connection...");
@@ -1641,6 +1700,17 @@ elsif (($METHOD =~ /^.*vncviewer$/) || ($METHOD eq 'VNC')) {
         ['^.*Conn:\s+[cC]onnected to host\s+.+\s+port\s+\d+.*$', sub {
             $CONNECTED = 1;
             ctrl("CONNECTED");
+        }],
+
+        # Found rdesktop SSL connection success
+        ['^.*Connection established using SSL.*$', sub {
+            $CONNECTED = 1;
+            if ($METHOD eq 'rdesktop' && $is_wayland) {
+                PACLogger::log_success("✅ rdesktop SSL connection established on Xwayland") if $ENV{ASBRU_DEBUG};
+                ctrl("CONNECTED:rdesktop SSL established");
+            } else {
+                ctrl("CONNECTED");
+            }
         }],
 
         # Found login string
