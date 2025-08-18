@@ -1,3 +1,19 @@
+asbru-cm (7.0.1) unstable; urgency=medium
+
+  * Critical: Fixed application hanging when creating local shell connections
+  * UI: Implemented proper dark theme support with background/text color adaptation
+  * GTK: Eliminated critical widget management warnings causing crashes
+  * Tabs: Fixed missing close buttons and tab creation failures
+  * RDP: Resolved window embedding issues for xfreerdp and rdesktop clients
+  * Wayland: Enhanced compatibility including COSMIC desktop support
+  * COSMIC: Native StatusNotifierItem (SNI) integration
+  * Performance: Added 5-second theme detection caching
+  * Safety: Implemented safe GTK widget packing functions
+  * Debug: Enhanced debugging output and error handling
+  * Packaging: Updated to version 7.0.1 with modernized README
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sun, 18 Aug 2025 03:30:00 +0000
+
 asbru-cm (7.0.0+modern41) unstable; urgency=medium
 
   * Icons: add force rescan support (--force-icon-rescan CLI or ASBRU_FORCE_ICON_RESCAN=1 env).

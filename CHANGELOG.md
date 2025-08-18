@@ -1,5 +1,40 @@
-- Added 'system' icon theme selection: enumerates installed system icon themes, preview button applies instantly, cached 60s. Handles empty system themes directory with inline notice. Early --version exit avoids full GTK init. Transparency auto-disabled if VTE library missing.
 # Changelog
+
+## 7.0.1 - 2025-08-18
+### 🔧 Critical Fixes
+- **Application Stability**: Fixed critical application hanging issue when creating local shell connections
+- **Dark Theme Support**: Implemented proper dark theme with background and text color adaptation
+- **GTK Widget Management**: Eliminated critical GTK warnings that caused application crashes
+- **Tab Management**: Fixed missing close buttons and tab creation failures
+- **RDP Embedding Enhanced**: Perfect window embedding with automatic X11 backend restart for Wayland compatibility
+- **Wayland Segmentation Fault**: Eliminated GtkSocket crashes by implementing intelligent X11 backend switching
+- **Wayland Compatibility**: Complete solution for RDP embedding on Wayland with transparent Xwayland integration
+
+### ✨ Enhancements  
+- **COSMIC Desktop Integration**: Native StatusNotifierItem (SNI) support for System76's COSMIC environment
+- **Enhanced Theme Detection**: Automatic system theme detection with 5-second performance caching
+- **Improved Error Handling**: Safe widget management preventing application freezes
+- **Xwayland Embedding**: Intelligent automatic fallback to X11 backend for RDP embedding on Wayland systems
+- **Better Debugging**: Enhanced debug output for easier troubleshooting
+- **Widget Safety**: Implemented safe GTK widget packing to prevent assertion failures
+
+### 🛠️ Technical Improvements
+- Fixed parameter filtering for mixed RDP client syntax (xfreerdp vs rdesktop)
+- Resolved METHOD variable initialization timing issues  
+- Enhanced window size detection with Wayland fallbacks
+- Improved XID generation and embedding system reliability
+- Eliminated child_focus method errors through safe wrapper functions
+
+### 📦 Packaging
+- Updated version to 7.0.1
+- Modernized README with fork-specific information
+- Added comprehensive installation instructions
+
+### 🧪 Tested On
+- ✅ PopOS 24.04 LTS (COSMIC Desktop)
+- ✅ Ubuntu 24.04 LTS  
+- ✅ Wayland display server
+- ✅ GTK3 environments
 
 ## modern41 - 2025-08-17
 ### Added

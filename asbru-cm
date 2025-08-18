@@ -85,6 +85,20 @@ BEGIN {
     # See https://www.perlmonks.org/?node_id=11109454
     delete $ENV{'GTK_OVERLAY_SCROLLING'};
 
+    # Auto-detect Wayland and force X11 backend for embedding compatibility
+    my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+    if ($is_wayland && !$ENV{ASBRU_X11_RESTART}) {
+        # Check if we're already running with pure X11 backend
+        my $current_backend = $ENV{GDK_BACKEND} || '';
+        if ($current_backend ne 'x11') {
+            # Since this is a connection manager, always use pure X11 backend on Wayland for embedding
+            print STDERR "🔄 INFO: Wayland detected, restarting with X11 backend for embedding compatibility\n";
+            $ENV{GDK_BACKEND} = 'x11';
+            $ENV{ASBRU_X11_RESTART} = '1';
+            exec($0, @ARGV);
+        }
+    }
+
     # Ensure ASBRU_ENV_FOR_EXTERNAL is defined
     # (it should be defined when running inside AppImage, otherwise must remain empty)
     if (!defined($ENV{'ASBRU_ENV_FOR_EXTERNAL'})) {

@@ -572,8 +572,13 @@ sub detect_display_server {
     
     my $detected_server = 'unknown';
     
-    # Check for Wayland first (most modern)
-    if ($ENV{WAYLAND_DISPLAY}) {
+    # Check if GDK_BACKEND is explicitly set to x11 (override Wayland detection)
+    if ($ENV{GDK_BACKEND} && $ENV{GDK_BACKEND} eq 'x11') {
+        $detected_server = 'x11';
+        print STDERR "PACCompat: Display server: x11 (forced via GDK_BACKEND)\n" if $ENV{ASBRU_DEBUG};
+    }
+    # Check for Wayland (but only if not forced to x11)
+    elsif ($ENV{WAYLAND_DISPLAY}) {
         $detected_server = 'wayland';
         
         # Additional Wayland compositor detection

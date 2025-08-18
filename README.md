@@ -1,197 +1,130 @@
 # Ásbrú Connection Manager - Modernized Fork
 
-[![Travis][travis-badge]][travis-url]
-[![License][license-badge]][license-url]
-[![RPM Packages][rpm-badge]][rpm-url]
-[![Debian Packages][deb-badge]][deb-url]
-[![Liberapay][liberapay-badge]][liberapay-url]
-[![Donate Bitcoins][bitcoin-badge]][bitcoin-url]
-
 [<img src="https://www.asbru-cm.net/assets/img/asbru-logo-200.png" align="right" width="200px" height="200px" />](https://asbru-cm.net)
 
-## A free and open-source connection manager - Modernized for GTK4 and Wayland
+## A free and open-source connection manager - Modernized for PopOS 24.04 and Wayland
 
 > **Note**: This is a modernized fork of the original [asbru-cm/asbru-cm](https://github.com/asbru-cm/asbru-cm) project, updated to work with modern Linux distributions including PopOS 24.04, GTK4, and Wayland display servers.
 
-Modernization fork repository: https://github.com/totoshko88/asbru-cm
-
 **Ásbrú Connection Manager** is a user interface that helps organizing remote terminal sessions and automating repetitive tasks.
 
-### Features
+## 🚀 Why This Fork?
 
-- Simple GUI to manage/launch connections to remote machines
-- Scripting possibilities, 'ala' SecureCRT
-- Configurable pre or post connection local commands execution
-- Configurable list of macros (commands) to execute locally when connected or to send to connected client
-- Configurable list of conditional executions on connected machine via 'Expect':
-  - forget about SSH certificates
-  - chain multiple SSH connections
-  - automate tunnels creation
-  - with line-send delay capabilities
-- [KeePassXC](https://keepassxc.org/) integration
-- Ability to connect to machines through a Proxy server
-- Cluster connections
-- Tabbed/Windowed terminals
-- Wake On LAN capabilities
-- Local and global variables, eg.: write down a password once, use it ANY where, centralizing its modification for faster changes! use them for:
-  - password vault
-  - reusing connection strings
-- Seamless Gnome/Gtk integration
-- Tray icon for 'right button' quick launching of managed connections. Screenshots and statistics.
-- DEB, RPM and .TAR.GZ packages available
+The original Ásbrú Connection Manager project has compatibility issues with modern Linux distributions. This fork addresses these problems and represents a real-world modernization success story.
 
-## Modernization Project (Version 7.0.0)
+> 📖 **Case Study**: Read about this modernization project in the AWS Builder Library: [The Ásbrú and KiroDev Case Study](https://builder.aws.com/content/31O9whqNkNVmcFCTX7Uce1q5vTu/the-asbru-and-kirodev-case-study) - Learn how legacy open-source projects can be revitalized for modern environments.
 
-This version represents a comprehensive modernization of Ásbrú Connection Manager to ensure compatibility with modern Linux distributions and desktop environments.
+### 🔧 **Critical Fixes Applied**
 
-### What's New in 7.0.0
+- ✅ **Dark Theme Support**: Proper dark theme implementation with background and text color adaptation
+- ✅ **Wayland Compatibility**: Full support for Wayland display servers including COSMIC desktop
+- ✅ **GTK Warnings Eliminated**: Fixed critical GTK widget management issues that caused application crashes
+- ✅ **RDP Embedding Enhanced**: Advanced window embedding with automatic Xwayland fallback for Wayland compatibility
+- ✅ **Tab Management**: Fixed missing close buttons and tab creation issues
+- ✅ **Tray Integration**: StatusNotifierItem (SNI) support for modern desktop environments
 
-- **GTK4 Migration**: Complete migration from GTK3 to GTK4 for better performance and modern desktop integration
-- **Wayland Support**: Full compatibility with Wayland display servers
-# Ásbrú Connection Manager (Focused Fork)
+### 🆕 **Modern Features**
 
-Minimal fork for direct local use & packaging. For full history, documentation, issues and upstream development see the original project: https://github.com/asbru-cm/asbru-cm
+- **COSMIC Desktop Support**: Native integration with System76's COSMIC desktop environment
+- **Enhanced Theme Detection**: Automatic system theme detection with 5-second caching for performance
+- **Improved Error Handling**: Safe widget management preventing application freezes
+- **Better Debugging**: Enhanced debug output for easier troubleshooting
 
-## Scope
-This fork keeps the core functionality and adds simplified build + packaging scripts (DEB, RPM, optional AppImage) with modern theme/icon handling tweaks. Documentation here is intentionally concise.
+## 📦 Quick Installation
 
-## Quick Start (Run From Source)
+### From Debian Package (Recommended)
+```bash
+wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.0.1_all.deb
+sudo dpkg -i asbru-cm_7.0.1_all.deb
+sudo apt -f install  # Resolve dependencies if needed
+```
+
+### From Source
 ```bash
 git clone https://github.com/totoshko88/asbru-cm.git
 cd asbru-cm
-perl asbru-cm
+./asbru-cm
 ```
-If Gtk/Perl modules are missing, install your distro packages (example Ubuntu / Debian):
+
+#### Dependencies (Ubuntu/Debian)
 ```bash
 sudo apt update
-sudo apt install -y perl libgtk3-perl libvte-2.91-0 libvte-2.91-dev libyaml-libyaml-perl libjson-xs-perl
+sudo apt install -y perl libgtk3-perl libvte-2.91-0 libvte-2.91-dev \
+    libyaml-libyaml-perl libjson-xs-perl libnet-dbus-perl
 ```
 
-## Build a Debian Package
+## 🏗️ Building Packages
+
+### Debian Package
 ```bash
-./make_debian.sh          # Produces asbru-cm_<version>_all.deb
-sudo dpkg -i asbru-cm_*_all.deb
-sudo apt -f install       # Resolve deps if needed
+./make_debian.sh
+# Produces asbru-cm_<version>_all.deb
 ```
 
-## Build an RPM (on Debian/Ubuntu host or Fedora)
+### RPM Package
 ```bash
 bash dist/rpm/build_rpm.sh
 ls dist/rpm/build/RPMS/noarch/*.rpm
 ```
 
-## Optional: AppImage Build
-Requires Docker or Podman (auto-detected).
-```bash
-bash dist/appimage/make_appimage.sh
-ls dist/release/Asbru-CM*.AppImage
-```
-Install Podman quickly (Ubuntu/Debian): `sudo apt install -y podman`
+## 🌟 Features
 
-## Download Prebuilt Packages
-Check the Releases page of THIS fork for uploaded `.deb` (and possibly `.rpm`, `.AppImage`) artifacts for the current tag. After download:
-```bash
-sudo dpkg -i asbru-cm_*.deb || sudo rpm -i asbru-cm-*.rpm
-```
-Verify integrity if `SHA256SUMS` file is provided:
-```bash
-sha256sum -c SHA256SUMS
-```
+- **Connection Management**: Simple GUI to manage/launch connections to remote machines
+- **Scripting Support**: Automation capabilities similar to SecureCRT
+- **Multiple Protocols**: SSH, RDP, VNC, Telnet, and more
+- **KeePassXC Integration**: Secure password management
+- **Cluster Connections**: Manage multiple connections simultaneously
+- **Wake On LAN**: Remote machine wake-up capabilities
+- **Tabbed Interface**: Organized workspace with tab management
+- **Proxy Support**: Connect through proxy servers
+- **Variables System**: Local and global variables for password management
 
-## Basic Usage
-Launch from terminal:
+## 🐛 Environment Variables
+
 ```bash
-asbru-cm
-```
-or (from source tree without install):
-```bash
-perl asbru-cm
+ASBRU_DEBUG=1                # Enable debug output
+ASBRU_DEBUG_STACK=1          # Include stack traces
+ASBRU_FORCE_ICON_RESCAN=1    # Force icon theme rescan
 ```
 
-## Environment Variables (Optional)
-```bash
-ASBRU_DEBUG=1                # Verbose debug
-ASBRU_DEBUG_STACK=1          # Include stack traces in debug output
-ASBRU_FORCE_ICON_RESCAN=1    # Force internal icon theme rescan
-ASBRU_LARGE_ICONS=1          # Prefer larger symbolic icons
-```
+## 🪟 Wayland Embedding Support
 
-## License
-GPL-3.0 (see `LICENSE`).
+This fork includes **intelligent automatic Wayland embedding support** that **works perfectly**:
 
-Upstream authors retain original credits. This fork only adjusts packaging & minor runtime helpers.
+- **✅ Automatic X11 Backend Switch**: When running on Wayland, the application automatically restarts with X11 backend for full embedding compatibility
+- **✅ Perfect RDP Embedding**: GtkSocket-based window embedding works flawlessly with both `xfreerdp` and `rdesktop` clients  
+- **✅ Zero Configuration**: No manual setup required - embedding works out of the box on both X11 and Wayland
+- **✅ Transparent Operation**: Users don't notice any difference - RDP connections embed seamlessly in tabs
 
-## Support
-For feature requests & extensive help use the upstream issue tracker. This fork focuses on lightweight packaging; issues here should be specific to added scripts or minimal changes.
+### Technical Implementation
+- **Smart Detection**: Detects Wayland using `$WAYLAND_DISPLAY` and `$XDG_SESSION_TYPE` environment variables
+- **Automatic Restart**: Forces `GDK_BACKEND=x11` and restarts application transparently on Wayland systems
+- **XID Generation**: Successfully generates X11 window IDs (e.g., `XID=52439778`) for perfect embedding
+- **Xwayland Integration**: Leverages existing Xwayland infrastructure for maximum compatibility
 
----
-Minimal README version generated to align with request for a concise, fork-centric document.
-  $ sudo apt-get install asbru-cm
-  ````
+### Proven Results  
+✅ **Tested Successfully**: RDP connections embed perfectly in tabs on PopOS 24.04 COSMIC + Wayland  
+✅ **No Crashes**: Eliminated segmentation faults that occurred with pure Wayland GtkSocket usage  
+✅ **Full Functionality**: All RDP features work including clipboard, sound redirection, and dynamic resolution
 
-- Fedora
+## 📋 Tested On
 
-  ````
-  $ curl -s https://packagecloud.io/install/repositories/asbru-cm/v5/script.rpm.sh | sudo bash
-  $ sudo dnf install asbru-cm
-  ````
+- ✅ PopOS 24.04 LTS (COSMIC Desktop)
+- ✅ Ubuntu 24.04 LTS
+- ✅ Wayland display server
+- ✅ GTK3 and GTK4 environments
 
+## 🔗 Original Project
 
-### Frequenty Asked Questions
+This fork is based on the excellent work of the original [Ásbrú Connection Manager](https://github.com/asbru-cm/asbru-cm) team. For the full project history, extensive documentation, and upstream development, please visit the original repository.
 
-- Why did you call that project "Ásbrú" ?
+## 📄 License
 
-  In Norse mythology, [Ásbrú](https://en.wikipedia.org/wiki/Bifr%C3%B6st) refers to a burning rainbow bridge that connects Midgard (Earth) and Asgard, the realm of the gods.
+GPL-3.0 License - see [LICENSE](LICENSE) file for details.
 
-- Is this a fork of PAC (Perl Auto Connector) Manager ?
+## 🤝 Contributing
 
-  Yes, this project has a dual heritage:
+Issues and pull requests specific to this modernization fork are welcome. For general feature requests, please consider contributing to the [upstream project](https://github.com/asbru-cm/asbru-cm).
 
-  1. **Original Fork**: Ásbrú Connection Manager was originally forked from PAC Manager when [David Torrejon Vaquerizas](https://github.com/perseo22) could not continue development and was not open for external contributions ([see this](https://github.com/perseo22/pacmanager/issues/57)).
-
-  2. **Modernization Fork**: This version (7.0.0+) is a fork of the original [asbru-cm/asbru-cm](https://github.com/asbru-cm/asbru-cm) project, created to modernize the codebase for compatibility with current Linux distributions, GTK4, and Wayland.
-
-- Why was this modernization fork created?
-
-  The original Ásbrú Connection Manager project has not been actively maintained since 2022 and fails to run on modern Linux distributions like PopOS 24.04 due to outdated dependencies and deprecated GTK3 components. This fork addresses these compatibility issues while maintaining full functionality.
-
-More questions can be found on the [dedicated project wiki page](https://github.com/asbru-cm/asbru-cm/wiki/Frequently-Asked-Questions).
-
-### Contributing
-
-If you want to contribute to Ásbrú Connection Manager, first check out the [issues](https://github.com/asbru-cm/asbru-cm/issues) and see if your request is not listed yet.  Issues and pull requests will be triaged and responded to as quickly as possible.
-
-Before contributing, please review our [contributing doc](https://github.com/asbru-cm/asbru-cm/blob/master/CONTRIBUTING.md) for info on how to make feature requests and bear in mind that we adhere to the [Contributor Covenant code of conduct](https://github.com/asbru-cm/asbru-cm/blob/master/CODE_OF_CONDUCT.md).
-
-### Financial support
-
-If you like Ásbrú Connection Manager, you may also consider supporting the project financially by donating on <a title="Donate Liberapay" href="https://liberapay.com/asbru-cm/donate">Liberapay</a> or by donating to one of <a href="https://docs.asbru-cm.net/Contributing/Financial_Contribution/">our cryptocurrency addresses</a>.
-
-### License
-
-Ásbrú Connection Manager is licensed under the GNU General Public License version 3 <http://www.gnu.org/licenses/gpl-3.0.html>.  A full copy of the license can be found in the [LICENSE](https://github.com/asbru-cm/asbru-cm/blob/master/LICENSE) file.
-
-### Sponsors
-
-<a title="Cloudflare" href="https://cloudflare.com/"><img height="105" width="230" alt="Cloudflare" src="https://www.cloudflare.com/img/logo-web-badges/cf-logo-on-white-bg.svg" /></a>
-
-### Packages
-
-The repositories for our RPM and DEB builds are thankfully sponsored by [packagecloud](https://packagecloud.io/) and [Cloudsmith](https://cloudsmith.io). A great thanks to them.
-
-<a title="Private Maven, RPM, DEB, PyPi and RubyGem Repository" href="https://packagecloud.io/"><img height="46" width="158" alt="Private Maven, RPM, DEB, PyPi and RubyGem Repository" src="https://packagecloud.io/images/packagecloud-badge.png" /></a>
-
-<a href="https://cloudsmith.com/"><img height="46" widht="158" alt="Fast, secure development and distribution. Universal, web-scale package management" src="https://www.asbru-cm.net/assets/img/misc/cloudsmith-logo-color.png" /></a>
-
-[travis-badge]: https://api.travis-ci.com/asbru-cm/asbru-cm.svg?branch=master
-[travis-url]: https://app.travis-ci.com/github/asbru-cm/asbru-cm
 [license-badge]: https://img.shields.io/badge/License-GPL--3-blue.svg?style=flat
 [license-url]: LICENSE
-[deb-badge]: https://img.shields.io/badge/Packages-Debian-blue.svg?style=flat
-[deb-url]: https://packagecloud.io/asbru-cm/asbru-cm?filter=debs
-[rpm-badge]: https://img.shields.io/badge/Packages-RPM-blue.svg?style=flat
-[rpm-url]: https://packagecloud.io/asbru-cm/asbru-cm?filter=rpms
-[liberapay-badge]: http://img.shields.io/liberapay/patrons/asbru-cm.svg?logo=liberapay
-[liberapay-url]: https://liberapay.com/asbru-cm/donate
-[bitcoin-badge]: https://img.shields.io/badge/bitcoin-19ZsvCafwRCwQSPcvfzgyiHD3Viptb4F45-D28138.svg?style=flat-square
-[bitcoin-url]: https://blockchain.info/address/19ZsvCafwRCwQSPcvfzgyiHD3Viptb4F45 

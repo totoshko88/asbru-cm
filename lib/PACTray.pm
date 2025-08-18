@@ -143,59 +143,123 @@ sub _initGUI {
 
     # Cosmic shell (Pop!_OS) no legacy tray: provide small helper window substitute
     if (!$embedded && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /COSMIC/i)) {
-        my $helper = Gtk3::Window->new('popup');
-        $helper->set_title($APPNAME . ' Tray');
-        $helper->set_resizable(FALSE);
-        my $img = Gtk3::Image->new_from_file($TRAYICON);
-        my $ebox = Gtk3::EventBox->new();
-        $ebox->add($img);
-        $helper->add($ebox);
-        $helper->set_default_size(24,24);
-        $helper->set_decorated(FALSE);
-        $helper->set_keep_above(TRUE);
-        $helper->stick;
-        $ebox->set_events(['button-press-mask','button-release-mask','pointer-motion-mask']);
-        my ($dragging,$dx,$dy) = (0,0,0);
-        $ebox->signal_connect('button-press-event' => sub {
-            my ($w,$ev) = @_;
-            if ($ev->button == 1) {
-                $dragging = 1; ($dx,$dy) = ($ev->x_root, $ev->y_root);
-            } elsif ($ev->button == 3) {
-                $self->_trayMenu($w,$ev);
+        print "INFO: Desktop environment detected: cosmic\n";
+        print "INFO: Using Cosmic tray integration (initializing)\n";
+        
+        # Try to integrate with system StatusNotifierItem protocol first
+        my $sni_success = eval {
+            require Net::DBus;
+            my $bus = Net::DBus->session;
+            
+            # Check if StatusNotifierWatcher is available
+            my $watcher_service = eval { $bus->get_service('org.kde.StatusNotifierWatcher') };
+            
+            if ($watcher_service) {
+                print "INFO: StatusNotifierWatcher present on session bus (SNI available)\n";
+                
+                # Create a unique service name based on PID
+                my $pid = $$;
+                my $service_name = "org.kde.StatusNotifierItem-$pid-1";
+                
+                # Export our StatusNotifierItem service
+                my $sni_service = $bus->export_service($service_name);
+                my $sni_object = PACTrayStatusNotifierItem->new($sni_service, $self);
+                
+                # Use the correct DBus export method
+                $bus->export_object('/StatusNotifierItem', 
+                    'org.kde.StatusNotifierItem', $sni_object);
+                
+                # Register with watcher
+                my $watcher = $watcher_service->get_object('/StatusNotifierWatcher');
+                $watcher->RegisterStatusNotifierItem($service_name);
+                
+                print "INFO: StatusNotifierItem registered ($service_name)\n";
+                print "INFO: SNI: Registered with StatusNotifierWatcher\n";
+                
+                return 1;
+            } else {
+                print "INFO: StatusNotifierWatcher not available\n";
+                return 0;
             }
-            return 1;
-        });
-        $ebox->signal_connect('button-release-event' => sub {
-            my ($w,$ev) = @_;
-            if ($ev->button == 1 && $dragging) {
-                $dragging = 0;
-                # Toggle main window if it was a click (no movement)
-                if (abs($ev->x_root - $dx) < 3 && abs($ev->y_root - $dy) < 3) {
-                    if ($$self{_MAIN}{_GUI}{main}->get_visible()) { $$self{_MAIN}->_hideConnectionsList(); }
-                    else { $$self{_MAIN}->_showConnectionsList(); }
+        };
+        
+        if ($@) {
+            print "WARN: SNI integration failed: $@\n";
+            $sni_success = 0;
+        }
+        
+        # If SNI integration failed, fall back to helper window
+        unless ($sni_success) {
+            print "INFO: Falling back to standard tray (Cosmic tray unavailable)\n";
+            
+            my $helper = Gtk3::Window->new('popup');
+            $helper->set_title($APPNAME . ' Tray');
+            $helper->set_resizable(FALSE);
+            my $img = Gtk3::Image->new_from_file($TRAYICON);
+            my $ebox = Gtk3::EventBox->new();
+            $ebox->add($img);
+            $helper->add($ebox);
+            $helper->set_default_size(24,24);
+            $helper->set_decorated(FALSE);
+            $helper->set_keep_above(TRUE);
+            $helper->stick;
+            
+            # Set window type hint for better panel integration  
+            $helper->set_type_hint('dock');
+            $helper->set_skip_taskbar_hint(TRUE);
+            $helper->set_skip_pager_hint(TRUE);
+            
+            $ebox->set_events(['button-press-mask','button-release-mask','pointer-motion-mask']);
+            my ($dragging,$dx,$dy) = (0,0,0);
+            $ebox->signal_connect('button-press-event' => sub {
+                my ($w,$ev) = @_;
+                if ($ev->button == 1) {
+                    $dragging = 1; ($dx,$dy) = ($ev->x_root, $ev->y_root);
+                } elsif ($ev->button == 3) {
+                    $self->_trayMenu($w,$ev);
                 }
-            }
-            return 1;
-        });
-        $ebox->signal_connect('motion-notify-event' => sub {
-            my ($w,$ev) = @_;
-            return 0 unless $dragging;
-            my $nx = $ev->x_root - 12; my $ny = $ev->y_root - 12;
-            $helper->move($nx,$ny);
-            return 1;
-        });
-        $helper->show_all();
-        # Position top-right after first frame (guard screen availability)
-    my $screen = eval { Gtk3::Gdk::Screen::get_default(); };
-        Glib::Idle->add(sub {
-            my $w = 800; # fallback width
-            if ($screen) {
-                eval { $w = $screen->get_width; 1 } or do { $w = 800; };
-            }
-            $helper->move($w-32,8);
-            0;
-        });
-        $$self{_TRAY_HELPER} = $helper;
+                return 1;
+            });
+            $ebox->signal_connect('button-release-event' => sub {
+                my ($w,$ev) = @_;
+                if ($ev->button == 1 && $dragging) {
+                    $dragging = 0;
+                    # Toggle main window if it was a click (no movement)
+                    if (abs($ev->x_root - $dx) < 3 && abs($ev->y_root - $dy) < 3) {
+                        if ($$self{_MAIN}{_GUI}{main}->get_visible()) { $$self{_MAIN}->_hideConnectionsList(); }
+                        else { $$self{_MAIN}->_showConnectionsList(); }
+                    }
+                }
+                return 1;
+            });
+            $ebox->signal_connect('motion-notify-event' => sub {
+                my ($w,$ev) = @_;
+                return 0 unless $dragging;
+                my $nx = $ev->x_root - 12; my $ny = $ev->y_root - 12;
+                $helper->move($nx,$ny);
+                return 1;
+            });
+            $helper->show_all();
+            
+            # Position in the top-right corner for COSMIC
+            my $screen = eval { Gtk3::Gdk::Screen::get_default(); };
+            Glib::Idle->add(sub {
+                my $w = 1600; # Cosmic default width for your screen  
+                my $h = 900;  # Cosmic default height for your screen
+                if ($screen) {
+                    eval { $w = $screen->get_width; $h = $screen->get_height; 1 } or do { $w = 1600; $h = 900; };
+                }
+                
+                # Position in top-right corner for COSMIC desktop
+                my $x = $w - 48;  # 48px from right edge 
+                my $y = 8;        # 8px from top edge (COSMIC has top panel)
+                
+                $helper->move($x, $y);
+                print "INFO: Positioned tray helper window at ($x, $y) on ${w}x${h} screen\n";
+                return 0;
+            });
+            $$self{_TRAY_HELPER} = $helper;
+        }
     }
 
     return 1;
@@ -298,5 +362,55 @@ sub _trayMenu {
 
 # END: Define PRIVATE CLASS functions
 ###################################################################
+
+###################################################################
+# StatusNotifierItem implementation for proper SNI integration
+package PACTrayStatusNotifierItem;
+
+sub new {
+    my ($class, $service, $tray_obj) = @_;
+    my $self = {
+        service => $service,
+        tray => $tray_obj,
+    };
+    bless $self, $class;
+    return $self;
+}
+
+# Required StatusNotifierItem methods
+sub Activate {
+    my ($self, $x, $y) = @_;
+    # Toggle main window visibility
+    my $tray = $self->{tray};
+    if ($$tray{_MAIN}{_GUI}{main}->get_visible()) { 
+        $$tray{_MAIN}->_hideConnectionsList(); 
+    } else { 
+        $$tray{_MAIN}->_showConnectionsList(); 
+    }
+}
+
+sub ContextMenu {
+    my ($self, $x, $y) = @_;
+    # Show context menu
+    my $tray = $self->{tray};
+    my $event = { x_root => $x, y_root => $y, button => 3 };
+    $tray->_trayMenu(undef, $event);
+}
+
+sub SecondaryActivate {
+    my ($self, $x, $y) = @_;
+    # Middle click - same as context menu
+    $self->ContextMenu($x, $y);
+}
+
+# SNI properties (required)
+sub Id { return "asbru-cm"; }
+sub Title { return "Ásbrú Connection Manager"; }  
+sub Category { return "ApplicationStatus"; }
+sub Status { return "Active"; }
+sub IconName { return "asbru-cm"; }
+sub ToolTip { 
+    return ("", [], "Ásbrú Connection Manager", "Connection Manager");
+}
 
 1;

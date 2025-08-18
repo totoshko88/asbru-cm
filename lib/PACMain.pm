@@ -80,6 +80,7 @@ use PACStatistics;
 use PACTree;
 use PACPipe;
 use PACScripts;
+use PACWidgetSafety;
 
 # END: Import Modules
 ###################################################################
@@ -2822,6 +2823,14 @@ sub __treeBuildNodeName {
     my $p_color = $$self{_CFG}{defaults}{'protected color'};
     my $p_uncolor = $$self{_CFG}{defaults}{'unprotected color'} // '#000000';
 
+    # Auto-adjust colors for system theme
+    if ($$self{_CFG}{defaults}{theme} eq 'system') {
+        my $auto_color = $self->_getSystemThemeTextColor();
+        if ($auto_color) {
+            $p_uncolor = $auto_color unless $protected;
+        }
+    }
+
     if ($name) {
         $name = __($name);
     } else {
@@ -2838,6 +2847,75 @@ sub __treeBuildNodeName {
     $name = "<span $pset$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
 
     return $name;
+}
+
+sub _getSystemThemeTextColor {
+    my $self = shift;
+    
+    # Cache the result to avoid repeated expensive calls
+    if (defined $$self{_CACHED_THEME_COLOR} && time() - $$self{_CACHED_THEME_TIME} < 5) {
+        return $$self{_CACHED_THEME_COLOR};
+    }
+    
+    # Try to detect if we're using a dark theme
+    my $is_dark = 0;
+    
+    # Method 1: Check COSMIC theme settings
+    if ($ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
+        # For COSMIC, check if the system prefers dark mode
+        my $cosmic_dark = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null` || '';
+        $is_dark = 1 if $cosmic_dark =~ /prefer-dark/;
+        
+        # Also check for dark window theme
+        my $window_theme = `gsettings get org.gnome.desktop.wm.preferences theme 2>/dev/null` || '';
+        $is_dark = 1 if $window_theme =~ /dark/i;
+        
+        # COSMIC specific: check for dark appearance 
+        my $cosmic_appearance = `dconf read /org/cosmic/desktop/appearance 2>/dev/null` || '';
+        $is_dark = 1 if $cosmic_appearance =~ /dark/i;
+    }
+    
+    # Method 2: Check GTK theme name
+    my $gtk_theme = $ENV{GTK_THEME} || `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+    $is_dark = 1 if $gtk_theme =~ /dark/i;
+    
+    # Method 3: Check if TreeView has dark background (heuristic)
+    if (!$is_dark && $$self{_GUI}{treeConnections}) {
+        eval {
+            my $style_context = $$self{_GUI}{treeConnections}->get_style_context();
+            if ($style_context) {
+                my $bg_color = $style_context->get_background_color('normal');
+                if ($bg_color && ref($bg_color) eq 'Gtk3::Gdk::RGBA') {
+                    # If background is dark (sum of RGB < 1.5), use light text
+                    my $brightness = $bg_color->red + $bg_color->green + $bg_color->blue;
+                    $is_dark = 1 if $brightness < 1.5;
+                }
+            }
+        };
+    }
+    
+    # Method 4: Heuristic - if current window has dark background, assume dark theme
+    if (!$is_dark && $$self{_GUI}{main}) {
+        eval {
+            my $style_context = $$self{_GUI}{main}->get_style_context();
+            if ($style_context) {
+                my $bg_color = $style_context->get_background_color('normal');
+                if ($bg_color && ref($bg_color) eq 'Gtk3::Gdk::RGBA') {
+                    my $brightness = $bg_color->red + $bg_color->green + $bg_color->blue;
+                    $is_dark = 1 if $brightness < 1.5;
+                }
+            }
+        };
+    }
+    
+    print STDERR "DEBUG: Theme detection - is_dark: $is_dark (cached for 5s)\n" if $ENV{ASBRU_DEBUG};
+    
+    # Cache the result
+    my $color = $is_dark ? '#e6e6e6' : '#000000';
+    $$self{_CACHED_THEME_COLOR} = $color;
+    $$self{_CACHED_THEME_TIME} = time();
+    
+    return $color;
 }
 
 sub _hasProtectedChildren {
@@ -4023,12 +4101,12 @@ sub _saveTreeExpanded {
 
     # Migration A hardening: treeConnections may be undefined if invoked very early (e.g., during startup autosave)
     if (!defined $tree || !ref($tree) || !eval { $tree->isa('Gtk3::TreeView') }) {
-        warn "WARN: _saveTreeExpanded called with invalid or uninitialized treeConnections object\n" if $ENV{ASBRU_DEBUG};
+        # This is normal during startup - tree not yet initialized
         return 0;
     }
     my $modelsort = eval { $tree->get_model };
     if (!$modelsort) {
-        warn "WARN: _saveTreeExpanded aborted: no model yet on treeConnections\n" if $ENV{ASBRU_DEBUG};
+        # Tree model not yet ready during startup
         return 0;
     }
 
@@ -4400,6 +4478,36 @@ sub _refresh_all_icons {
     return 1;
 }
 
+# Refresh tree node colors after theme change
+sub _refresh_tree_colors {
+    my $self = shift;
+    
+    return unless $$self{_GUI}{treeConnections};
+    
+    print STDERR "DEBUG: Refreshing tree colors for theme change\n" if $ENV{ASBRU_DEBUG};
+    
+    # Get current model
+    my $modelsort = $$self{_GUI}{treeConnections}->get_model();
+    return unless $modelsort;
+    my $model = $modelsort->get_model();
+    return unless $model;
+    
+    # Traverse all tree nodes and update their text
+    $model->foreach(sub {
+        my ($store, $path, $iter) = @_;
+        my $uuid = $store->get_value($iter, 2);
+        return 0 unless defined $uuid && $uuid ne '';
+        
+        # Rebuild node name with current theme colors
+        my $gui_name = $self->__treeBuildNodeName($uuid);
+        $store->set($iter, 1, $gui_name);
+        
+        return 0; # continue traversal
+    });
+    
+    print STDERR "DEBUG: Tree colors refreshed\n" if $ENV{ASBRU_DEBUG};
+}
+
 # Apply a system icon theme at runtime (used by preferences preview)
 sub _apply_system_icon_theme {
     my ($self, $theme) = @_;
@@ -4461,6 +4569,7 @@ sub _apply_internal_theme {
     }
     
     eval { $self->_refresh_all_icons(); };
+    eval { $self->_refresh_tree_colors(); };
     print STDERR "INFO: Applied internal icon theme '$theme'\n" if $ENV{ASBRU_DEBUG};
     return 1;
 }

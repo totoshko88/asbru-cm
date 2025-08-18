@@ -30,9 +30,17 @@ $|++;
 
 use strict;
 use warnings;
+use FindBin qw( $RealBin $Bin $Script );
+use lib "$RealBin";
+use PACLogger;
+
 BEGIN {
     if ($ENV{ASBRU_TEST_VERBOSE}) {
         eval { print STDERR "TEST_DIAG: asbru_conn start pid=$$ perl=$^X args=[@ARGV]\n"; };
+    }
+    # Debug: Check asbru_conn invocation
+    if ($ENV{ASBRU_DEBUG}) {
+        PACLogger::log_debug("asbru_conn invoked pid=$$ args=[@ARGV]");
     }
 }
 
@@ -1214,15 +1222,54 @@ if (defined $METHOD) {
     ##############################################
     elsif ($METHOD =~ /^.*RDP \((.+)\).*$/) {
         $HIDE_TERMINAL = 1;
-            # Debug + safety: clamp geometry if tiny
-            if ( ( ($$CFG{'tmp'}{'width'}||0) < 200 ) || ( ($$CFG{'tmp'}{'height'}||0) < 150 ) ) {
-                print STDERR "RDP_EMBED_WARN: tiny pre-size=$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} -> 1024x768 fallback\n" if $ENV{ASBRU_DEBUG};
-                $$CFG{'tmp'}{'width'} = 1024; $$CFG{'tmp'}{'height'} = 768;
-            }
-            print STDERR "RDP_EMBED: xid=$$CFG{'tmp'}{'xid'} size=$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} user=$USER dynres=".( ($CONNECT_OPTS =~ /dynamic-resolution/) ? 1:0 )."\n" if $ENV{ASBRU_DEBUG};
-        $METHOD = $1;
+        $METHOD = $1;  # Extract RDP method first
         _setProxy('RDP');
-        if ((defined $$CFG{'tmp'}{'xid'}) && ($METHOD eq 'rdesktop')) {
+        
+        # Debug + safety: clamp geometry if tiny
+        my $width = $$CFG{'tmp'}{'width'} || 0;
+        my $height = $$CFG{'tmp'}{'height'} || 0;
+        my $xid = $$CFG{'tmp'}{'xid'} || '';
+        
+        if ( ( $width < 200 ) || ( $height < 150 ) ) {
+            print STDERR "RDP_EMBED_WARN: tiny pre-size=${width}x${height} -> 1024x768 fallback\n" if $ENV{ASBRU_DEBUG};
+            $$CFG{'tmp'}{'width'} = 1024; $$CFG{'tmp'}{'height'} = 768;
+            $width = 1024; $height = 768;
+        }
+        print STDERR "RDP_EMBED: xid=$xid size=${width}x${height} user=$USER dynres=".( ($CONNECT_OPTS =~ /dynamic-resolution/) ? 1:0 )."\n" if $ENV{ASBRU_DEBUG};
+        # Debug XID status
+        if ($ENV{ASBRU_DEBUG}) {
+            my $xid_status = defined $$CFG{'tmp'}{'xid'} ? "defined='$$CFG{'tmp'}{'xid'}'" : "undefined";
+            PACLogger::log_debug("XID status: $xid_status");
+            PACLogger::log_debug("CONNECT_OPTS raw: '$CONNECT_OPTS'");
+            PACLogger::log_debug("METHOD: '$METHOD'");
+        }
+        
+        # Filter CONNECT_OPTS to remove incompatible parameters based on method
+        if ($METHOD =~ /^.*freerdp$/) {
+            # Remove rdesktop-specific parameters from CONNECT_OPTS for xfreerdp
+            $CONNECT_OPTS =~ s/\s+-[0-9]+\s*/ /g;  # Remove -5, -8, etc (connection speed)
+            $CONNECT_OPTS =~ s/\s+-a\s+\d+\s*/ /g;  # Remove -a 16 (color depth for rdesktop)
+            $CONNECT_OPTS =~ s/\s+-r\s+[^\s]+/ /g;  # Remove -r options (rdesktop redirections)
+            $CONNECT_OPTS =~ s/\s+-resolution\s*/ /g;  # Remove -resolution
+            $CONNECT_OPTS =~ s/\s+/ /g;  # Clean up multiple spaces
+            $CONNECT_OPTS =~ s/^\s+|\s+$//g;  # Trim leading/trailing spaces
+        } elsif ($METHOD eq 'rdesktop') {
+            # Remove xfreerdp-specific parameters from CONNECT_OPTS for rdesktop
+            $CONNECT_OPTS =~ s/\s+\/bpp:[^\s]+/ /g;  # Remove /bpp:24
+            $CONNECT_OPTS =~ s/\s+\/dynamic-resolution\s*/ /g;  # Remove /dynamic-resolution
+            $CONNECT_OPTS =~ s/\s+\/size:[^\s]+/ /g;  # Remove /size:99%
+            $CONNECT_OPTS =~ s/\s+/ /g;  # Clean up multiple spaces
+            $CONNECT_OPTS =~ s/^\s+|\s+$//g;  # Trim leading/trailing spaces
+        }
+        
+        if ($ENV{ASBRU_DEBUG}) {
+            PACLogger::log_debug("CONNECT_OPTS filtered: '$CONNECT_OPTS'");
+        }
+        # Check for Wayland to handle rdesktop compatibility
+        my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+        
+        if ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD eq 'rdesktop')) {
+            # Enable rdesktop embedding - accept XID even if it seems invalid on Wayland
             if ($module_guitest eq 'Y') {
                 my ($xpos, $ypos, $Xwidth, $Xheight, $borderWidth, $_screen) = GetWindowPos($$CFG{'tmp'}{'xid'});
                 if ($Xwidth > 3 && $Xheight > 1) {
@@ -1230,9 +1277,16 @@ if (defined $METHOD) {
                     $$CFG{'tmp'}{'height'} = $Xheight;
                 }
             }
-            $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER -p -") . " $IP:$PORT";
-            $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER -p -") . " $IP:$PORT";
-        } elsif ((defined $$CFG{'tmp'}{'xid'}) && ($METHOD =~ /^.*freerdp$/)) {
+            # For rdesktop embedding, use direct password instead of stdin to avoid embedding issues
+            if ($MANUAL) {
+                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS $IP:$PORT";
+                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS $IP:$PORT";
+            } else {
+                $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '$PASS' $IP:$PORT";
+                $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' $IP:$PORT";
+            }
+        } elsif ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD =~ /^.*freerdp$/)) {
+            # Enable xfreerdp embedding with improved Wayland support
             if ($module_guitest eq 'Y') {
                 my ($xpos, $ypos, $Xwidth, $Xheight, $borderWidth, $_screen) = GetWindowPos($$CFG{'tmp'}{'xid'});
                 my $name = GetWindowName($$CFG{'tmp'}{'xid'});
@@ -1248,14 +1302,51 @@ if (defined $METHOD) {
             if ($$CFG{'tmp'}{'height'} <= 1) {
                 $$CFG{'tmp'}{'height'} = 768;
             }
-            $connection_cmd = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
-            $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
-        } elsif (defined $$CFG{'tmp'}{'xid'}) {
-            $connection_cmd = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
-            $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
+            
+            # xfreerdp embedding syntax with Wayland compatibility
+            if ($is_wayland) {
+                # On Wayland, try parent-window first (may work with XWayland), fallback to wm-class
+                if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '' && $$CFG{'tmp'}{'xid'} > 0) {
+                    # Try parent-window embedding even on Wayland (XWayland compatibility)
+                    $connection_cmd = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
+                    $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
+                    PACLogger::log_debug("Wayland XID embedding: /parent-window:$$CFG{'tmp'}{'xid'}") if $ENV{ASBRU_DEBUG};
+                } else {
+                    # Fallback to WM_CLASS approach if XID unavailable
+                    $connection_cmd = "$METHOD /wm-class:asbru-rdp-$$CFG{'tmp'}{'uuid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
+                    $connection_txt = "$METHOD /wm-class:asbru-rdp-$$CFG{'tmp'}{'uuid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
+                    PACLogger::log_debug("Wayland WM_CLASS fallback: /wm-class:asbru-rdp-$$CFG{'tmp'}{'uuid'}") if $ENV{ASBRU_DEBUG};
+                }
+            } else {
+                # X11 embedding with traditional parent-window
+                $connection_cmd = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
+                $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
+                PACLogger::log_debug("X11 embedding: /parent-window:$$CFG{'tmp'}{'xid'}") if $ENV{ASBRU_DEBUG};
+            }
+        } elsif (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '' && $$CFG{'tmp'}{'xid'} > 0) {
+            if ($METHOD eq 'rdesktop') {
+                # rdesktop embedding syntax with direct password for embedding compatibility
+                if ($MANUAL) {
+                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+                } else {
+                    $connection_cmd = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
+                    $connection_txt = "$METHOD -X $$CFG{'tmp'}{'xid'} -g $$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
+                }
+            } else {
+                # xfreerdp embedding syntax
+                $connection_cmd = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'$PASS'") . " /v:$IP:$PORT";
+                $connection_txt = "$METHOD /parent-window:$$CFG{'tmp'}{'xid'} /size:$$CFG{'tmp'}{'width'}x$$CFG{'tmp'}{'height'} $CONNECT_OPTS" . ($MANUAL ? '' : " /u:'$USER' /p:'<<hidden_password>>'") . " /v:$IP:$PORT";
+            }
         } elsif ($METHOD eq 'rdesktop') {
-            $connection_cmd = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER -p -") . " -T \"$TITLE\" $IP:$PORT";
-            $connection_txt = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER -p -") . " -T \"$TITLE\" $IP:$PORT";
+            # rdesktop without embedding - use direct password for consistency
+            if ($MANUAL) {
+                $connection_cmd = "$METHOD $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+                $connection_txt = "$METHOD $CONNECT_OPTS -T \"$TITLE\" $IP:$PORT";
+            } else {
+                $connection_cmd = "$METHOD $CONNECT_OPTS -u '$USER' -p '$PASS' -T \"$TITLE\" $IP:$PORT";
+                $connection_txt = "$METHOD $CONNECT_OPTS -u '$USER' -p '<<hidden_password>>' -T \"$TITLE\" $IP:$PORT";
+            }
         } elsif (($METHOD =~ /^.*freerdp$/) && (defined $PASS)) {
             $connection_cmd = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " /u:$USER /p:'$PASS'") . " /t:\"$TITLE\" /v:$IP:$PORT";
             $connection_txt = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " /u:$USER /p:'<<hidden_password>>'") . " /t:\"$TITLE\" /v:$IP:$PORT";
@@ -1266,6 +1357,10 @@ if (defined $METHOD) {
             $connection_cmd = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER") . " $IP:$PORT -T \"$TITLE\"";
             $connection_txt = "$METHOD $CONNECT_OPTS" . ($MANUAL ? '' : " -u $USER") . " $IP:$PORT -T \"$TITLE\"";
         }
+    # Debug the actual command being executed
+    if ($ENV{ASBRU_DEBUG}) {
+        PACLogger::log_debug("Final RDP command: $connection_txt");
+    }
     ctrl("RDP_METHOD:$METHOD");
     ctrl("RDP_CMD:$connection_txt");
     }
@@ -1416,6 +1511,9 @@ if ($METHOD ne 'PACShell') {
 ctrl("SPAWNING:$connection_txt");
 my $external_dir = $ENV{'ASBRU_SUB_CWD'} // '.';
 $do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
+if (!$ENV{ASBRU_DEBUG}) {
+    PACLogger::log_start("Establishing $METHOD connection...");
+}
 $EXP->spawn("$do_connection_cmd 2>&1") or die "Cannot spawn '$connection_cmd: $!\n";
 ctrl("SPAWNED:'$connection_txt' (PID:$$)");
 

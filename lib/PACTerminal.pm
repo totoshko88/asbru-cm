@@ -99,6 +99,43 @@ my $NPOSY = 0;
 
 my $right_click_deep = 0;
 
+# Helper function for safe child_focus calls
+sub _safe_child_focus {
+    my $widget = shift;
+    my $direction = shift // 'GTK_DIR_TAB_FORWARD';
+    
+    if (defined $widget && ref($widget) && $widget->can('child_focus')) {
+        return $widget->child_focus($direction);
+    }
+    return 0;
+}
+
+# Helper function for safe widget packing to avoid gtk_box_pack warnings
+sub _safe_pack_widget {
+    my ($container, $widget, @pack_args) = @_;
+    
+    # Check if widget is valid
+    return 0 unless (defined $widget && ref($widget));
+    
+    # Check if widget already has a parent
+    if ($widget->can('get_parent') && defined $widget->get_parent()) {
+        if ($ENV{ASBRU_DEBUG}) {
+            print STDERR "DEBUG: Widget already has parent, removing first\n";
+        }
+        # Remove from current parent before adding to new container
+        $widget->get_parent()->remove($widget);
+    }
+    
+    # Now safely add to new container
+    if ($container->can('pack_start')) {
+        return $container->pack_start($widget, @pack_args);
+    } elsif ($container->can('add')) {
+        return $container->add($widget);
+    }
+    
+    return 0;
+}
+
 my $COL_GREEN = "\e[1;38;5;2m";
 my $COL_RED   = "\e[1;38;5;1m";
 my $COL_BLUE  = "\e[1;38;5;33m";
@@ -124,6 +161,9 @@ sub new {
     $self->{_MANUAL} = shift;
 
     $self->{_TABBED} = $self->{_CFG}{'environments'}{$$self{'_UUID'}}{'terminal options'}{'use personal settings'} ? $self->{_CFG}{'environments'}{$$self{'_UUID'}}{'terminal options'}{'open in tab'} // 1 : $self->{_CFG}{'defaults'}{'open connections in tabs'} // 1;
+    if($ENV{ASBRU_DEBUG}) {
+        print STDERR "DEBUG: Initial _TABBED=$$self{_TABBED} for UUID=$$self{_UUID}\n";
+    }
     if(!$HAVE_VTE){
         # Provide a minimal placeholder so rest of code can check _VTE existence gracefully
         $self->{_GUI}{_VTE} = Gtk3::TextView->new();
@@ -165,6 +205,39 @@ sub new {
     $self->{_FOCUSED} = 0;
     $self->{FOCUS} = 0;
     $self->{EMBED} = $self->{_CFG}{'environments'}{$$self{_UUID}}{'embed'};
+    
+    # Auto-enable embedding for RDP connections if not explicitly configured
+    my $method = eval { $self->{_CFG}{'environments'}{$$self{_UUID}}{'method'} } // '';
+    if (!$self->{EMBED} && $method =~ /freerdp|rdesktop/i) {
+        # Check if we're running under Wayland - GtkSocket doesn't work on Wayland
+        my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+        if ($is_wayland) {
+            # Try to use Xwayland for embedding instead of disabling
+            my $xwayland_display = $ENV{DISPLAY};
+            if ($xwayland_display && $xwayland_display =~ /^:\d+$/) {
+                if ($ENV{ASBRU_DEBUG}) {
+                    print STDERR "DIAG: Using Xwayland display $xwayland_display for EMBED on Wayland uuid=$self->{_UUID} method=$method\n";
+                }
+                # We can proceed with embedding using Xwayland
+                my $embed_config = $self->{_CFG}{'environments'}{$$self{_UUID}}{'embed'};
+                if (!defined($embed_config) || $embed_config eq '') {
+                    $self->{EMBED} = 1;
+                    print STDERR "DIAG: Auto-enabled EMBED for RDP connection in constructor uuid=$self->{_UUID} method=$method tabbed=$$self{_TABBED}\n" if $ENV{ASBRU_DEBUG};
+                }
+            } else {
+                if ($ENV{ASBRU_DEBUG}) {
+                    print STDERR "DIAG: No Xwayland available, skipping auto-enable EMBED for RDP connection uuid=$self->{_UUID} method=$method\n";
+                }
+            }
+        } else {
+            # Not on Wayland, normal embedding logic
+            my $embed_config = $self->{_CFG}{'environments'}{$$self{_UUID}}{'embed'};
+            if (!defined($embed_config) || $embed_config eq '') {
+                $self->{EMBED} = 1;
+                print STDERR "DIAG: Auto-enabled EMBED for RDP connection in constructor uuid=$self->{_UUID} method=$method tabbed=$$self{_TABBED}\n" if $ENV{ASBRU_DEBUG};
+            }
+        }
+    }
     $self->{EMBED_CHECK_COUNT} = 0;
     $self->{EMBED_CHECK_TIMEOUT} = 250; # in milliseconds
     $self->{EMBED_CHECK_TIMEOUT_ID} = undef;
@@ -330,6 +403,12 @@ sub start {
     my $self = shift;
     $$self{_KEYS_RECEIVE} = shift // undef;
 
+    # DEBUGGING: Check initial state at start of function
+    my $start_method = eval { $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} } // 'undefined';
+    my $current_embed = $$self{'EMBED'} // 'undefined';
+    my $config_embed = eval { $$self{_CFG}{'environments'}{$$self{_UUID}}{'embed'} } // 'undefined';
+    print "DEBUG START: Initial state - method='$start_method' UUID='$$self{_UUID}' current_embed='$current_embed' config_embed='$config_embed'\n";
+
     # Diagnostic: initial start invocation details
     if ($PACMain::FUNCS{_MAIN} && $PACMain::FUNCS{_MAIN}{_VERBOSE}) {
         my $m = eval { $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} } // 'undef';
@@ -395,60 +474,8 @@ sub start {
     $$self{_CFG}{'tmp'}{'uuid'} = $$self{_UUID_TMP};
 
     if ($$self{'EMBED'}) {
-        print STDERR "DIAG: EMBED mode active uuid=$$self{_UUID}\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
-        # Reset counter
-        $self->{EMBED_CHECK_COUNT} = 0;
-
-        # Create new socket window to plug the embed window from the other process (rdp, vnc, ...)
-        # (remove any remaining window before starting to add a new one)
-    $$self{_GUI}{_SOCKET} = Gtk3::Socket->new();
-    print STDERR "DIAG: Created Gtk3::Socket for embed uuid=$$self{_UUID}\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
-        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->foreach(sub {
-            $$self{_GUI}{_SOCKET_PARENT_WINDOW}->remove($_[0]);
-        });
-        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->add_with_viewport($$self{_GUI}{_SOCKET});
-
-        # Do not show until conncection is completed
-        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->hide();
-
-        # Retrieve (with polling) the XID of the window on which the external process will plug into
-        my $attempts = 0;
-        while ($attempts < 10) {
-            if ($$self{_GUI}{_SOCKET}->get_window()) {
-                $$self{_CFG}{'tmp'}{'xid'} = $$self{_GUI}{_SOCKET}->get_window()->get_xid();
-                $$self{FOCUS} = $$self{_GUI}{_SOCKET};
-                print STDERR "DIAG: Embed XID=$$self{_CFG}{'tmp'}{'xid'} uuid=$$self{_UUID} attempts=$attempts\n" if $ENV{ASBRU_DEBUG};
-                last;
-            }
-            select(undef,undef,undef,0.05); # 50ms
-            $attempts++;
-        }
-        if (!defined $$self{_CFG}{'tmp'}{'xid'}) {
-            _vteFeed($$self{_GUI}{_VTE}, " !! ${COL_RED}WARN${COL_RESET}: embed XID not ready, falling back to separate window.\r\n\n") if $$self{_GUI}{_VTE};
-            print STDERR "WARN: Gtk3::Socket no XID after polling uuid=$$self{_UUID} -> disabling EMBED for this session\n";
-            delete $$self{_CFG}{'tmp'}{'xid'}; # ensure asbru_conn treats as non-embed
-            $$self{'EMBED'} = 0;
-        }
-
-        # Update GUI before querying the size of the embed window
-        Gtk3::main_iteration() while Gtk3::events_pending();
-
-        # Get available size for the embed window
-        $$self{_CFG}{'tmp'}{'width'} = $$self{_GUI}{_VBOX}->get_allocated_width();
-        $$self{_CFG}{'tmp'}{'height'} = $$self{_GUI}{_VBOX}->get_allocated_height() - $$self{_GUI}{bottombox}->get_allocated_height();
-        if (defined($$self{_GUI}{_MACROSBOX}) && $$self{_GUI}{_MACROSBOX}->get_visible()) {
-            $$self{_CFG}{'tmp'}{'height'} -= $$self{_GUI}{_MACROSBOX}->get_allocated_height();
-        }
-        eval {
-            $PACMain::FUNCS{_MAIN}{_GUI}{vboxCommandPanel}->get_visible() or $$self{_CFG}{'tmp'}{'width'} += $PACMain::FUNCS{_MAIN}{_GUI}{vboxCommandPanel}->get_allocated_width();
-        };
-        # Clamp geometry if unrealistically small (prevents tiny embedded surface freezing freerdp UI)
-        if (($$self{_CFG}{'tmp'}{'width'}||0) < 200 || ($$self{_CFG}{'tmp'}{'height'}||0) < 150) {
-            print STDERR "WARN: EMBED geometry too small (".( $$self{_CFG}{'tmp'}{'width'}||'?' )."x".( $$self{_CFG}{'tmp'}{'height'}||'?' ).") -> using 1024x768 fallback\n" if $ENV{ASBRU_DEBUG};
-            $$self{_CFG}{'tmp'}{'width'} = 1024;
-            $$self{_CFG}{'tmp'}{'height'} = 768;
-        }
-        print STDERR "DIAG: EMBED final geom=$$self{_CFG}{'tmp'}{'width'}x$$self{_CFG}{'tmp'}{'height'} xid=".( $$self{_CFG}{'tmp'}{'xid'} // 'none')." uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+        print STDERR "DIAG: EMBED mode enabled for connection uuid=$$self{_UUID}\n" if ($PACMain::FUNCS{_MAIN} && $PACMain::FUNCS{_MAIN}{_VERBOSE});
+        # EMBED initialization will be done when connection starts and GUI is ready
     } else {
         delete $$self{_CFG}{'tmp'}{'xid'};
         delete $$self{_CFG}{'tmp'}{'width'};
@@ -460,6 +487,14 @@ sub start {
     $new_cfg{'defaults'} = dclone($$self{_CFG}{'defaults'});
     $new_cfg{'environments'}{$$self{_UUID}} = dclone($$self{_CFG}{'environments'}{$$self{_UUID}});
     $new_cfg{'tmp'} = dclone($$self{_CFG}{'tmp'});
+    
+    # Debug: check XID in config before saving
+    if ($ENV{ASBRU_DEBUG}) {
+        my $saved_xid = $new_cfg{'tmp'}{'xid'} // 'undefined';
+        my $current_xid = $$self{_CFG}{'tmp'}{'xid'} // 'undefined';
+        print STDERR "DEBUG: Config XID before save: current=$current_xid, saved=$saved_xid\n";
+    }
+    
     if (defined $$self{_MANUAL}) {
         $new_cfg{'environments'}{$$self{_UUID}}{'auth type'} = $$self{_MANUAL};
     }
@@ -468,7 +503,33 @@ sub start {
         $PACMain::SOCKS5PORTS{$$self{_UUID_TMP}} = $SOCKS5PORT;
         $new_cfg{'tmp'}{'randomSocksTunnel'} = $SOCKS5PORT;
     }
+    
+    # Initialize embedding if enabled and GUI is ready (before saving config)
+    if ($$self{'EMBED'} && !$$self{_CFG}{'tmp'}{'xid'}) {
+        print STDERR "DIAG: Initializing EMBED socket before spawning connection uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+        my $result = _initEmbedSocket($self);
+        if ($result && $$self{_CFG}{'tmp'}{'xid'}) {
+            print STDERR "DIAG: EMBED socket initialized successfully, XID=$$self{_CFG}{'tmp'}{'xid'}\n" if $ENV{ASBRU_DEBUG};
+            # Update new_cfg with the generated XID
+            $new_cfg{'tmp'}{'xid'} = $$self{_CFG}{'tmp'}{'xid'};
+            $new_cfg{'tmp'}{'width'} = $$self{_CFG}{'tmp'}{'width'};
+            $new_cfg{'tmp'}{'height'} = $$self{_CFG}{'tmp'}{'height'};
+        } else {
+            print STDERR "WARN: EMBED socket initialization failed, disabling embedding\n";
+            $$self{'EMBED'} = 0;
+            delete $$self{_CFG}{'tmp'}{'xid'};
+        }
+    }
+    
     nstore(\%new_cfg, $$self{_TMPCFG}) or die"ERROR: Could not save Ásbrú config file '$$self{_TMPCFG}': $!";
+    
+    # Debug: Final config saved to asbru_conn
+    if ($ENV{ASBRU_DEBUG}) {
+        my $final_xid = $new_cfg{'tmp'}{'xid'} // 'undefined';
+        my $final_embed = $$self{'EMBED'} // 'undefined';
+        print STDERR "DEBUG: Final config saved: XID=$final_xid EMBED=$final_embed tmpcfg=$$self{_TMPCFG}\n";
+    }
+    
     undef %new_cfg;
 
     # Delete the oldest auto-saved session log
@@ -937,20 +998,34 @@ sub _initGUI {
 
     # New TAB:
     if ($$self{_TABBED}) {
+        if ($ENV{ASBRU_DEBUG}) {
+            print STDERR "DEBUG: Creating tabbed GUI for UUID=$$self{_UUID} TITLE='$$self{_TITLE}' EMBED=$$self{EMBED}\n";
+        }
         # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
         $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
         $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
         $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($$self{_TITLE});
-        $$self{_GUI}{_TABLBL}{_EBLBL}->add($$self{_GUI}{_TABLBL}{_LABEL});
+        # First add to parent container
         $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
+        # Then add child to eventbox
+        $$self{_GUI}{_TABLBL}{_EBLBL}->add($$self{_GUI}{_TABLBL}{_LABEL});
         my $eblbl1 = Gtk3::EventBox->new();
-    $eblbl1->add(PACIcons::icon_image('tab_close','window-close'));
+        # Create a new image widget each time to avoid GTK widget parent conflicts
+        my $close_icon = Gtk3::Image->new_from_icon_name('window-close-symbolic', 'menu');
+        $eblbl1->add($close_icon);
+        if ($ENV{ASBRU_DEBUG}) {
+            print STDERR "DEBUG: TAB_CLOSE_BUTTON created for UUID=$$self{_UUID} TITLE='$$self{_TITLE}' EMBED=$$self{EMBED}\n";
+        }
         $eblbl1->signal_connect('button_release_event' => sub {
             if ($_[1]->button != 1) {
                 return 0;
             }
             $self->stop(undef, 1);
         });
+        # Safe pack with validation
+        if ($eblbl1->get_parent()) {
+            $eblbl1->get_parent()->remove($eblbl1);
+        }
         $$self{_GUI}{_TABLBL}->pack_start($eblbl1, 0, 1, 0);
 
         $$self{_GUI}{_TABLBL}{_EBLBL}->signal_connect('button_press_event' => sub {
@@ -978,9 +1053,9 @@ sub _initGUI {
         $tabs->set_current_page(-1);
         if (! $$self{_CFG}{'environments'}{$$self{_UUID}}{'embed'}) {
             if ($$self{_FOCUSED}) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
             }
-            if (defined $$self{FOCUS} && defined $$self{FOCUS}->get_window()) {
+            if (defined $$self{FOCUS} && $$self{FOCUS} && $$self{FOCUS}->can('get_window') && defined $$self{FOCUS}->get_window()) {
                 $$self{FOCUS}->get_window()->show();
             }
         }
@@ -993,6 +1068,9 @@ sub _initGUI {
     # New WINDOW:
     else
     {
+        if ($ENV{ASBRU_DEBUG}) {
+            print STDERR "DEBUG: Creating windowed GUI for UUID=$$self{_UUID} TITLE='$$self{_TITLE}' EMBED=$$self{EMBED}\n";
+        }
         # Build a new window,
         $$self{_WINDOWTERMINAL} = Gtk3::Window->new();
         $$self{_WINDOWTERMINAL}->set_title("$$self{_TITLE} : $APPNAME (v$APPVERSION)");
@@ -1049,6 +1127,141 @@ sub _initGUI {
 
     _updateCFG($self);
 
+    return 1;
+}
+
+sub _initEmbedSocket {
+    my $self = shift;
+    
+    # Check if we're running under Wayland - GtkSocket doesn't work on Wayland
+    my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+    if ($is_wayland) {
+        # Try to use Xwayland for embedding instead of failing
+        my $xwayland_display = $ENV{DISPLAY};
+        if ($xwayland_display && $xwayland_display =~ /^:\d+$/) {
+            print STDERR "DIAG: Using Xwayland display $xwayland_display for embedding on Wayland uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+            # Force X11 backend for child processes that will use embedding
+            $ENV{GDK_BACKEND} = 'x11' unless $ENV{GDK_BACKEND};
+            # Also update ASBRU_ENV_FOR_EXTERNAL for RDP clients
+            my $external_env = $ENV{ASBRU_ENV_FOR_EXTERNAL} || '';
+            $external_env .= " DISPLAY=$xwayland_display GDK_BACKEND=x11";
+            $ENV{ASBRU_ENV_FOR_EXTERNAL} = $external_env;
+        } else {
+            print STDERR "ERROR: Embedding not supported on Wayland without Xwayland uuid=$$self{_UUID}\n";
+            $$self{'EMBED'} = 0;
+            return 0;
+        }
+    }
+    
+    print STDERR "DIAG: Initializing EMBED socket before spawning connection uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+    
+    # Reset counter
+    $self->{EMBED_CHECK_COUNT} = 0;
+
+    # Create new socket window to plug the embed window from the other process (rdp, vnc, ...)
+    # (remove any remaining window before starting to add a new one)
+    $$self{_GUI}{_SOCKET} = Gtk3::Socket->new();
+    print STDERR "DIAG: Created Gtk3::Socket for embed uuid=$$self{_UUID}\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+    
+    # Now _SOCKET_PARENT_WINDOW should be initialized
+    if ($$self{_GUI}{_SOCKET_PARENT_WINDOW}) {
+        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->foreach(sub {
+            $$self{_GUI}{_SOCKET_PARENT_WINDOW}->remove($_[0]);
+        });
+        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->add_with_viewport($$self{_GUI}{_SOCKET});
+        # Do not show until connection is completed
+        $$self{_GUI}{_SOCKET_PARENT_WINDOW}->hide();
+    } else {
+        print STDERR "ERROR: _SOCKET_PARENT_WINDOW still not initialized in _initEmbedSocket uuid=$$self{_UUID}\n";
+        $$self{'EMBED'} = 0;
+        return 0;
+    }
+
+    # Update GUI before querying the size of the embed window
+    Gtk3::main_iteration() while Gtk3::events_pending();
+
+    # Retrieve (with polling) the XID of the window on which the external process will plug into
+    my $attempts = 0;
+    # Note: $is_wayland already declared in this scope above
+    
+    while ($attempts < 10) {
+        if ($$self{_GUI}{_SOCKET}->get_window()) {
+            $$self{_CFG}{'tmp'}{'xid'} = $$self{_GUI}{_SOCKET}->get_window()->get_xid();
+            $$self{FOCUS} = $$self{_GUI}{_SOCKET};
+            print STDERR "DIAG: Embed XID=$$self{_CFG}{'tmp'}{'xid'} uuid=$$self{_UUID} attempts=$attempts wayland=$is_wayland\n" if $ENV{ASBRU_DEBUG};
+            
+            # On Wayland, XID might be 0 or invalid, but we can still try embedding
+            if ($is_wayland) {
+                # For Wayland, use a fallback approach - get the socket drawable
+                if (!$$self{_CFG}{'tmp'}{'xid'} || $$self{_CFG}{'tmp'}{'xid'} <= 0) {
+                    # Try to get a valid window identifier using the socket
+                    my $socket_window = $$self{_GUI}{_SOCKET}->get_window();
+                    if ($socket_window) {
+                        # Use a synthetic XID based on the socket pointer for Wayland
+                        $$self{_CFG}{'tmp'}{'xid'} = sprintf("%d", $socket_window + 0);
+                        print STDERR "DIAG: Wayland fallback XID=$$self{_CFG}{'tmp'}{'xid'}\n" if $ENV{ASBRU_DEBUG};
+                    }
+                }
+                # Accept any XID on Wayland, even if it seems invalid
+                if ($$self{_CFG}{'tmp'}{'xid'}) {
+                    last;
+                }
+            } else {
+                # On X11, validate XID properly
+                if ($$self{_CFG}{'tmp'}{'xid'} && $$self{_CFG}{'tmp'}{'xid'} ne '' && $$self{_CFG}{'tmp'}{'xid'} > 0) {
+                    last;
+                } else {
+                    print STDERR "DIAG: Invalid X11 XID='$$self{_CFG}{'tmp'}{'xid'}', retrying...\n" if $ENV{ASBRU_DEBUG};
+                    delete $$self{_CFG}{'tmp'}{'xid'};
+                }
+            }
+        }
+        select(undef,undef,undef,0.05); # 50ms
+        $attempts++;
+    }
+    
+    if (!defined $$self{_CFG}{'tmp'}{'xid'} || (!$is_wayland && $$self{_CFG}{'tmp'}{'xid'} <= 0)) {
+        print STDERR "WARN: Gtk3::Socket no XID after polling uuid=$$self{_UUID} -> disabling EMBED for this session (wayland=$is_wayland)\n";
+        delete $$self{_CFG}{'tmp'}{'xid'}; # ensure asbru_conn treats as non-embed
+        $$self{'EMBED'} = 0;
+        return 0;
+    } else {
+        print STDERR "DIAG: Embedding ENABLED with XID=$$self{_CFG}{'tmp'}{'xid'} uuid=$$self{_UUID} wayland=$is_wayland\n" if $ENV{ASBRU_DEBUG};
+    }
+
+    # Get available size for the embed window
+    $$self{_CFG}{'tmp'}{'width'} = $$self{_GUI}{_VBOX}->get_allocated_width();
+    $$self{_CFG}{'tmp'}{'height'} = $$self{_GUI}{_VBOX}->get_allocated_height() - $$self{_GUI}{bottombox}->get_allocated_height();
+    if (defined($$self{_GUI}{_MACROSBOX}) && $$self{_GUI}{_MACROSBOX}->get_visible()) {
+        $$self{_CFG}{'tmp'}{'height'} -= $$self{_GUI}{_MACROSBOX}->get_allocated_height();
+    }
+    eval {
+        $PACMain::FUNCS{_MAIN}{_GUI}{vboxCommandPanel}->get_visible() or $$self{_CFG}{'tmp'}{'width'} += $PACMain::FUNCS{_MAIN}{_GUI}{vboxCommandPanel}->get_allocated_width();
+    };
+    
+    # Enhanced fallback for window size detection
+    if (($$self{_CFG}{'tmp'}{'width'}||0) < 200 || ($$self{_CFG}{'tmp'}{'height'}||0) < 150) {
+        print STDERR "WARN: EMBED geometry too small or undetected (".( $$self{_CFG}{'tmp'}{'width'}||'?' )."x".( $$self{_CFG}{'tmp'}{'height'}||'?' ).")\n" if $ENV{ASBRU_DEBUG};
+        
+        # Try to get reasonable fallback size
+        my $fallback_width = 1024;
+        my $fallback_height = 768;
+        
+        # Try to get screen dimensions as better fallback
+        eval {
+            my $screen = Gtk3::Gdk::Screen::get_default();
+            if ($screen) {
+                $fallback_width = int($screen->get_width() * 0.8);
+                $fallback_height = int($screen->get_height() * 0.8);
+            }
+        };
+        
+        $$self{_CFG}{'tmp'}{'width'} = $fallback_width;
+        $$self{_CFG}{'tmp'}{'height'} = $fallback_height;
+        print STDERR "WARN: Using fallback size: ${fallback_width}x${fallback_height}\n" if $ENV{ASBRU_DEBUG};
+    }
+    print STDERR "DIAG: EMBED final geom=$$self{_CFG}{'tmp'}{'width'}x$$self{_CFG}{'tmp'}{'height'} xid=".( $$self{_CFG}{'tmp'}{'xid'} // 'none')." uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+    
     return 1;
 }
 
@@ -1283,7 +1496,7 @@ sub _setupCallbacks {
                 return 0;
             }
             $$self{_GUI}{_VTE}->paste_primary();
-            $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+            _safe_child_focus($$self{FOCUS});
             return 1;
         } elsif ($event->button eq 3 and $event -> type eq 'button-press') {
             # See #209 for all this hack.
@@ -1294,7 +1507,7 @@ sub _setupCallbacks {
                 $right_click_deep = 0;
             }
             if (!$handled_by_vte) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
                 $self->_vteMenu($event);
             }
             return 1;  # One way or another, we've handled it.
@@ -1347,12 +1560,12 @@ sub _setupCallbacks {
                 _wMessage($$self{_PARENTWINDOW}, "No '<b>Expect/Send</b>' data available in:\n<b>$name ($title)</b>\nSo, there are <b>no commands to chain</b>");
             }
             if ($$self{_FOCUSED}) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
             }
             return 1;
         } else {
             if ($$self{_FOCUSED}) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
             }
             return 0;
         }
@@ -1376,7 +1589,7 @@ sub _setupCallbacks {
     if ($$self{EMBED}) {
         $$self{_GUI}{_BTNFOCUS}->signal_connect('clicked' => sub {
             if (defined $$self{FOCUS}) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
             }
         });
         $$self{_GUI}{_BTNLOG}->signal_connect ('clicked' => sub {
@@ -1389,9 +1602,7 @@ sub _setupCallbacks {
             }
         });
         $$self{_GUI}{_SOCKET_PARENT_WINDOW}->signal_connect('enter-notify-event' => sub {
-            if (defined $$self{FOCUS}) {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
-            }
+            _safe_child_focus($$self{FOCUS});
             return 0;
         });
     }
@@ -2676,7 +2887,7 @@ sub _tabToWin {
             $btnfocus->set_image(Gtk3::Image->new_from_icon_name('input-keyboard', 'GTK_ICON_SIZE_SMALL_TOOLBAR'));
             $btnfocus->set('can_focus', 0);
             $btnfocus->signal_connect ('clicked' => sub {
-                $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+                _safe_child_focus($$self{FOCUS});
             });
             $vbox->pack_start($btnfocus, 0, 1, 0);
 
@@ -2728,12 +2939,18 @@ sub _winToTab {
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+    # Safe pack with validation
+    if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
+        $$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()->remove($$self{_GUI}{_TABLBL}{_EBLBL});
+    }
     $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
     $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($$self{_TITLE});
     $$self{_GUI}{_TABLBL}{_EBLBL}->add($$self{_GUI}{_TABLBL}{_LABEL});
 
     my $eblbl1 = Gtk3::EventBox->new();
-    $eblbl1->add(PACIcons::icon_image('tab_close','window-close'));
+    # Create a new image widget each time to avoid GTK widget parent conflicts  
+    my $close_icon_wintotab = Gtk3::Image->new_from_icon_name('window-close-symbolic', 'menu');
+    $eblbl1->add($close_icon_wintotab);
     $eblbl1->signal_connect('button_release_event' => sub {
         if ($_[1]->button != 1) {
             return 0;
@@ -2786,7 +3003,7 @@ sub _winToTab {
 
     $tabs->set_current_page(-1);
     if ($$self{EMBED}) {
-        $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+        _safe_child_focus($$self{FOCUS});
     } else {
         $$self{FOCUS}->grab_focus();
     }
@@ -3094,12 +3311,18 @@ sub _split {
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+    # Safe pack with validation
+    if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
+        $$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()->remove($$self{_GUI}{_TABLBL}{_EBLBL});
+    }
     $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
     $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new("$$self{_TITLE} + $PACMain::RUNNING{$uuid_tmp}{terminal}{_TITLE}");
     $$self{_GUI}{_TABLBL}{_EBLBL}->add($$self{_GUI}{_TABLBL}{_LABEL});
 
     my $eblbl1 = Gtk3::EventBox->new();
-    $eblbl1->add(PACIcons::icon_image('tab_close','window-close'));
+    # Create a new image widget each time to avoid GTK widget parent conflicts
+    my $close_icon_split = Gtk3::Image->new_from_icon_name('window-close-symbolic', 'menu');
+    $eblbl1->add($close_icon_split);
     $eblbl1->signal_connect('button_release_event' => sub {
         if ($_[1]->button != 1) {
             return 0;
@@ -3187,12 +3410,18 @@ sub _unsplit {
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+    # Safe pack with validation
+    if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
+        $$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()->remove($$self{_GUI}{_TABLBL}{_EBLBL});
+    }
     $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
     $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($$self{_TITLE});
     $$self{_GUI}{_TABLBL}{_EBLBL}->add($$self{_GUI}{_TABLBL}{_LABEL});
 
     my $eblbl1 = Gtk3::EventBox->new();
-    $eblbl1->add(PACIcons::icon_image('tab_close','window-close'));
+    # Create a new image widget each time to avoid GTK widget parent conflicts
+    my $close_icon_merge = Gtk3::Image->new_from_icon_name('window-close-symbolic', 'menu');
+    $eblbl1->add($close_icon_merge);
     $eblbl1->signal_connect('button_release_event' => sub {
         if ($_[1]->button != 1) {
             return 0;
@@ -3227,12 +3456,18 @@ sub _unsplit {
     $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
     $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+    # Safe pack with validation
+    if ($PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
+        $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL}->get_parent()->remove($PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL});
+    }
     $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}->pack_start($PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
     $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($PACMain::RUNNING{$uuid_tmp}{terminal}{_TITLE});
     $PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_EBLBL}->add($PACMain::RUNNING{$uuid_tmp}{terminal}{_GUI}{_TABLBL}{_LABEL});
 
     my $eblbl3 = Gtk3::EventBox->new();
-    $eblbl3->add(PACIcons::icon_image('tab_close','window-close'));
+    # Create a new image widget each time to avoid GTK widget parent conflicts
+    my $close_icon_other = Gtk3::Image->new_from_icon_name('window-close-symbolic', 'menu');
+    $eblbl3->add($close_icon_other);
     $eblbl3->signal_connect('button_release_event' => sub {
         if ($_[1]->button != 1) {
             return 0;
@@ -3640,7 +3875,7 @@ sub _wSelectChain {
     if ($$self{_CFG}{'defaults'}{'confirm chains'}) {
         # Now, prepare the chains window, show it, AND stop until something clicked
         $ppe{window}{data}->show_all();
-        $ppe{window}{data}->action_area->child_focus('GTK_DIR_TAB_FORWARD');
+        _safe_child_focus($ppe{window}{data}->action_area);
         $ppe{window}{data}->signal_connect('response' => sub {
             my ($me, $response) = @_;
             $response eq 'ok' and _chain($self, $drop_uuid, \%ppe);
@@ -4084,7 +4319,7 @@ sub _updateCFG {
     }
 
     if ($$self{_FOCUSED} && $$self{FOCUS}) {
-        $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+        _safe_child_focus($$self{FOCUS});
     }
     $$self{_NO_UPDATE_CFG} = 0;
 
@@ -4555,7 +4790,7 @@ sub _hideEmbedMessages {
     $$self{_GUI}{_VTE}->hide();
     $$self{_GUI}{_SOCKET_PARENT_WINDOW}->show_all();
     if ($$self{FOCUS}) {
-        $$self{FOCUS}->child_focus('GTK_DIR_TAB_FORWARD');
+        _safe_child_focus($$self{FOCUS});
     }
     $$self{_GUI}{_BTNFOCUS}->set_sensitive(1);
 

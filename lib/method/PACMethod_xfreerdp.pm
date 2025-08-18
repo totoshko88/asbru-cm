@@ -181,6 +181,12 @@ sub get_cfg {
                 $w ||= eval { $screen->get_width() };
                 $h ||= eval { $screen->get_height() };
             }
+            # Additional fallback for Wayland or when screen detection fails
+            if (!$w || !$h) {
+                print STDERR "RDP_AUTO_SIZE: Screen detection failed, using fallback 1920x1080\n" if $ENV{ASBRU_DEBUG};
+                $w = 1920;
+                $h = 1080;
+            }
             if ($w && $h) {
                 # Leave a small margin for panels / decorations if using full screen dims.
                 $w = int($w * 0.98);
@@ -309,8 +315,7 @@ sub _parseOptionsToCfg {
         };
     }
     if ($$hash{dynamicResolution}) {
-        # Enable dynamic resolution plus scaling
-        $txt .= ' /dynamic-resolution /scale-desktop:100 /scale-device:100';
+        $txt .= ' /dynamic-resolution';
     }
     if ($$hash{percent}) {
         $txt .= ' /size:' . ($$hash{geometry}||90) . '%';
