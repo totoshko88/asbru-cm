@@ -1251,6 +1251,8 @@ if (defined $METHOD) {
             $CONNECT_OPTS =~ s/\s+-a\s+\d+\s*/ /g;  # Remove -a 16 (color depth for rdesktop)
             $CONNECT_OPTS =~ s/\s+-r\s+[^\s]+/ /g;  # Remove -r options (rdesktop redirections)
             $CONNECT_OPTS =~ s/\s+-resolution\s*/ /g;  # Remove -resolution
+            # Remove conflicting /size: parameters since we'll add our own for embedding
+            $CONNECT_OPTS =~ s/\s+\/size:[^\s]+/ /g;  # Remove existing /size: parameters
             $CONNECT_OPTS =~ s/\s+/ /g;  # Clean up multiple spaces
             $CONNECT_OPTS =~ s/^\s+|\s+$//g;  # Trim leading/trailing spaces
         } elsif ($METHOD eq 'rdesktop') {
@@ -1263,7 +1265,7 @@ if (defined $METHOD) {
         }
         
         if ($ENV{ASBRU_DEBUG}) {
-            PACLogger::log_debug("CONNECT_OPTS filtered: '$CONNECT_OPTS'");
+            PACLogger::log_debug("🔍 CONNECT_OPTS filtered: '$CONNECT_OPTS'");
         }
         # Check for Wayland to handle rdesktop compatibility
         my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
@@ -1359,7 +1361,7 @@ if (defined $METHOD) {
         }
     # Debug the actual command being executed
     if ($ENV{ASBRU_DEBUG}) {
-        PACLogger::log_debug("Final RDP command: $connection_txt");
+        PACLogger::log_debug("🚀 Final RDP command: $connection_txt");
     }
     ctrl("RDP_METHOD:$METHOD");
     ctrl("RDP_CMD:$connection_txt");
@@ -1512,7 +1514,7 @@ ctrl("SPAWNING:$connection_txt");
 my $external_dir = $ENV{'ASBRU_SUB_CWD'} // '.';
 $do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
 if (!$ENV{ASBRU_DEBUG}) {
-    PACLogger::log_start("Establishing $METHOD connection...");
+    PACLogger::log_start("🚀 Establishing $METHOD connection...");
 }
 $EXP->spawn("$do_connection_cmd 2>&1") or die "Cannot spawn '$connection_cmd: $!\n";
 ctrl("SPAWNED:'$connection_txt' (PID:$$)");
