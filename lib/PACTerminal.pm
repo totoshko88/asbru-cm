@@ -26,6 +26,9 @@ binmode STDERR, ':utf8';
 
 $|++;
 
+# Global XID counter for ensuring unique XIDs across all terminals
+our $GLOBAL_XID_COUNTER = 0;
+
 ###################################################################
 # Import Modules
 
@@ -1197,9 +1200,11 @@ sub _initEmbedSocket {
                     # Try to get a valid window identifier using the socket
                     my $socket_window = $$self{_GUI}{_SOCKET}->get_window();
                     if ($socket_window) {
-                        # Use a synthetic XID based on the socket pointer for Wayland
-                        $$self{_CFG}{'tmp'}{'xid'} = sprintf("%d", $socket_window + 0);
-                        print STDERR "DIAG: Wayland fallback XID=$$self{_CFG}{'tmp'}{'xid'}\n" if $ENV{ASBRU_DEBUG};
+                        # Use a unique XID with global counter for Wayland
+                        $GLOBAL_XID_COUNTER++;
+                        my $base_xid = $socket_window + 0;
+                        $$self{_CFG}{'tmp'}{'xid'} = $base_xid + $GLOBAL_XID_COUNTER * 1000;
+                        print STDERR "DIAG: Wayland unique XID=$$self{_CFG}{'tmp'}{'xid'} (base=$base_xid + counter=$GLOBAL_XID_COUNTER) uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
                     }
                 }
                 # Accept any XID on Wayland, even if it seems invalid
@@ -1207,8 +1212,13 @@ sub _initEmbedSocket {
                     last;
                 }
             } else {
-                # On X11, validate XID properly
+                # On X11, validate XID properly and ensure uniqueness
                 if ($$self{_CFG}{'tmp'}{'xid'} && $$self{_CFG}{'tmp'}{'xid'} ne '' && $$self{_CFG}{'tmp'}{'xid'} > 0) {
+                    # Add counter to ensure uniqueness even on X11
+                    $GLOBAL_XID_COUNTER++;
+                    my $original_xid = $$self{_CFG}{'tmp'}{'xid'};
+                    $$self{_CFG}{'tmp'}{'xid'} = $original_xid + $GLOBAL_XID_COUNTER;
+                    print STDERR "DIAG: X11 unique XID=$$self{_CFG}{'tmp'}{'xid'} (original=$original_xid + counter=$GLOBAL_XID_COUNTER) uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
                     last;
                 } else {
                     print STDERR "DIAG: Invalid X11 XID='$$self{_CFG}{'tmp'}{'xid'}', retrying...\n" if $ENV{ASBRU_DEBUG};

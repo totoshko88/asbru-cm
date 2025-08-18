@@ -3410,20 +3410,28 @@ sub _purgeUnusedOrMissingScreenshots {
 sub _getXWindowsList {
     my %list;
 
-    my $s = Wnck::Screen::get_default() or die print $!;
-    $s->force_update();
+    eval {
+        my $s = Wnck::Screen::get_default() or die "Failed to get Wnck screen";
+        $s->force_update();
 
-    foreach my $w (@{$s->get_windows}) {
-        my $xid = $w->get_xid() or next;
-        my $data_name = $w->get_name();
+        foreach my $w (@{$s->get_windows}) {
+            next unless defined $w && $w->isa('Wnck::Window');
+            my $xid = $w->get_xid() or next;
+            my $data_name = eval { $w->get_name() } || '';
 
-        $list{'by_xid'}{$xid}{'title'} = $data_name;
+            $list{'by_xid'}{$xid}{'title'} = $data_name;
         $list{'by_xid'}{$xid}{'window'} = $w;
 
         if (defined $data_name) {
             $list{'by_name'}{$data_name}{'xid'} = $xid;
             $list{'by_name'}{$data_name}{'window'} = $w;
         }
+    }
+    };
+    if ($@) {
+        warn "Wnck window enumeration failed: $@" if $ENV{ASBRU_DEBUG};
+        # Return empty list on Wnck failures (common on Wayland)
+        return { 'by_xid' => {}, 'by_name' => {} };
     }
 
     return \%list;

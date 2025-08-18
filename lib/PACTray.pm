@@ -166,7 +166,7 @@ sub _initGUI {
                 my $sni_object = PACTrayStatusNotifierItem->new($sni_service, $self);
                 
                 # Use the correct DBus export method
-                $bus->export_object('/StatusNotifierItem', 
+                $sni_service->export_object('/StatusNotifierItem', 
                     'org.kde.StatusNotifierItem', $sni_object);
                 
                 # Register with watcher

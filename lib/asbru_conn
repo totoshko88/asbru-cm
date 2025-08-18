@@ -1273,6 +1273,33 @@ if (defined $METHOD) {
             PACLogger::log_debug("🔍 CONNECT_OPTS filtered: '$CONNECT_OPTS'");
         }
         
+        # Auto-switch to xfreerdp on Wayland for better embedding compatibility
+        if ($is_wayland && $METHOD eq 'rdesktop' && defined $$CFG{'tmp'}{'xid'}) {
+            PACLogger::log_info("🔄 Auto-switching from rdesktop to xfreerdp for Wayland embedding...") if $ENV{ASBRU_DEBUG};
+            $METHOD = 'xfreerdp';
+            
+            # Convert rdesktop options to xfreerdp format
+            my $xfreerdp_opts = '';
+            
+            # Parse the original options string more carefully
+            if ($CONNECT_OPTS =~ /-5/) {
+                # RDP version 5 is default for xfreerdp
+            }
+            if ($CONNECT_OPTS =~ /-a\s*(\d+)/) {
+                # Color depth
+                $xfreerdp_opts .= " /bpp:$1";
+            }
+            if ($CONNECT_OPTS =~ /-r\s+clipboard:PRIMARYCLIPBOARD/) {
+                # Clipboard redirection
+                $xfreerdp_opts .= " +clipboard";
+            }
+            # Skip sound redirection if disabled
+            # Skip performance options like -P, -z, -x
+            
+            $CONNECT_OPTS = $xfreerdp_opts;
+            PACLogger::log_debug("🔧 Converted options: '$CONNECT_OPTS'") if $ENV{ASBRU_DEBUG};
+        }
+        
         if ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD eq 'rdesktop')) {
             # Enhanced rdesktop embedding with Xwayland compatibility
             if ($module_guitest eq 'Y') {
@@ -1563,18 +1590,25 @@ if ($METHOD ne 'PACShell') {
 ctrl("SPAWNING:$connection_txt");
 my $external_dir = $ENV{'ASBRU_SUB_CWD'} // '.';
 
-# Special handling for rdesktop on Wayland - ensure proper DISPLAY
-if ($METHOD eq 'rdesktop' && $is_wayland) {
-    # Find Xwayland display for rdesktop
+# Special handling for RDP clients on Wayland - ensure proper DISPLAY
+if (($METHOD eq 'rdesktop' || $METHOD =~ /freerdp/) && $is_wayland) {
+    # Find Xwayland display for RDP clients
     my $xwayland_display = $ENV{DISPLAY} || ':0';
     if ($xwayland_display =~ /^:(\d+)$/) {
         my $display_num = $1;
-        PACLogger::log_info("🎯 Setting DISPLAY=$xwayland_display for rdesktop on Xwayland") if $ENV{ASBRU_DEBUG};
+        PACLogger::log_info("🎯 Setting DISPLAY=$xwayland_display for $METHOD on Xwayland") if $ENV{ASBRU_DEBUG};
         $do_connection_cmd = "DISPLAY=$xwayland_display $do_connection_cmd";
     }
 }
 
 $do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
+
+# Give socket a moment to initialize for embedding
+if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '') {
+    PACLogger::log_debug("🔄 Socket initialization delay for XID=$$CFG{'tmp'}{'xid'}") if $ENV{ASBRU_DEBUG};
+    select(undef, undef, undef, 0.2); # 200ms delay
+}
+
 if (!$ENV{ASBRU_DEBUG}) {
     PACLogger::log_start("🚀 Establishing $METHOD connection...");
 }

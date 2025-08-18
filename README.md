@@ -84,6 +84,7 @@ ls dist/rpm/build/RPMS/noarch/*.rpm
 ```bash
 ASBRU_DEBUG=1                # Enable debug output with emoji logging 🔍🚀📡✅
 ASBRU_DEBUG_STACK=1          # Include stack traces
+ASBRU_FORCE_XFREERDP=1       # Force xfreerdp usage on Wayland (auto-enabled)
 ASBRU_FORCE_ICON_RESCAN=1    # Force icon theme rescan
 ```
 
