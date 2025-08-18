@@ -1189,9 +1189,10 @@ sub _initEmbedSocket {
     
     while ($attempts < 10) {
         if ($$self{_GUI}{_SOCKET}->get_window()) {
-            $$self{_CFG}{'tmp'}{'xid'} = $$self{_GUI}{_SOCKET}->get_window()->get_xid();
+            my $original_xid = $$self{_GUI}{_SOCKET}->get_window()->get_xid();
+            $$self{_CFG}{'tmp'}{'xid'} = $original_xid;
             $$self{FOCUS} = $$self{_GUI}{_SOCKET};
-            print STDERR "DIAG: Embed XID=$$self{_CFG}{'tmp'}{'xid'} uuid=$$self{_UUID} attempts=$attempts wayland=$is_wayland\n" if $ENV{ASBRU_DEBUG};
+            print STDERR "DIAG: Original socket XID=$original_xid uuid=$$self{_UUID} attempts=$attempts wayland=$is_wayland\n" if $ENV{ASBRU_DEBUG};
             
             # On Wayland, XID might be 0 or invalid, but we can still try embedding
             if ($is_wayland) {
@@ -1211,19 +1212,19 @@ sub _initEmbedSocket {
                 if ($$self{_CFG}{'tmp'}{'xid'}) {
                     last;
                 }
+            } 
+            
+            # Always ensure uniqueness regardless of display server
+            if ($$self{_CFG}{'tmp'}{'xid'} && $$self{_CFG}{'tmp'}{'xid'} ne '' && $$self{_CFG}{'tmp'}{'xid'} > 0) {
+                # Add counter to ensure uniqueness for all connections
+                $GLOBAL_XID_COUNTER++;
+                my $base_xid = $$self{_CFG}{'tmp'}{'xid'};
+                $$self{_CFG}{'tmp'}{'xid'} = $base_xid + $GLOBAL_XID_COUNTER * 1000;
+                print STDERR "DIAG: Unique XID=$$self{_CFG}{'tmp'}{'xid'} (base=$base_xid + counter=$GLOBAL_XID_COUNTER) uuid=$$self{_UUID} wayland=$is_wayland\n" if $ENV{ASBRU_DEBUG};
+                last;
             } else {
-                # On X11, validate XID properly and ensure uniqueness
-                if ($$self{_CFG}{'tmp'}{'xid'} && $$self{_CFG}{'tmp'}{'xid'} ne '' && $$self{_CFG}{'tmp'}{'xid'} > 0) {
-                    # Add counter to ensure uniqueness even on X11
-                    $GLOBAL_XID_COUNTER++;
-                    my $original_xid = $$self{_CFG}{'tmp'}{'xid'};
-                    $$self{_CFG}{'tmp'}{'xid'} = $original_xid + $GLOBAL_XID_COUNTER;
-                    print STDERR "DIAG: X11 unique XID=$$self{_CFG}{'tmp'}{'xid'} (original=$original_xid + counter=$GLOBAL_XID_COUNTER) uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
-                    last;
-                } else {
-                    print STDERR "DIAG: Invalid X11 XID='$$self{_CFG}{'tmp'}{'xid'}', retrying...\n" if $ENV{ASBRU_DEBUG};
-                    delete $$self{_CFG}{'tmp'}{'xid'};
-                }
+                print STDERR "DIAG: Invalid XID='$$self{_CFG}{'tmp'}{'xid'}', retrying... uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+                delete $$self{_CFG}{'tmp'}{'xid'};
             }
         }
         select(undef,undef,undef,0.05); # 50ms

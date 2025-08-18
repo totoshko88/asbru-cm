@@ -1273,9 +1273,10 @@ if (defined $METHOD) {
             PACLogger::log_debug("🔍 CONNECT_OPTS filtered: '$CONNECT_OPTS'");
         }
         
-        # Auto-switch to xfreerdp on Wayland for better embedding compatibility
-        if ($is_wayland && $METHOD eq 'rdesktop' && defined $$CFG{'tmp'}{'xid'}) {
-            PACLogger::log_info("🔄 Auto-switching from rdesktop to xfreerdp for Wayland embedding...") if $ENV{ASBRU_DEBUG};
+        # Only auto-switch to xfreerdp on pure Wayland (not when using Xwayland/X11 backend)
+        if ($is_wayland && $METHOD eq 'rdesktop' && defined $$CFG{'tmp'}{'xid'} && 
+            (!$ENV{GDK_BACKEND} || $ENV{GDK_BACKEND} ne 'x11')) {
+            PACLogger::log_info("🔄 Auto-switching from rdesktop to xfreerdp for pure Wayland embedding...") if $ENV{ASBRU_DEBUG};
             $METHOD = 'xfreerdp';
             
             # Convert rdesktop options to xfreerdp format
@@ -1298,6 +1299,11 @@ if (defined $METHOD) {
             
             $CONNECT_OPTS = $xfreerdp_opts;
             PACLogger::log_debug("🔧 Converted options: '$CONNECT_OPTS'") if $ENV{ASBRU_DEBUG};
+        } else {
+            # Using X11 backend or user preference - keep original RDP client choice
+            if ($is_wayland && $ENV{GDK_BACKEND} eq 'x11') {
+                PACLogger::log_info("🔧 Using $METHOD with X11 backend on Wayland (Xwayland compatibility)") if $ENV{ASBRU_DEBUG};
+            }
         }
         
         if ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD eq 'rdesktop')) {
