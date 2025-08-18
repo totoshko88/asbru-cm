@@ -88,6 +88,7 @@ my $SOCKET;
 my $SOCKET_EXEC;
 my $proxy_type = 'socks5';
 my $proxy_ip = '';
+my $is_wayland = 0;  # Global Wayland detection variable
 my $proxy_port = '';
 my $proxy_user = '';
 my $proxy_pass = '';
@@ -1223,6 +1224,10 @@ if (defined $METHOD) {
     elsif ($METHOD =~ /^.*RDP \((.+)\).*$/) {
         $HIDE_TERMINAL = 1;
         $METHOD = $1;  # Extract RDP method first
+        
+        # Check for Wayland compatibility (used throughout RDP handling)
+        $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+        
         _setProxy('RDP');
         
         # Debug + safety: clamp geometry if tiny
@@ -1267,8 +1272,6 @@ if (defined $METHOD) {
         if ($ENV{ASBRU_DEBUG}) {
             PACLogger::log_debug("🔍 CONNECT_OPTS filtered: '$CONNECT_OPTS'");
         }
-        # Check for Wayland to handle rdesktop compatibility
-        my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
         
         if ((defined $$CFG{'tmp'}{'xid'}) && ($$CFG{'tmp'}{'xid'} ne '') && ($METHOD eq 'rdesktop')) {
             # Enhanced rdesktop embedding with Xwayland compatibility
