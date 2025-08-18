@@ -1,8 +1,8 @@
-# Ásbrú Connection Manager v7.0.0 - System Requirements and Compatibility
+# Ásbrú Connection Manager v7.0.1 - System Requirements and Compatibility
 
 ## Overview
 
-Ásbrú Connection Manager v7.0.0 is designed for modern Linux distributions with a focus on PopOS 24.04 and Cosmic desktop environment. This document outlines system requirements, compatibility information, and platform-specific considerations.
+Ásbrú Connection Manager v7.0.1 is the latest critical stability release designed for modern Linux distributions with enhanced Wayland compatibility and improved application stability. This version includes critical fixes for PopOS 24.04 and Cosmic desktop environment. This document outlines system requirements, compatibility information, and platform-specific considerations.
 
 ## Minimum System Requirements
 

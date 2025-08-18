@@ -1,8 +1,8 @@
-# Ásbrú Connection Manager v7.0.0 - Installation Guide
+# Ásbrú Connection Manager v7.0.1 - Installation Guide
 
 ## Overview
 
-This guide provides detailed installation instructions for Ásbrú Connection Manager v7.0.0, the modernized release with GTK4 support and Wayland compatibility, specifically optimized for PopOS 24.04 and modern Linux distributions.
+This guide provides detailed installation instructions for Ásbrú Connection Manager v7.0.1, the latest critical stability release with enhanced Wayland compatibility and improved application stability, specifically optimized for PopOS 24.04 and modern Linux distributions.
 
 ## System Requirements
 

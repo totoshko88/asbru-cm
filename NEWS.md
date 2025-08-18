@@ -2,6 +2,33 @@
 
 Here you can find important news on the project
 
+## 18.08.2025 - Version 7.0.1 - Critical Stability Release
+
+We are excited to announce version **7.0.1** of Ásbrú Connection Manager Modernized Fork that addresses critical stability issues and enhances Wayland compatibility:
+
+### 🚨 Critical Fixes
+- **Application Stability**: Fixed critical hanging issues when creating local shell connections
+- **Wayland Compatibility**: Eliminated segmentation faults with intelligent X11 backend switching
+- **GTK Widget Management**: Resolved critical warnings that caused application crashes
+- **Tab Management**: Fixed missing close buttons and tab creation failures
+
+### 🌟 Enhanced Features
+- **Perfect RDP Embedding**: Advanced window embedding with automatic Xwayland fallback
+- **COSMIC Desktop Support**: Native StatusNotifierItem (SNI) integration for System76's COSMIC
+- **Enhanced Debugging**: Modern logging with emoji indicators 🔍🚀📡✅
+- **Performance Improvements**: 5-second theme detection caching and reduced startup noise
+
+### 🧪 Proven Compatibility
+- ✅ PopOS 24.04 LTS (COSMIC Desktop) + Wayland
+- ✅ Ubuntu 24.04 LTS + GNOME/Wayland  
+- ✅ Perfect RDP embedding with both xfreerdp and rdesktop
+
+This is a **highly recommended update** for all users experiencing crashes or Wayland compatibility issues.
+
+**Download**: [asbru-cm_7.0.1_all.deb](https://github.com/totoshko88/asbru-cm/releases/latest)
+
+---
+
 ## 13.11.2022
 
 We are pleased to announce a new version (6.4.0) of Ásbrú Connection Manager that brings some new important features:

@@ -1,4 +1,4 @@
-# Ásbrú Connection Manager v7.0.0 - Troubleshooting Guide
+# Ásbrú Connection Manager v7.0.1 - Troubleshooting Guide
 
 ## Quick Diagnostic Commands
 
