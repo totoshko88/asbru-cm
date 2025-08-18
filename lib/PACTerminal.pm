@@ -508,7 +508,8 @@ sub start {
     }
     
     # Initialize embedding if enabled and GUI is ready (before saving config)
-    if ($$self{'EMBED'} && !$$self{_CFG}{'tmp'}{'xid'}) {
+    if ($$self{'EMBED'}) {
+        # Always reinitialize socket for each connection to ensure unique XID
         print STDERR "DIAG: Initializing EMBED socket before spawning connection uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
         my $result = _initEmbedSocket($self);
         if ($result && $$self{_CFG}{'tmp'}{'xid'}) {
@@ -1157,6 +1158,9 @@ sub _initEmbedSocket {
     }
     
     print STDERR "DIAG: Initializing EMBED socket before spawning connection uuid=$$self{_UUID}\n" if $ENV{ASBRU_DEBUG};
+    
+    # Clear any existing XID to ensure fresh generation
+    delete $$self{_CFG}{'tmp'}{'xid'};
     
     # Reset counter
     $self->{EMBED_CHECK_COUNT} = 0;
