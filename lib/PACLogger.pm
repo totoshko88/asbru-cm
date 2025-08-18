@@ -2,7 +2,12 @@ package PACLogger;
 
 use strict;
 use warnings;
+use utf8;
 use Term::ANSIColor qw(colored);
+
+# Configure UTF-8 output for emoji support
+binmode STDOUT, ':utf8';
+binmode STDERR, ':utf8';
 
 # ANSI Color support detection
 our $USE_COLORS = (-t STDERR) && $ENV{'TERM'} && $ENV{'TERM'} ne 'dumb';
