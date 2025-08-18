@@ -82,7 +82,7 @@ ls dist/rpm/build/RPMS/noarch/*.rpm
 ## 🐛 Environment Variables
 
 ```bash
-ASBRU_DEBUG=1                # Enable debug output
+ASBRU_DEBUG=1                # Enable debug output with emoji logging 🔍🚀📡✅
 ASBRU_DEBUG_STACK=1          # Include stack traces
 ASBRU_FORCE_ICON_RESCAN=1    # Force icon theme rescan
 ```
@@ -106,6 +106,29 @@ This fork includes **intelligent automatic Wayland embedding support** that **wo
 ✅ **Tested Successfully**: RDP connections embed perfectly in tabs on PopOS 24.04 COSMIC + Wayland  
 ✅ **No Crashes**: Eliminated segmentation faults that occurred with pure Wayland GtkSocket usage  
 ✅ **Full Functionality**: All RDP features work including clipboard, sound redirection, and dynamic resolution
+
+### RDP Client Compatibility
+- **✅ xfreerdp**: Perfect embedding with full GUI display in tabs
+  - Full Wayland/Xwayland compatibility
+  - Automatic parent-window embedding
+  - Dynamic resolution and features work perfectly
+- **✅ rdesktop**: Successful connections with functional SSL
+  - Establishes connections: "Connection established using SSL" ✅
+  - Successful authentication and protocol negotiation
+  - XID embedding working but visual display may be limited on Wayland
+  - Recommended for testing connectivity, use xfreerdp for production
+
+### Connection Examples
+**xfreerdp** (recommended):
+```
+xfreerdp /parent-window:52442142 /size:740x443 /bpp:24 /dynamic-resolution /u:'user' /v:server:3389
+```
+
+**rdesktop** (connectivity testing):
+```
+rdesktop -X 52442142 -g 740x443 -u 'user' -p 'password' server:3389
+# Results in: "Connection established using SSL" ✅
+```
 
 ## 📋 Tested On
 
