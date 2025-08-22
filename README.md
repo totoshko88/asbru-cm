@@ -34,8 +34,8 @@ The original Ásbrú Connection Manager project has compatibility issues with mo
 
 ### From Debian Package (Recommended)
 ```bash
-wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.0.1_all.deb
-sudo dpkg -i asbru-cm_7.0.1_all.deb
+wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.0.2_all.deb
+sudo dpkg -i asbru-cm_7.0.2_all.deb
 sudo apt -f install  # Resolve dependencies if needed
 ```
 

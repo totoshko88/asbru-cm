@@ -1,268 +1,75 @@
-/* Dark theme CSS for Asbru Connection Manager - Enhanced approach */
-
-/* Window and container backgrounds */
-window {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* Main container areas */
-notebook,
-box,
-frame,
-grid,
-paned,
-scrolledwindow,
-viewport {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* Button styling for dark theme */
 button {
     border: 1px solid rgba(1,1,1,0);
     margin: 1px;
-    background-color: #404040;
-    color: #ffffff;
 }
-
-radiobutton,
-checkbutton {
+radiobutton, checkbutton {
     border: 1px solid rgba(1,1,1,0);
     margin: 1px;
-    background-color: transparent;
-    color: #ffffff;
 }
-
 button:hover {
     border: 1px solid #555555;
     color: #000000;
     background-color: #ffffff;
 }
-
 button:focus,
 entry:focus {
     background-color:#555555;
 }
-
 spinbutton {
     border: 1px solid rgba(1,1,1,0);
     font-size: 0.9em;
     border-radius: 0px;
     padding: 0px;
     margin: 0px;
-    background-color: #404040;
-    color: #ffffff;
 }
-
 spinbutton:hover {
     border: 1px solid #555555;
     background-color: #ffffff;
-    color: #000000;
 }
-
 checkbutton:hover, radiobutton:hover {
     border: 1px solid #aaaaaa;
 }
-
-/* Entry fields */
-entry {
-    background-color: #404040;
-    color: #ffffff;
-    border: 1px solid #666666;
-}
-
-combobox {
-    background-color: #404040;
-    color: #ffffff;
-}
-
-/* TreeView and lists */
-treeview {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-treeview.view {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* TreeView cells and text - comprehensive styling */
-treeview.view {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-treeview.view cell {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-treeview.view cell text {
-    color: #e6e6e6;
-}
-
-/* TreeView text renderer */
-treeview.view cellrenderertext {
-    color: #e6e6e6;
-}
-
-/* TreeView row styling */
-treeview.view row {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* Selected rows in TreeView */
-treeview.view:selected {
-    background-color: #555555;
-    color: #ffffff;
-}
-
-treeview.view cell:selected {
-    background-color: #555555;
-    color: #ffffff;
-}
-
-treeview.view row:selected {
-    background-color: #555555;
-    color: #ffffff;
-}
-
-/* TreeView expander arrows */
-treeview.view expander {
-    color: #e6e6e6;
-}
-
-/* Force text color for all tree elements */
-treeview * {
-    color: #e6e6e6;
-}
-
-/* Override any bold text in tree (like "My Connections") */
-treeview.view b {
-    color: #e6e6e6;
-}
-
-/* Pango markup text */
-treeview.view cellrenderertext text {
-    color: #e6e6e6 !important;
-}
-
-/* Target the specific PACTree elements */
-.pac-tree, .pac-tree * {
-    color: #e6e6e6 !important;
-}
-
-/* Target scrolled window containing tree */
-scrolledwindow treeview, scrolledwindow treeview * {
-    color: #e6e6e6 !important;
-}
-
-/* Force override any inherited colors */
-GtkTreeView, GtkTreeView * {
-    color: #e6e6e6 !important;
-}
-
-/* Text views and content areas */
-textview {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-textview text {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* Notebook tabs */
-notebook tab {
-    background-color: #404040;
-    color: #ffffff;
-}
-
-notebook tab:checked {
-    background-color: #555555;
-    color: #ffffff;
-}
-
-/* Menu styling */
-menubar {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-menu {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-menuitem {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-/* Labels */
-label {
-    color: #e6e6e6;
-}
-
-/* Toolbar */
-toolbar {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
-headerbar {
-    background-color: #2e2e2e;
-    color: #e6e6e6;
-}
-
 .button-cp {
     border: 1px solid rgba(1,1,1,0);
     border-radius: 0px;
     padding: 0px;
     margin: 0px;
 }
-
 tooltip {
     font-size: 0.8em;
-    background-color: #404040;
-    color: #ffffff;
 }
-
 .dnd-icon {
-    border: 1px solid #000000;
+  border: 1px solid #000000;
 }
 
 .banner-fill {
-    background-image: linear-gradient(to right, #007aff, #2fedde);
-    padding: 0.25em 0;
+  background-image: linear-gradient(to right, #007aff, #2fedde);
+  padding: 0.25em 0;
 }
-
 .banner-text {
-    color: #EEE;
-    text-shadow: 0px 0px 8px rgba(17, 17, 17, 0.75);
-    font-size: 2.5em;
+  color: #EEE;
+  text-shadow: 0px 0px 8px rgba(17, 17, 17, 0.75);
+  font-size: 2.5em;
 }
-
 messagedialog {
-    border: 1px solid #888888;
-    background-color: #2e2e2e;
-    color: #e6e6e6;
+  border: 1px solid #888888;
 }
-
 messagedialog > box {
-    margin: 2px;
-    margin-top: 16px;
+  margin: 2px;
+  margin-top: 16px;
 }
-
+.w-entervalue {
+}
+.w-renamenode {
+}
 .w-warning {
     background-color: #616124;
 }
-
 .w-error {
     background-color: #42050A;
+}
+.w-info {
+}
+.w-confirm {
 }
 

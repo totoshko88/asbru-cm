@@ -35,10 +35,12 @@ use strict;
 use warnings;
 
 use FindBin qw ($RealBin $Bin $Script);
+use File::Basename;
 use POSIX qw (strftime);
 use PACConfigData qw(clone_data serialize_data deserialize_data);
 use Storable qw (freeze thaw dclone);
 use PACCryptoCompat;
+use PACCompat;
 use Socket qw(:all);
 use PACNetworking qw(ping_host resolve_hostname is_ipv4 is_ipv6);
 use Sys::Hostname;
@@ -123,7 +125,7 @@ require Exporter;
 # Define GLOBAL CLASS variables
 
 our $APPNAME = 'Ásbrú Connection Manager';
-our $APPVERSION = '7.0.1';
+our $APPVERSION = '7.0.2';
 our $DEBUG_LEVEL = 1;
 our $ARCH = '';
 my $ARCH_TMP = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/uname -m 2>&1`;
@@ -1209,6 +1211,29 @@ sub _getMethods {
     return %methods;
 }
 
+# Helper function to create icons without PACIcons dependency
+sub _createIcon {
+    my ($logical_name, $fallback_stock) = @_;
+    
+    # Try to create from icon name first
+    my $image;
+    if ($logical_name) {
+        eval { $image = Gtk3::Image->new_from_icon_name($logical_name, 'button'); };
+    }
+    
+    # Fallback to stock icon if available
+    if (!$image && $fallback_stock) {
+        eval { $image = Gtk3::Image->new_from_stock($fallback_stock, 'button'); };
+    }
+    
+    # Final fallback to a generic icon
+    if (!$image) {
+        eval { $image = Gtk3::Image->new_from_icon_name('image-missing', 'button'); };
+    }
+    
+    return $image || Gtk3::Image->new();
+}
+
 sub _registerPACIcons {
     my $theme_dir = shift;
     if ($theme_dir) {
@@ -1232,7 +1257,6 @@ sub _registerPACIcons {
         'asbru-cluster-manager-off' => "$THEME_DIR/asbru_cluster_manager_off.svg",
         'asbru-favourite-on' => "$THEME_DIR/asbru_favourite_on.svg",
         'asbru-favourite-off' => "$THEME_DIR/asbru_favourite_off.svg",
-        'asbru-group-closed' => "$THEME_DIR/asbru_group_closed_16x16.svg",
         'asbru-group-closed' => "$THEME_DIR/asbru_group_closed_16x16.svg",
         'asbru-group-open' => "$THEME_DIR/asbru_group_open_16x16.svg",
         'asbru-group' => "$THEME_DIR/asbru_group.svg",
@@ -1271,21 +1295,14 @@ sub _registerPACIcons {
         'asbru-buttonbar-hide' => "$THEME_DIR/asbru_buttonbar_hide.png",
     );
 
-    my $icon_factory = Gtk3::IconFactory->new();
-
-    foreach my $icon (keys %icons) {
-        my $icon_source = Gtk3::IconSource->new();
-        $icon_source->set_filename($icons{$icon});
-
-        my $icon_set = Gtk3::IconSet->new();
-        $icon_set->add_source($icon_source);
-
-        $icon_factory->add($icon, $icon_set);
+    # Use PACCompat for GTK3/GTK4 compatibility
+    my $registered_count = PACCompat::register_icons(\%icons);
+    
+    if ($ENV{ASBRU_DEBUG}) {
+        print STDERR "PACUtils: Registered $registered_count icons using GTK" . PACCompat::get_gtk_version() . "\n";
     }
 
-    $icon_factory->add_default();
-
-    return 1;
+    return $registered_count > 0 ? 1 : 0;
 }
 
 sub _sortTreeData {
@@ -1494,7 +1511,7 @@ sub _wEnterValue {
     }
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $parent, 'modal');
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
+    my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-entervalue');
@@ -1516,7 +1533,7 @@ sub _wEnterValue {
     $w{window}{gui}{vbox}->pack_start($w{window}{gui}{hbox}, 0, 0, 5);
 
     # Create image
-    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('info',$stock_icon);
+    $w{window}{gui}{img} = _createIcon('dialog-information-symbolic',$stock_icon);
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 5);
 
     # Create 1st label
@@ -1602,7 +1619,7 @@ sub _wAddRenameNode {
 
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $PACMain::FUNCS{_MAIN}{_GUI}{main}, 'modal');
-    require PACIcons; my $btn_cancel2 = Gtk3::Button->new(); $btn_cancel2->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel2->set_always_show_image(1); $btn_cancel2->set_label('Cancel'); my $btn_ok2 = Gtk3::Button->new(); $btn_ok2->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok2->set_always_show_image(1); $btn_ok2->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel2,'cancel'); $w{window}{data}->add_action_widget($btn_ok2,'ok');
+    my $btn_cancel2 = Gtk3::Button->new(); $btn_cancel2->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel2->set_always_show_image(1); $btn_cancel2->set_label('Cancel'); my $btn_ok2 = Gtk3::Button->new(); $btn_ok2->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok2->set_always_show_image(1); $btn_ok2->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel2,'cancel'); $w{window}{data}->add_action_widget($btn_ok2,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-renamenode');
@@ -1617,7 +1634,7 @@ sub _wAddRenameNode {
     $w{window}{gui}{hbox}->set_border_width(5);
 
     # Create image
-    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('edit','gtk-edit');
+    $w{window}{gui}{img} = _createIcon('document-edit-symbolic','gtk-edit');
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 0);
 
     # Create 1st label
@@ -1847,7 +1864,7 @@ sub _wMessage {
     }
 
     if ($modal) {
-        require PACIcons; my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
+        my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
         $windowConfirm->show_all();
         my $close = $windowConfirm->run();
         $windowConfirm->destroy();
@@ -1893,7 +1910,7 @@ sub _wProgress {
         $WINDOWPROGRESS{sep} = Gtk3::HSeparator->new();
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{sep}, 0, 1, 5);
 
-    require PACIcons; $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new(); $WINDOWPROGRESS{btnCancel}->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $WINDOWPROGRESS{btnCancel}->set_always_show_image(1);
+    $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new(); $WINDOWPROGRESS{btnCancel}->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $WINDOWPROGRESS{btnCancel}->set_always_show_image(1);
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{btnCancel}, 0, 1, 5);
 
         $WINDOWPROGRESS{_GUI}->signal_connect('delete_event' => sub {return 1;});
@@ -1951,7 +1968,7 @@ sub _wConfirm {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    require PACIcons; my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
+    my $btn_no = Gtk3::Button->new(); $btn_no->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
     $windowConfirm->set_default_response($default);
@@ -1981,7 +1998,7 @@ sub _wYesNoCancel {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('no','gtk-no')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('yes','gtk-yes')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_cancel,'cancel'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
+    my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_no = Gtk3::Button->new(); $btn_no->set_image(_createIcon('window-close-symbolic','gtk-no')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(_createIcon('emblem-ok-symbolic','gtk-yes')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_cancel,'cancel'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
 
@@ -3072,7 +3089,7 @@ sub _wakeOnLan {
 
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME (v$APPVERSION) : Wake On LAN", undef, 'modal');
-    require PACIcons; my $btn_cancel3 = Gtk3::Button->new(); $btn_cancel3->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel3->set_always_show_image(1); $btn_cancel3->set_label('Cancel'); my $btn_ok3 = Gtk3::Button->new(); $btn_ok3->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok3->set_always_show_image(1); $btn_ok3->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel3,'cancel'); $w{window}{data}->add_action_widget($btn_ok3,'ok');
+    my $btn_cancel3 = Gtk3::Button->new(); $btn_cancel3->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel3->set_always_show_image(1); $btn_cancel3->set_label('Cancel'); my $btn_ok3 = Gtk3::Button->new(); $btn_ok3->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok3->set_always_show_image(1); $btn_ok3->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel3,'cancel'); $w{window}{data}->add_action_widget($btn_ok3,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_position('center');
@@ -3114,7 +3131,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entrymac}->grab_focus();
 
     # Create MAC icon widget
-    require PACIcons; $w{window}{gui}{iconmac} = PACIcons::icon_image('failure','gtk-no');
+    $w{window}{gui}{iconmac} = _createIcon('dialog-error-symbolic','gtk-no');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconmac}, 2, 3, 0, 1);
 
     # Create HOST label
@@ -3130,7 +3147,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entryip}->set_activates_default(0);
 
     # Create IP icon widget
-    require PACIcons; $w{window}{gui}{iconip} = PACIcons::icon_image('success','gtk-yes');
+    $w{window}{gui}{iconip} = _createIcon('emblem-ok-symbolic','gtk-yes');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconip}, 2, 3, 1, 2);
 
     # Create PORT label
@@ -3171,7 +3188,7 @@ sub _wakeOnLan {
             if ($_[0]->get_label ne 'gtk-ok') {
                 return 1;
             }
-            require PACIcons; my $valid = $w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go; my $img = PACIcons::icon_image($valid ? 'success' : 'failure', $valid ? 'gtk-yes' : 'gtk-no'); $w{window}{gui}{iconmac}->set_from_pixbuf($img->get_pixbuf) if $img->get_storage_type eq 'pixbuf';
+            my $valid = $w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go; my $img = _createIcon($valid ? 'emblem-ok-symbolic' : 'dialog-error-symbolic', $valid ? 'gtk-yes' : 'gtk-no'); $w{window}{gui}{iconmac}->set_from_pixbuf($img->get_pixbuf) if $img->get_storage_type eq 'pixbuf';
             $_[0]->set_sensitive($w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go ? 1 : 0);
         });
         return 0;
@@ -3194,7 +3211,7 @@ sub _wakeOnLan {
             $mac = Net::ARP::arp_lookup('', $ip);
             $mac = $mac eq 'unknown' ? '00:00:00:00:00:00' : $mac;
         }
-    require PACIcons; my $img_ip = PACIcons::icon_image($up ? 'status_connected' : 'status_disconnected', $up ? 'gtk-connect' : 'gtk-disconnect'); $w{window}{gui}{iconip}->set_from_pixbuf($img_ip->get_pixbuf) if $img_ip->get_storage_type eq 'pixbuf';
+    my $img_ip = _createIcon($up ? 'network-transmit-receive-symbolic' : 'network-offline-symbolic', $up ? 'gtk-connect' : 'gtk-disconnect'); $w{window}{gui}{iconip}->set_from_pixbuf($img_ip->get_pixbuf) if $img_ip->get_storage_type eq 'pixbuf';
         $w{window}{gui}{entrymac}->set_text($mac);
         $w{window}{gui}{entrymac}->select_region(0, length($mac));
         $w{window}{gui}{lblstatus}->set_text("'$ip' TCP port $ping_port seems to be " . ($up ? 'REACHABLE' : 'UNREACHABLE'));

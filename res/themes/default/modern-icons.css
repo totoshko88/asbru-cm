@@ -1,9 +1,0 @@
-/* Optional modern icon scaling tweaks */
-button.image-button image, button image, .button image {
-  -gtk-icon-size: 20px; /* base */
-}
-
-/* Larger variant when ASBRU_LARGE_ICONS is set (handled by runtime) */
-.asbru-large-icons button image, .asbru-large-icons image {
-  -gtk-icon-size: 28px;
-}

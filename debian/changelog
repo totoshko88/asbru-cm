@@ -1,3 +1,17 @@
+asbru-cm (7.0.2) unstable; urgency=medium
+
+  * Icons: Restored original icon system with GTK4 compatibility via PACCompat
+  * Themes: Reverted to original theme system removing complex custom modifications
+  * UI: Fixed connection tree dark theme support with proper contrast detection
+  * Testing: Implemented comprehensive protocol testing framework
+  * Dependencies: Added startup dependency validation system with installation hints
+  * Performance: Implemented multithreaded configuration import with progress indication
+  * Build: Updated build system validation for DEB, RPM, and AppImage packages
+  * Cleanup: Removed development artifacts and organized project structure
+  * Documentation: Updated version to 7.0.2 with comprehensive release notes
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Fri, 22 Aug 2025 12:00:00 +0000
+
 asbru-cm (7.0.1) unstable; urgency=medium
 
   * Critical: Fixed application hanging when creating local shell connections

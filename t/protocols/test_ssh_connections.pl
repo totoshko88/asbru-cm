@@ -5,7 +5,6 @@ use warnings;
 use v5.20;
 
 use Test::More;
-use Test::MockObject;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
@@ -13,10 +12,11 @@ use AsbruTestFramework qw(
     setup_test_environment
     cleanup_test_environment
     measure_performance
+    create_mock_protocol_handler
 );
 
 # Test plan
-plan tests => 12;
+plan tests => 11;
 
 # Setup test environment
 setup_test_environment();
@@ -26,8 +26,7 @@ subtest 'SSH Connection Initialization' => sub {
     plan tests => 6;
     
     # Mock SSH connection object
-    my $ssh_conn = Test::MockObject->new();
-    $ssh_conn->set_isa('PACMethod_ssh');
+    my $ssh_conn = create_mock_protocol_handler('ssh');
     
     # Mock connection parameters
     my %connection_params = (
@@ -78,7 +77,7 @@ subtest 'SSH Connection Initialization' => sub {
 subtest 'SSH Authentication Methods' => sub {
     plan tests => 8;
     
-    my $ssh_auth = Test::MockObject->new();
+    my $ssh_auth = create_mock_protocol_handler('ssh');
     
     # Mock different authentication methods
     $ssh_auth->mock('authenticate_password', sub {
@@ -124,7 +123,7 @@ subtest 'SSH Authentication Methods' => sub {
 subtest 'SSH Connection Establishment' => sub {
     plan tests => 6;
     
-    my $ssh_connection = Test::MockObject->new();
+    my $ssh_connection = create_mock_protocol_handler('ssh');
     my $connection_state = 'disconnected';
     
     $ssh_connection->mock('connect', sub {
@@ -187,7 +186,7 @@ subtest 'SSH Connection Establishment' => sub {
 subtest 'SSH Command Execution' => sub {
     plan tests => 7;
     
-    my $ssh_exec = Test::MockObject->new();
+    my $ssh_exec = create_mock_protocol_handler('ssh');
     my $connected = 1;
     
     $ssh_exec->mock('execute_command', sub {
@@ -248,7 +247,7 @@ subtest 'SSH Command Execution' => sub {
 subtest 'SSH File Transfer (SFTP)' => sub {
     plan tests => 8;
     
-    my $sftp = Test::MockObject->new();
+    my $sftp = create_mock_protocol_handler('ssh');
     my %remote_files = (
         '/home/testuser/file1.txt' => 'Content of file 1',
         '/home/testuser/dir1/file2.txt' => 'Content of file 2'
@@ -322,7 +321,7 @@ subtest 'SSH File Transfer (SFTP)' => sub {
 subtest 'SSH Port Forwarding' => sub {
     plan tests => 6;
     
-    my $port_forward = Test::MockObject->new();
+    my $port_forward = create_mock_protocol_handler('ssh');
     my %active_forwards;
     
     $port_forward->mock('create_local_forward', sub {
@@ -384,7 +383,7 @@ subtest 'SSH Port Forwarding' => sub {
 subtest 'SSH Connection Pooling' => sub {
     plan tests => 5;
     
-    my $connection_pool = Test::MockObject->new();
+    my $connection_pool = create_mock_protocol_handler('ssh');
     my %pool_connections;
     my $connection_counter = 0;
     
@@ -442,7 +441,7 @@ subtest 'SSH Connection Pooling' => sub {
 subtest 'SSH Error Handling' => sub {
     plan tests => 6;
     
-    my $ssh_error = Test::MockObject->new();
+    my $ssh_error = create_mock_protocol_handler('ssh');
     
     $ssh_error->mock('handle_connection_error', sub {
         my ($self, $error_type, $error_message) = @_;
@@ -483,7 +482,7 @@ subtest 'SSH Error Handling' => sub {
 subtest 'SSH Configuration Management' => sub {
     plan tests => 5;
     
-    my $ssh_config = Test::MockObject->new();
+    my $ssh_config = create_mock_protocol_handler('ssh');
     my %config_options;
     
     $ssh_config->mock('set_option', sub {
@@ -530,7 +529,7 @@ subtest 'SSH Performance Testing' => sub {
     # Test SSH connection performance
     my $perf_result = measure_performance('SSH Connection', sub {
         # Simulate SSH connection establishment
-        my $ssh = Test::MockObject->new();
+        my $ssh = create_mock_protocol_handler('ssh');
         $ssh->mock('connect', sub { 
             sleep(0.01) if $ENV{ASBRU_TEST_SIMULATE_DELAY}; 
             return 1; 
@@ -546,7 +545,7 @@ subtest 'SSH Performance Testing' => sub {
 subtest 'SSH Security Features' => sub {
     plan tests => 6;
     
-    my $ssh_security = Test::MockObject->new();
+    my $ssh_security = create_mock_protocol_handler('ssh');
     
     # Mock security-related methods
     $ssh_security->mock('verify_host_key', sub {

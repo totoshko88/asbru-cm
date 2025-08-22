@@ -207,6 +207,7 @@ sub new {
     # Show some info about dependencies
     if ($$self{_VERBOSE}) {
         print STDERR "INFO: Crypt::CBC version is ${Crypt::CBC::VERSION}\n";
+        _checkDependencies($self);
     }
 
     # Read the config/connections file...
@@ -253,7 +254,7 @@ sub new {
     print STDERR "INFO: Theme directory is '$$self{_THEME}'\n";
     if ($$self{_VERBOSE}) { print STDERR "DIAG: Startup profile so far -> " . join(' | ', @{$self->{_PROFILE}}) . "\n"; }
 
-    _registerPACIcons($THEME_DIR);
+    # _registerPACIcons($THEME_DIR); # Removed - will be restored in PACUtils.pm
     $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.png");
     $CLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_connection.svg");
     $GROUPICON_ROOT = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
@@ -552,6 +553,10 @@ sub start {
     # Show main interface
     if (!$$self{_CMDLINETRAY}) {
         $$self{_GUI}{main}->show_all();
+        
+        # Start automatic theme monitoring for tree widgets (Task 4.2)
+        PACCompat::startTreeThemeMonitoring();
+        
         if ($$self{_GUI}{hpane}) {
             my $alloc = $$self{_GUI}{hpane}->get_allocation; my $tw=$alloc->{width}||0; if ($tw>200){ my $pos=int($tw*30/100); $pos = 120 if $pos < 120; eval { $$self{_GUI}{hpane}->set_position($pos); }; }
         }
@@ -801,6 +806,9 @@ sub _initGUI {
     $$self{_GUI}{treeConnections}->set_enable_search(0);
     $$self{_GUI}{treeConnections}->set_has_tooltip(1);
     $$self{_GUI}{treeConnections}->set_grid_lines('GTK_TREE_VIEW_GRID_LINES_NONE');
+    
+    # Apply theme-aware styling to connection tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeConnections});
     # Implement a "TreeModelSort" to auto-sort the data
     $$self{_GUI}{treeConnections}->set_model(SortedTreeStore->create($$self{_GUI}{treeConnections}->get_model(), $$self{_CFG}, $$self{_VERBOSE}));
     $$self{_GUI}{treeConnections}->get_selection()->set_mode('GTK_SELECTION_MULTIPLE');
@@ -876,6 +884,9 @@ sub _initGUI {
     $$self{_GUI}{treeFavourites}->set_enable_search(0);
     $$self{_GUI}{treeFavourites}->set_has_tooltip(1);
     $$self{_GUI}{treeFavourites}->get_selection()->set_mode('GTK_SELECTION_MULTIPLE');
+    
+    # Apply theme-aware styling to favourites tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeFavourites});
 
     # Create a scrolled3 scrolled window to contain the history tree - AI-assisted modernization: Updated for GTK4 compatibility
     $$self{_GUI}{scroll3} = create_scrolled_window();
@@ -905,6 +916,9 @@ sub _initGUI {
     $$self{_GUI}{treeHistory}->set_headers_visible(0);
     $$self{_GUI}{treeHistory}->set_enable_search(0);
     $$self{_GUI}{treeHistory}->set_has_tooltip(1);
+    
+    # Apply theme-aware styling to history tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeHistory});
 
     $$self{_GUI}{vboxclu} = create_box('vertical', 0);
 
@@ -942,6 +956,9 @@ sub _initGUI {
     $$self{_GUI}{treeClusters}->set_headers_visible(0);
     $$self{_GUI}{treeClusters}->set_enable_search(0);
     $$self{_GUI}{treeClusters}->set_has_tooltip(0);
+    
+    # Apply theme-aware styling to clusters tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeClusters});
 
     # Create a hbox0: exec and clusters - AI-assisted modernization: Updated for GTK4 compatibility
     $$self{_GUI}{hbox0} = create_box('vertical', 0);
@@ -4539,8 +4556,7 @@ sub _apply_internal_theme {
     $$self{_CFG}{'defaults'}{'theme'} = $theme;
     delete $$self{_CFG}{'defaults'}{'system icon theme override'}; # clear system override when switching to internal theme
     $$self{_THEME} = $dir;
-    eval { require PACIcons; PACIcons::clear_cache(); };
-    eval { PACIcons::set_theme_dir($dir, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+    # PACIcons module removed - icon registration will be handled by PACUtils
     _registerPACIcons($dir);
     
     # Reload CSS styling for theme
@@ -5699,6 +5715,346 @@ sub _doFocusPage {
 
         # When found, do not process further
         last;
+    }
+}
+
+sub _checkDependencies {
+    my $self = shift;
+    
+    print STDERR "INFO: Checking system dependencies...\n";
+    
+    # Define tools with their installation hints and version detection
+    my %tools = (
+        # RDP clients
+        'xfreerdp' => {
+            'description' => 'FreeRDP client for RDP connections',
+            'install_hint' => 'freerdp2-wayland or freerdp-x11',
+            'critical' => 0,
+            'version_cmd' => 'xfreerdp --version 2>&1 | head -1',
+            'alternatives' => ['rdesktop']
+        },
+        'rdesktop' => {
+            'description' => 'Alternative RDP client',
+            'install_hint' => 'rdesktop',
+            'critical' => 0,
+            'version_cmd' => 'rdesktop 2>&1 | grep "Version" | head -1',
+            'alternatives' => ['xfreerdp']
+        },
+        
+        # VNC clients
+        'vncviewer' => {
+            'description' => 'VNC viewer client',
+            'install_hint' => 'tigervnc-viewer or xtightvncviewer',
+            'critical' => 0,
+            'version_cmd' => 'vncviewer --version 2>&1 | head -1',
+            'alternatives' => ['xtightvncviewer', 'vinagre']
+        },
+        'xtightvncviewer' => {
+            'description' => 'TightVNC viewer client',
+            'install_hint' => 'xtightvncviewer',
+            'critical' => 0,
+            'version_cmd' => 'xtightvncviewer -h 2>&1 | grep -i version | head -1',
+            'alternatives' => ['vncviewer']
+        },
+        'vinagre' => {
+            'description' => 'GNOME VNC/RDP viewer',
+            'install_hint' => 'vinagre',
+            'critical' => 0,
+            'version_cmd' => 'vinagre --version 2>&1 | head -1',
+            'alternatives' => ['vncviewer', 'remmina']
+        },
+        'remmina' => {
+            'description' => 'Multi-protocol remote desktop client',
+            'install_hint' => 'remmina',
+            'critical' => 0,
+            'version_cmd' => 'remmina --version 2>&1 | head -1',
+            'alternatives' => ['vinagre']
+        },
+        
+        # SSH and secure connections
+        'ssh' => {
+            'description' => 'SSH client for secure connections',
+            'install_hint' => 'openssh-client',
+            'critical' => 1,
+            'version_cmd' => 'ssh -V 2>&1 | head -1'
+        },
+        'mosh' => {
+            'description' => 'Mobile shell for unstable connections',
+            'install_hint' => 'mosh',
+            'critical' => 0,
+            'version_cmd' => 'mosh --version 2>&1 | head -1'
+        },
+        'sshpass' => {
+            'description' => 'SSH password authentication helper',
+            'install_hint' => 'sshpass',
+            'critical' => 0,
+            'version_cmd' => 'sshpass -V 2>&1 | head -1'
+        },
+        
+        # Legacy protocols
+        'telnet' => {
+            'description' => 'Telnet client for legacy connections',
+            'install_hint' => 'telnet',
+            'critical' => 0
+        },
+        'ftp' => {
+            'description' => 'FTP client for file transfers',
+            'install_hint' => 'ftp',
+            'critical' => 0,
+            'version_cmd' => 'ftp -? 2>&1 | head -1 | sed "s/usage: /ftp /" || echo "ftp (available)"'
+        },
+        'sftp' => {
+            'description' => 'Secure FTP client',
+            'install_hint' => 'openssh-client',
+            'critical' => 0,
+            'version_cmd' => 'sftp -V 2>&1 | head -1'
+        },
+        
+        # Serial connection tools
+        'cu' => {
+            'description' => 'Serial connection utility',
+            'install_hint' => 'cu or uucp',
+            'critical' => 0,
+            'version_cmd' => 'cu --version 2>&1 | head -1 || echo "cu (version unknown)"',
+            'alternatives' => ['screen', 'minicom']
+        },
+        'screen' => {
+            'description' => 'Terminal multiplexer (can handle serial)',
+            'install_hint' => 'screen',
+            'critical' => 0,
+            'version_cmd' => 'screen -v 2>&1 | head -1',
+            'alternatives' => ['cu', 'minicom']
+        },
+        'minicom' => {
+            'description' => 'Serial communication program',
+            'install_hint' => 'minicom',
+            'critical' => 0,
+            'version_cmd' => 'minicom --version 2>&1 | head -1',
+            'alternatives' => ['cu', 'screen']
+        },
+        
+        # Additional useful tools
+        'expect' => {
+            'description' => 'Automation tool for interactive applications',
+            'install_hint' => 'expect',
+            'critical' => 0,
+            'version_cmd' => 'expect -v 2>&1 | head -1'
+        },
+        'socat' => {
+            'description' => 'Multipurpose relay tool',
+            'install_hint' => 'socat',
+            'critical' => 0,
+            'version_cmd' => 'socat -V 2>&1 | head -1'
+        }
+    );
+    
+    my $missing_critical = 0;
+    my $missing_optional = 0;
+    my %available_tools = ();
+    
+    # Check tool availability and get versions
+    foreach my $tool (sort keys %tools) {
+        my $available = system("which $tool >/dev/null 2>&1") == 0;
+        
+        if ($available) {
+            $available_tools{$tool} = 1;
+            my $version_info = "";
+            
+            if ($tools{$tool}{'version_cmd'}) {
+                my $version_output = `$tools{$tool}{'version_cmd'} 2>/dev/null`;
+                chomp($version_output);
+                $version_info = $version_output ? " [$version_output]" : "";
+            }
+            
+            print STDERR "✅ $tool: Available$version_info ($tools{$tool}{'description'})\n";
+        } else {
+            if ($tools{$tool}{'critical'}) {
+                print STDERR "❌ $tool: Missing (CRITICAL) - $tools{$tool}{'description'}\n";
+                print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
+                $missing_critical++;
+            } else {
+                print STDERR "⚠️  $tool: Missing (optional) - $tools{$tool}{'description'}\n";
+                print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
+                $missing_optional++;
+            }
+        }
+    }
+    
+    # Check for alternative tools and provide suggestions
+    print STDERR "\nINFO: Alternative tool analysis:\n";
+    my %categories = (
+        'RDP' => ['xfreerdp', 'rdesktop', 'remmina'],
+        'VNC' => ['vncviewer', 'xtightvncviewer', 'vinagre', 'remmina'],
+        'Serial' => ['cu', 'screen', 'minicom']
+    );
+    
+    foreach my $category (sort keys %categories) {
+        my @available_in_category = grep { $available_tools{$_} } @{$categories{$category}};
+        my @missing_in_category = grep { !$available_tools{$_} } @{$categories{$category}};
+        
+        if (@available_in_category) {
+            print STDERR "✅ $category connections: " . join(', ', @available_in_category) . " available\n";
+        } else {
+            print STDERR "❌ $category connections: No tools available. Consider installing: " . 
+                         join(' or ', @missing_in_category) . "\n";
+        }
+    }
+    
+    # Detect distribution and provide specific installation commands
+    my $distro = _detectDistribution();
+    if ($distro && ($missing_critical > 0 || $missing_optional > 0)) {
+        print STDERR "\nINFO: Distribution-specific installation suggestions for $distro:\n";
+        _provideInstallationSuggestions($distro, \%tools, \%available_tools);
+    }
+    
+    # Summary
+    print STDERR "\n";
+    if ($missing_critical > 0) {
+        print STDERR "WARNING: $missing_critical critical tool(s) missing. Some features may not work.\n";
+    }
+    if ($missing_optional > 0) {
+        print STDERR "INFO: $missing_optional optional tool(s) missing. Install them for full functionality.\n";
+    }
+    if ($missing_critical == 0 && $missing_optional == 0) {
+        print STDERR "INFO: All dependency checks passed successfully.\n";
+    }
+    
+    return 1;
+}
+
+sub _detectDistribution {
+    # Try to detect the Linux distribution
+    if (-f '/etc/os-release') {
+        my $os_release = `cat /etc/os-release 2>/dev/null`;
+        if ($os_release =~ /^ID=(.+)$/m) {
+            my $id = $1;
+            $id =~ s/["']//g;
+            return $id;
+        }
+    }
+    
+    # Fallback methods
+    if (-f '/etc/debian_version') {
+        return 'debian';
+    } elsif (-f '/etc/redhat-release') {
+        return 'rhel';
+    } elsif (-f '/etc/arch-release') {
+        return 'arch';
+    } elsif (-f '/etc/SuSE-release') {
+        return 'suse';
+    }
+    
+    return undef;
+}
+
+sub _provideInstallationSuggestions {
+    my ($distro, $tools, $available_tools) = @_;
+    
+    my %package_maps = (
+        'ubuntu' => {
+            'xfreerdp' => 'freerdp2-x11',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc-viewer',
+            'xtightvncviewer' => 'xtightvncviewer',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-client',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-client',
+            'cu' => 'cu',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat'
+        },
+        'debian' => {
+            'xfreerdp' => 'freerdp2-x11',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc-viewer',
+            'xtightvncviewer' => 'xtightvncviewer',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-client',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-client',
+            'cu' => 'cu',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat'
+        },
+        'fedora' => {
+            'xfreerdp' => 'freerdp',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-clients',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-clients',
+            'cu' => 'uucp',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat'
+        },
+        'arch' => {
+            'xfreerdp' => 'freerdp',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'inetutils',
+            'ftp' => 'inetutils',
+            'sftp' => 'openssh',
+            'cu' => 'uucp',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat'
+        }
+    );
+    
+    my $package_map = $package_maps{$distro} || $package_maps{'ubuntu'}; # fallback to ubuntu
+    my @missing_packages = ();
+    
+    foreach my $tool (sort keys %$tools) {
+        if (!$available_tools->{$tool} && $package_map->{$tool}) {
+            push @missing_packages, $package_map->{$tool};
+        }
+    }
+    
+    if (@missing_packages) {
+        # Remove duplicates
+        my %seen = ();
+        @missing_packages = grep { !$seen{$_}++ } @missing_packages;
+        
+        my $install_cmd;
+        if ($distro =~ /^(ubuntu|debian)$/) {
+            $install_cmd = "sudo apt-get install " . join(' ', @missing_packages);
+        } elsif ($distro =~ /^(fedora|rhel|centos)$/) {
+            $install_cmd = "sudo dnf install " . join(' ', @missing_packages);
+        } elsif ($distro eq 'arch') {
+            $install_cmd = "sudo pacman -S " . join(' ', @missing_packages);
+        } elsif ($distro =~ /suse/) {
+            $install_cmd = "sudo zypper install " . join(' ', @missing_packages);
+        } else {
+            $install_cmd = "# Install packages: " . join(' ', @missing_packages);
+        }
+        
+        print STDERR "   $install_cmd\n";
     }
 }
 

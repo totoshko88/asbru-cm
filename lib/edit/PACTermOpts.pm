@@ -428,7 +428,7 @@ sub _buildTermOptsGUI {
 
     $w{btnResetDefaults} = Gtk3::Button->new_with_label('Reset to DEFAULT values');
     $w{vbox1}->pack_start($w{btnResetDefaults}, 0, 1, 0);
-    $w{btnResetDefaults}->set_image(PACIcons::icon_image('reset_defaults','edit-undo'));
+    $w{btnResetDefaults}->set_image(Gtk3::Image->new_from_icon_name('edit-undo', 'button'));
 
     $$self{container} = $w{vbox};
     $$self{gui} = \%w;

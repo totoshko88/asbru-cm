@@ -5,7 +5,6 @@ use warnings;
 use v5.20;
 
 use Test::More;
-use Test::MockObject;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
@@ -13,6 +12,7 @@ use AsbruTestFramework qw(
     setup_test_environment
     cleanup_test_environment
     measure_performance
+    create_mock_protocol_handler
 );
 
 # Test plan
@@ -26,8 +26,7 @@ subtest 'VNC Connection Initialization' => sub {
     plan tests => 6;
     
     # Mock VNC connection object
-    my $vnc_conn = Test::MockObject->new();
-    $vnc_conn->set_isa('PACMethod_vncviewer');
+    my $vnc_conn = create_mock_protocol_handler('vnc');
     
     # Mock connection parameters
     my %connection_params = (
@@ -70,7 +69,7 @@ subtest 'VNC Connection Initialization' => sub {
 subtest 'VNC Authentication Methods' => sub {
     plan tests => 6;
     
-    my $vnc_auth = Test::MockObject->new();
+    my $vnc_auth = create_mock_protocol_handler('vnc');
     
     # Mock different VNC authentication methods
     $vnc_auth->mock('authenticate_password', sub {
@@ -105,7 +104,7 @@ subtest 'VNC Authentication Methods' => sub {
 subtest 'VNC Connection Establishment' => sub {
     plan tests => 7;
     
-    my $vnc_connection = Test::MockObject->new();
+    my $vnc_connection = create_mock_protocol_handler('vnc');
     my $connection_state = 'disconnected';
     my $vnc_process_pid = undef;
     
@@ -175,7 +174,7 @@ subtest 'VNC Connection Establishment' => sub {
 subtest 'VNC Display Configuration' => sub {
     plan tests => 8;
     
-    my $vnc_display = Test::MockObject->new();
+    my $vnc_display = create_mock_protocol_handler('vnc');
     
     $vnc_display->mock('set_quality', sub {
         my ($self, $quality) = @_;
@@ -232,7 +231,7 @@ subtest 'VNC Display Configuration' => sub {
 subtest 'VNC Input Handling' => sub {
     plan tests => 6;
     
-    my $vnc_input = Test::MockObject->new();
+    my $vnc_input = create_mock_protocol_handler('vnc');
     my @sent_keys;
     my @mouse_events;
     
@@ -276,7 +275,7 @@ subtest 'VNC Input Handling' => sub {
 subtest 'VNC Security Features' => sub {
     plan tests => 6;
     
-    my $vnc_security = Test::MockObject->new();
+    my $vnc_security = create_mock_protocol_handler('vnc');
     
     $vnc_security->mock('enable_encryption', sub {
         my ($self, $enable) = @_;
@@ -323,7 +322,7 @@ subtest 'VNC Security Features' => sub {
 subtest 'VNC Performance Optimization' => sub {
     plan tests => 6;
     
-    my $vnc_perf = Test::MockObject->new();
+    my $vnc_perf = create_mock_protocol_handler('vnc');
     
     $vnc_perf->mock('set_encoding', sub {
         my ($self, $encoding) = @_;
@@ -372,7 +371,7 @@ subtest 'VNC Performance Optimization' => sub {
 subtest 'VNC Error Handling and Performance' => sub {
     plan tests => 6;
     
-    my $vnc_error = Test::MockObject->new();
+    my $vnc_error = create_mock_protocol_handler('vnc');
     
     $vnc_error->mock('handle_connection_error', sub {
         my ($self, $error_type, $error_message) = @_;
@@ -405,7 +404,7 @@ subtest 'VNC Error Handling and Performance' => sub {
     # Test VNC connection performance
     my $perf_result = measure_performance('VNC Connection', sub {
         # Simulate VNC connection establishment
-        my $vnc = Test::MockObject->new();
+        my $vnc = create_mock_protocol_handler('vnc');
         $vnc->mock('connect', sub { 
             sleep(0.015) if $ENV{ASBRU_TEST_SIMULATE_DELAY}; 
             return { success => 1, pid => 54321 }; 

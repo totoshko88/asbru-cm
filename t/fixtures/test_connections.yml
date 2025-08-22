@@ -57,10 +57,21 @@ environments:
     private_key: "/path/to/test/key.pem"
     description: "Test SSH connection with key authentication"
     
+  test-local-shell:
+    name: "Test Local Shell"
+    method: "LOCAL"
+    shell: "/bin/bash"
+    working_directory: "/home/testuser"
+    environment_variables:
+      TERM: "xterm-256color"
+      LANG: "en_US.UTF-8"
+    description: "Test local shell connection for VTE testing"
+    
   test-cluster-connection:
     name: "Test Cluster"
     method: "CLUSTER"
     description: "Test cluster for connection grouping"
     children:
+      - "test-local-shell"
       - "test-ssh-connection"
       - "test-rdp-connection"

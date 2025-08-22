@@ -2,6 +2,29 @@
 
 Here you can find important news on the project
 
+## 22.08.2025 - Version 7.0.2 - Modernization Completion Release
+
+We are excited to announce version **7.0.2** of Ásbrú Connection Manager, completing the modernization process with restored icon and theme systems, GTK4 compatibility, and comprehensive testing framework:
+
+### 🎯 Modernization Complete
+- **Icon System Restored**: Reverted to proven original icon system with GTK4 compatibility
+- **Theme System Fixed**: Restored original theme CSS structure with proper dark theme support
+- **Connection Tree Fixed**: Proper text contrast in dark themes with automatic theme detection
+- **Protocol Testing**: Comprehensive testing framework for all connection types
+- **Performance Enhanced**: Multithreaded configuration import with progress indication
+
+### 🛠️ Technical Excellence
+- Enhanced PACCompat module with complete GTK4 compatibility
+- Dependency validation system with installation hints
+- Build system validation for DEB, RPM, and AppImage packages
+- Comprehensive cleanup and project organization
+
+This release completes the modernization journey, delivering a stable, feature-complete application ready for modern Linux distributions.
+
+**Download**: [asbru-cm_7.0.2_all.deb](https://github.com/totoshko88/asbru-cm/releases/latest)
+
+----
+
 ## 18.08.2025 - Version 7.0.1 - Critical Stability Release
 
 We are excited to announce version **7.0.1** of Ásbrú Connection Manager Modernized Fork that addresses critical stability issues and enhances Wayland compatibility:

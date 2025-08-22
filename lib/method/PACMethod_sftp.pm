@@ -244,7 +244,7 @@ sub _buildGUI
     $w{vboxAdvOpt}->set_border_width(5);
 
     # Build 'add' button
-    require PACIcons; $w{btnaddAdvOpt} = Gtk3::Button->new(); $w{btnaddAdvOpt}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnaddAdvOpt}->set_always_show_image(1);
+    $w{btnaddAdvOpt} = Gtk3::Button->new(); $w{btnaddAdvOpt}->set_image(Gtk3::Image->new_from_icon_name('list-add', 'button')); $w{btnaddAdvOpt}->set_always_show_image(1);
     $w{vboxAdvOpt}->pack_start($w{btnaddAdvOpt}, 0, 1, 0);
 
     # Build a scrolled window
@@ -315,7 +315,7 @@ sub _buildAdvOpt
     $w{entryAdvOptValue}->set_text($value);
 
     # Build delete button
-    $w{btn} = Gtk3::Button->new(); $w{btn}->set_image(PACIcons::icon_image('delete_row','gtk-delete')); $w{btn}->set_always_show_image(1);
+    $w{btn} = Gtk3::Button->new(); $w{btn}->set_image(Gtk3::Image->new_from_icon_name('edit-delete', 'button')); $w{btn}->set_always_show_image(1);
     $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 
     # Add built control to main container

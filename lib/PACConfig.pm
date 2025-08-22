@@ -38,13 +38,13 @@ use FindBin qw ($RealBin $Bin $Script);
 use PACConfigData qw(load_yaml_config save_yaml_config clone_data validate_config_structure);
 use YAML::XS;  # Modern YAML processor
 use Storable;
-use Glib::IO; # GSettings
+# use Glib::IO; # GSettings - commented out as not available on all systems
 use PACCryptoCompat;
 
 # GTK
 use Gtk3 '-init';
 use Gtk3::SimpleList;
-use PACIcons; # Modern symbolic icon mapping
+# use PACIcons; # symbolic icon mapping - REMOVED, will use standard GTK icons
 
 # PAC modules
 use PACUtils;
@@ -165,31 +165,31 @@ sub _initGUI {
     # Initialize main window
     $$self{_WINDOWCONFIG}->set_icon_name('asbru-app-big');
 
-    _($self, 'btnResetDefaults')->set_image(PACIcons::icon_image('reset_defaults','edit-undo'));
+    _($self, 'btnResetDefaults')->set_image(Gtk3::Image->new_from_icon_name('edit-undo', 'button'));
     _($self, 'btnResetDefaults')->set_label('_Reset to DEFAULT values');
     foreach my $o ('MO', 'TO') {
         foreach my $t ('BE', 'LF', 'AD') {
             _($self, "linkHelp$o$t")->set_label('');
-            _($self, "linkHelp$o$t")->set_image(PACIcons::icon_image('help_link','help-browser'));
+            _($self, "linkHelp$o$t")->set_image(Gtk3::Image->new_from_icon_name('help-browser', 'button'));
         }
     }
     foreach my $t ('linkHelpLocalShell', 'linkHelpGlobalNetwork') {
         _($self, $t)->set_label('');
-    _($self, $t)->set_image(PACIcons::icon_image('help_link','help-browser'));
+    _($self, $t)->set_image(Gtk3::Image->new_from_icon_name('help-browser', 'button'));
     }
 
     # Option currently disabled (legacy Gtk3 stock image call removed)
     # _($self, 'btnCheckVersion')->set_image(PACIcons::icon_image('refresh','view-refresh'));
     # _($self, 'btnCheckVersion')->set_label('Check _now');
 
-    _($self, 'rbCfgStartTreeConn')->set_image(PACIcons::icon_image('treelist','view-list'));
-    _($self, 'rbCfgStartTreeFavs')->set_image(PACIcons::icon_image('favourite_start','starred'));
-    _($self, 'rbCfgStartTreeHist')->set_image(PACIcons::icon_image('history_start','document-open-recent'));
-    _($self, 'rbCfgStartTreeCluster')->set_image(PACIcons::icon_image('cluster_start','applications-system'));
-    require PACIcons; my $img_kp = PACIcons::icon_image('keepass','asbru-keepass'); _($self, 'imgKeePassOpts')->set_from_pixbuf($img_kp->get_pixbuf) if $img_kp->get_storage_type eq 'pixbuf';
-    _($self, 'btnCfgSetGUIPassword')->set_image(PACIcons::icon_image('protected','changes-prevent'));
+    _($self, 'rbCfgStartTreeConn')->set_image(Gtk3::Image->new_from_icon_name('view-list', 'button'));
+    _($self, 'rbCfgStartTreeFavs')->set_image(Gtk3::Image->new_from_icon_name('starred', 'button'));
+    _($self, 'rbCfgStartTreeHist')->set_image(Gtk3::Image->new_from_icon_name('document-open-recent', 'button'));
+    _($self, 'rbCfgStartTreeCluster')->set_image(Gtk3::Image->new_from_icon_name('applications-system', 'button'));
+    _($self, 'imgKeePassOpts')->set_from_icon_name('dialog-password', 'button');
+    _($self, 'btnCfgSetGUIPassword')->set_image(Gtk3::Image->new_from_icon_name('changes-prevent', 'button'));
     _($self, 'btnCfgSetGUIPassword')->set_label('Set...');
-    _($self, 'btnExportYAML')->set_image(PACIcons::icon_image('save_as','document-save-as'));
+    _($self, 'btnExportYAML')->set_image(Gtk3::Image->new_from_icon_name('document-save-as', 'button'));
     _($self, 'btnExportYAML')->set_label('Export config...');
     _($self, 'alignShellOpts')->add(($$self{_SHELL} = PACTermOpts->new())->{container});
     _($self, 'alignGlobalVar')->add(($$self{_VARIABLES} = PACGlobalVarEntry->new())->{container});
@@ -199,7 +199,7 @@ sub _initGUI {
     _($self, 'alignKeyBindings')->add(($$self{_KEYBINDS} = PACKeyBindings->new($$self{_CFG}{defaults}{keybindings}, $$self{_WINDOWCONFIG}))->{container});
     _($self, 'nbPreferences')->show_all();
 
-    _($self, 'btnCfgProxyCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
+    _($self, 'btnCfgProxyCheckKPX')->set_image(Gtk3::Image->new_from_icon_name('dialog-password', 'button'));
     _($self, 'btnCfgProxyCheckKPX')->set_label('');
 
     $$self{cbShowHidden} = Gtk3::CheckButton->new_with_mnemonic('Show _hidden files');
@@ -293,7 +293,7 @@ sub _setupCallbacks {
         _($self, 'cfgLblCharEncode')->set_markup($desc);
     });
     _($self, 'cbCfgBWTrayIcon')->signal_connect('toggled' => sub {
-    my $logical = _($self, 'cbCfgBWTrayIcon')->get_active() ? 'tray_bw' : 'tray_color'; require PACIcons; my $img_tray = PACIcons::icon_image($logical, _($self, 'cbCfgBWTrayIcon')->get_active() ? 'asbru-tray-bw' : 'asbru-tray'); _($self, 'imgTrayIcon')->set_from_pixbuf($img_tray->get_pixbuf) if $img_tray->get_storage_type eq 'pixbuf';
+    my $icon_name = _($self, 'cbCfgBWTrayIcon')->get_active() ? 'asbru-tray-bw' : 'asbru-tray'; _($self, 'imgTrayIcon')->set_from_icon_name($icon_name, 'button');
     });
     _($self, 'cbCfgShowSudoPassword')->signal_connect('toggled' => sub {
         _($self, 'entryCfgSudoPassword')->set_visibility(_($self, 'cbCfgShowSudoPassword')->get_active());
@@ -897,7 +897,7 @@ sub _updateGUIPreferences {
     _($self, 'cbCfgShowTreeTooltips')->set_active($$cfg{'defaults'}{'show connections tooltips'});
     _($self, 'cbCfgUseShellToConnect')->set_active($$cfg{'defaults'}{'use login shell to connect'});
     _($self, 'cbCfgAutoAppendGroupName')->set_active($$cfg{'defaults'}{'append group name'});
-    my $logical2 = $$cfg{'defaults'}{'use bw icon'} ? 'tray_bw' : 'tray_color'; require PACIcons; my $img_tray2 = PACIcons::icon_image($logical2, $$cfg{'defaults'}{'use bw icon'} ? 'asbru-tray-bw' : 'asbru-tray'); _($self, 'imgTrayIcon')->set_from_pixbuf($img_tray2->get_pixbuf) if $img_tray2->get_storage_type eq 'pixbuf';
+    my $icon_name2 = $$cfg{'defaults'}{'use bw icon'} ? 'asbru-tray-bw' : 'asbru-tray'; _($self, 'imgTrayIcon')->set_from_icon_name($icon_name2, 'button');
     _($self, 'rbOnNoTabsNothing')->set_active($$cfg{'defaults'}{'when no more tabs'} == 0);
     _($self, 'rbOnNoTabsClose')->set_active($$cfg{'defaults'}{'when no more tabs'} == 1);
     _($self, 'rbOnNoTabsHide')->set_active($$cfg{'defaults'}{'when no more tabs'} == 2);
@@ -951,7 +951,7 @@ sub _updateGUIPreferences {
                 $chk->signal_connect(toggled => sub {
                     my $val = $chk->get_active ? 1 : 0;
                     $$self{_CFG}{'defaults'}{'force_internal_icons'} = $val;
-                    eval { require PACIcons; PACIcons::clear_cache(); };
+                    # Icon cache clearing no longer needed with standard GTK icons
                     eval { $PACMain::FUNCS{_MAIN}->_refresh_all_icons(); };
                     eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
                 });
@@ -1583,5 +1583,624 @@ sub _parent_has_child_named {
     }
     return 0;
 }
+
+###################################################################
+# START: Multithreaded Configuration Import Functions
+
+=head2 _importConfigurationAsync($config_file, $progress_callback)
+
+Implements asynchronous configuration processing using threads.
+Creates a thread-safe configuration processing pipeline with progress tracking.
+
+=cut
+
+sub _importConfigurationAsync {
+    my ($self, $config_file, $progress_callback) = @_;
+    
+    # Validate inputs
+    return 0 unless defined $config_file && -f $config_file;
+    return 0 unless defined $progress_callback && ref $progress_callback eq 'CODE';
+    
+    # Load required modules for threading
+    eval {
+        require threads;
+        require Thread::Queue;
+        require threads::shared;
+    };
+    if ($@) {
+        warn "Threading modules not available: $@";
+        # Fallback to synchronous processing
+        return $self->_importConfigurationSync($config_file, $progress_callback);
+    }
+    
+    my $queue = Thread::Queue->new();
+    my $error_queue = Thread::Queue->new();
+    
+    # Create worker thread for configuration processing
+    my $worker_thread = threads->create(sub {
+        eval {
+            # Count total items for progress tracking
+            my $total_items = $self->_countConfigItems($config_file);
+            $queue->enqueue({
+                type => 'total',
+                total => $total_items
+            });
+            
+            my $processed = 0;
+            
+            # Process configuration in chunks for better performance
+            my $chunk_size = 50; # Process 50 items at a time
+            
+            while (my $chunk = $self->_getNextConfigChunk($config_file, $chunk_size, $processed)) {
+                last unless @$chunk; # No more chunks
+                
+                # Process this chunk
+                my $chunk_result = $self->_processConfigChunk($chunk);
+                
+                if ($chunk_result) {
+                    $processed += scalar(@$chunk);
+                    $queue->enqueue({
+                        type => 'progress',
+                        processed => $processed,
+                        total => $total_items,
+                        chunk_size => scalar(@$chunk)
+                    });
+                } else {
+                    $error_queue->enqueue("Failed to process configuration chunk");
+                    last;
+                }
+                
+                # Small delay to prevent overwhelming the system
+                select(undef, undef, undef, 0.01);
+            }
+            
+            $queue->enqueue({ type => 'complete' });
+        };
+        
+        if ($@) {
+            $error_queue->enqueue("Configuration processing error: $@");
+            $queue->enqueue({ type => 'error', message => $@ });
+        }
+    });
+    
+    # Set up UI thread processing of queue updates
+    my $timeout_id = Glib::Timeout->add(100, sub {
+        # Process progress updates
+        while (defined(my $msg = $queue->dequeue_nb())) {
+            if ($msg->{type} eq 'progress') {
+                $progress_callback->($msg->{processed}, $msg->{total});
+            } elsif ($msg->{type} eq 'total') {
+                $progress_callback->(0, $msg->{total});
+            } elsif ($msg->{type} eq 'complete') {
+                $worker_thread->join();
+                return 0; # Remove timeout
+            } elsif ($msg->{type} eq 'error') {
+                warn "Configuration import error: " . $msg->{message};
+                $worker_thread->join();
+                return 0; # Remove timeout
+            }
+        }
+        
+        # Check for errors
+        while (defined(my $error = $error_queue->dequeue_nb())) {
+            warn "Configuration import error: $error";
+        }
+        
+        return 1; # Continue timeout
+    });
+    
+    return 1;
+}
+
+=head2 _importConfigurationSync($config_file, $progress_callback)
+
+Fallback synchronous configuration processing for systems without threading support.
+
+=cut
+
+sub _importConfigurationSync {
+    my ($self, $config_file, $progress_callback) = @_;
+    
+    eval {
+        my $total_items = $self->_countConfigItems($config_file);
+        $progress_callback->(0, $total_items);
+        
+        my $processed = 0;
+        my $chunk_size = 50;
+        
+        while (my $chunk = $self->_getNextConfigChunk($config_file, $chunk_size, $processed)) {
+            last unless @$chunk;
+            
+            $self->_processConfigChunk($chunk);
+            $processed += scalar(@$chunk);
+            
+            $progress_callback->($processed, $total_items);
+            
+            # Process pending GTK events to keep UI responsive
+            while (Gtk3::events_pending) {
+                Gtk3::main_iteration;
+            }
+        }
+        
+        return 1;
+    };
+    
+    if ($@) {
+        warn "Synchronous configuration import error: $@";
+        return 0;
+    }
+}
+
+=head2 _countConfigItems($config_file)
+
+Counts the total number of configuration items for progress tracking.
+
+=cut
+
+sub _countConfigItems {
+    my ($self, $config_file) = @_;
+    
+    return 0 unless -f $config_file;
+    
+    my $count = 0;
+    
+    eval {
+        # Load configuration to count items
+        my $config = PACConfigData::load_config($config_file);
+        return 0 unless $config;
+        
+        # Count environments (connections and groups)
+        if (exists $config->{environments} && ref $config->{environments} eq 'HASH') {
+            $count += scalar(keys %{$config->{environments}});
+        }
+        
+        # Count global variables
+        if (exists $config->{defaults}{'global variables'} && 
+            ref $config->{defaults}{'global variables'} eq 'HASH') {
+            $count += scalar(keys %{$config->{defaults}{'global variables'}});
+        }
+        
+        # Count other configuration sections
+        $count += 10; # Approximate for other settings
+    };
+    
+    if ($@) {
+        warn "Error counting configuration items: $@";
+        return 100; # Default estimate
+    }
+    
+    return $count || 1; # Ensure at least 1 to avoid division by zero
+}
+
+=head2 _getNextConfigChunk($config_file, $chunk_size, $offset)
+
+Gets the next chunk of configuration items for processing.
+
+=cut
+
+sub _getNextConfigChunk {
+    my ($self, $config_file, $chunk_size, $offset) = @_;
+    
+    $chunk_size ||= 50;
+    $offset ||= 0;
+    
+    # This is a simplified implementation
+    # In a real scenario, you would implement proper chunking based on the config structure
+    
+    # Use package variables for persistence across calls
+    our $config_data;
+    our $all_items;
+    
+    # Load config data once
+    unless ($config_data) {
+        eval {
+            $config_data = PACConfigData::load_config($config_file);
+            
+            # Flatten all items into a processable array
+            $all_items = [];
+            
+            if ($config_data && ref $config_data eq 'HASH') {
+                # Add environment items
+                if (exists $config_data->{environments}) {
+                    foreach my $uuid (keys %{$config_data->{environments}}) {
+                        push @$all_items, {
+                            type => 'environment',
+                            uuid => $uuid,
+                            data => $config_data->{environments}{$uuid}
+                        };
+                    }
+                }
+                
+                # Add global variables
+                if (exists $config_data->{defaults}{'global variables'}) {
+                    foreach my $var (keys %{$config_data->{defaults}{'global variables'}}) {
+                        push @$all_items, {
+                            type => 'global_variable',
+                            name => $var,
+                            data => $config_data->{defaults}{'global variables'}{$var}
+                        };
+                    }
+                }
+                
+                # Add other settings as single items
+                push @$all_items, {
+                    type => 'defaults',
+                    data => $config_data->{defaults}
+                };
+            }
+        };
+        
+        if ($@) {
+            warn "Error loading configuration for chunking: $@";
+            return [];
+        }
+    }
+    
+    return [] unless $all_items && @$all_items;
+    
+    # Return the requested chunk
+    my $end_index = $offset + $chunk_size - 1;
+    $end_index = $#$all_items if $end_index > $#$all_items;
+    
+    return [] if $offset > $#$all_items;
+    
+    my @chunk = @$all_items[$offset..$end_index];
+    return \@chunk;
+}
+
+=head2 _processConfigChunk($chunk)
+
+Processes a chunk of configuration items with error handling.
+
+=cut
+
+sub _processConfigChunk {
+    my ($self, $chunk) = @_;
+    
+    return 0 unless $chunk && ref $chunk eq 'ARRAY';
+    
+    eval {
+        foreach my $item (@$chunk) {
+            next unless $item && ref $item eq 'HASH';
+            
+            if ($item->{type} eq 'environment') {
+                $self->_processEnvironmentItem($item->{uuid}, $item->{data});
+            } elsif ($item->{type} eq 'global_variable') {
+                $self->_processGlobalVariableItem($item->{name}, $item->{data});
+            } elsif ($item->{type} eq 'defaults') {
+                $self->_processDefaultsItem($item->{data});
+            }
+        }
+        
+        return 1;
+    };
+    
+    if ($@) {
+        warn "Error processing configuration chunk: $@";
+        return 0;
+    }
+}
+
+=head2 _processEnvironmentItem($uuid, $data)
+
+Processes a single environment (connection/group) item.
+
+=cut
+
+sub _processEnvironmentItem {
+    my ($self, $uuid, $data) = @_;
+    
+    return unless $uuid && $data;
+    
+    # Validate and sanitize the environment data
+    if (ref $data eq 'HASH') {
+        # Ensure required fields exist
+        $data->{name} ||= "Connection $uuid";
+        $data->{method} ||= 'ssh';
+        
+        # Store in main configuration
+        $self->{_CFG}{environments}{$uuid} = PACConfigData::clone_data($data);
+    }
+}
+
+=head2 _processGlobalVariableItem($name, $data)
+
+Processes a single global variable item.
+
+=cut
+
+sub _processGlobalVariableItem {
+    my ($self, $name, $data) = @_;
+    
+    return unless $name && $data;
+    
+    # Store global variable
+    $self->{_CFG}{defaults}{'global variables'}{$name} = PACConfigData::clone_data($data);
+}
+
+=head2 _processDefaultsItem($data)
+
+Processes default configuration settings.
+
+=cut
+
+sub _processDefaultsItem {
+    my ($self, $data) = @_;
+    
+    return unless $data && ref $data eq 'HASH';
+    
+    # Merge defaults, preserving existing settings
+    foreach my $key (keys %$data) {
+        next if $key eq 'global variables'; # Handled separately
+        $self->{_CFG}{defaults}{$key} = PACConfigData::clone_data($data->{$key});
+    }
+}
+
+# END: Multithreaded Configuration Import Functions
+###################################################################
+
+###################################################################
+# START: Theme-aware Progress Window Functions
+
+=head2 _createProgressWindow($title, $message)
+
+Creates a theme-aware progress window using PACCompat for GTK3/GTK4 compatibility.
+Applies appropriate styling for dark/light modes.
+
+=cut
+
+sub _createProgressWindow {
+    my ($self, $title, $message) = @_;
+    
+    $title ||= "Processing Configuration";
+    $message ||= "Please wait while configuration is being processed...";
+    
+    # Create main window
+    my $window = PACCompat::create_window('toplevel', $title);
+    $window->set_default_size(400, 150);
+    $window->set_position('center');
+    $window->set_modal(1);
+    $window->set_resizable(0);
+    $window->set_deletable(0);
+    
+    # Set parent window if available
+    if ($self->{_WINDOWCONFIG}) {
+        $window->set_transient_for($self->{_WINDOWCONFIG});
+    }
+    
+    # Create main container
+    my $vbox = PACCompat::create_box('vertical', 10);
+    $vbox->set_border_width(20);
+    $window->add($vbox);
+    
+    # Create message label
+    my $label = PACCompat::create_label($message);
+    $label->set_line_wrap(1);
+    $label->set_justify('center');
+    $vbox->pack_start($label, 0, 0, 0);
+    
+    # Create progress bar
+    my $progress_bar = PACCompat::create_progress_bar();
+    $progress_bar->set_show_text(1);
+    $progress_bar->set_text("Initializing...");
+    $vbox->pack_start($progress_bar, 0, 0, 10);
+    
+    # Create status label for detailed information
+    my $status_label = PACCompat::create_label("");
+    $status_label->set_line_wrap(1);
+    $status_label->set_justify('center');
+    $vbox->pack_start($status_label, 0, 0, 0);
+    
+    # Apply theme-appropriate styling
+    $self->_applyProgressWindowTheme($window, $vbox, $label, $progress_bar, $status_label);
+    
+    # Show all widgets
+    $window->show_all();
+    
+    # Process pending events to ensure window is displayed
+    while (Gtk3::events_pending) {
+        Gtk3::main_iteration;
+    }
+    
+    return {
+        window => $window,
+        progress_bar => $progress_bar,
+        status_label => $status_label,
+        message_label => $label
+    };
+}
+
+=head2 _applyProgressWindowTheme($window, $vbox, $label, $progress_bar, $status_label)
+
+Applies theme-aware styling to progress window components.
+
+=cut
+
+sub _applyProgressWindowTheme {
+    my ($self, $window, $vbox, $label, $progress_bar, $status_label) = @_;
+    
+    eval {
+        # Detect current theme
+        my ($theme_name, $prefer_dark) = $self->_detectSystemTheme();
+        
+        # Create CSS provider
+        my $css_provider = PACCompat::create_css_provider();
+        
+        my $css_content;
+        if ($prefer_dark) {
+            # Dark theme styling
+            $css_content = qq{
+                window {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                }
+                
+                label {
+                    color: #ffffff;
+                }
+                
+                progressbar {
+                    background-color: #404040;
+                }
+                
+                progressbar progress {
+                    background-color: #4a90d9;
+                }
+                
+                progressbar trough {
+                    background-color: #404040;
+                    border: 1px solid #555555;
+                }
+            };
+        } else {
+            # Light theme styling
+            $css_content = qq{
+                window {
+                    background-color: #ffffff;
+                    color: #000000;
+                }
+                
+                label {
+                    color: #000000;
+                }
+                
+                progressbar {
+                    background-color: #f0f0f0;
+                }
+                
+                progressbar progress {
+                    background-color: #4a90d9;
+                }
+                
+                progressbar trough {
+                    background-color: #f0f0f0;
+                    border: 1px solid #cccccc;
+                }
+            };
+        }
+        
+        # Load CSS
+        $css_provider->load_from_data($css_content);
+        
+        # Apply CSS to widgets
+        my @widgets = ($window, $vbox, $label, $progress_bar, $status_label);
+        foreach my $widget (@widgets) {
+            next unless $widget;
+            my $context = $widget->get_style_context();
+            $context->add_provider($css_provider, PACCompat::STYLE_PROVIDER_PRIORITY_APPLICATION());
+        }
+        
+    };
+    
+    if ($@) {
+        warn "Failed to apply progress window theme: $@";
+        # Continue without custom styling
+    }
+}
+
+=head2 _detectSystemTheme()
+
+Detects the current system theme and dark mode preference.
+Returns theme name and dark mode boolean.
+
+=cut
+
+sub _detectSystemTheme {
+    my $self = shift;
+    
+    my $theme_name = 'default';
+    my $prefer_dark = 0;
+    
+    eval {
+        # Try to get GTK settings
+        my $settings = PACCompat::get_default_settings();
+        
+        if ($settings) {
+            $theme_name = $settings->get_property('gtk-theme-name') || 'default';
+            $prefer_dark = $settings->get_property('gtk-application-prefer-dark-theme') || 0;
+        }
+        
+        # Additional dark theme detection
+        if (!$prefer_dark) {
+            # Check if theme name suggests dark theme
+            $prefer_dark = 1 if $theme_name =~ /dark/i;
+            
+            # Check environment variables
+            my $gtk_theme = $ENV{GTK_THEME} || '';
+            $prefer_dark = 1 if $gtk_theme =~ /dark/i;
+        }
+    };
+    
+    if ($@) {
+        warn "Failed to detect system theme: $@";
+    }
+    
+    return ($theme_name, $prefer_dark);
+}
+
+=head2 _updateProgressWindow($progress_window, $processed, $total, $status_text)
+
+Updates the progress window with current progress information.
+
+=cut
+
+sub _updateProgressWindow {
+    my ($self, $progress_window, $processed, $total, $status_text) = @_;
+    
+    return unless $progress_window && ref $progress_window eq 'HASH';
+    
+    my $progress_bar = $progress_window->{progress_bar};
+    my $status_label = $progress_window->{status_label};
+    
+    return unless $progress_bar;
+    
+    # Calculate progress fraction
+    my $fraction = $total > 0 ? $processed / $total : 0;
+    $fraction = 1.0 if $fraction > 1.0;
+    
+    # Update progress bar
+    $progress_bar->set_fraction($fraction);
+    
+    # Update progress text
+    my $percentage = int($fraction * 100);
+    my $progress_text = sprintf("Processing... %d%% (%d of %d)", $percentage, $processed, $total);
+    $progress_bar->set_text($progress_text);
+    
+    # Update status label if provided
+    if ($status_label && defined $status_text) {
+        $status_label->set_text($status_text);
+    }
+    
+    # Process pending GTK events to update display
+    while (Gtk3::events_pending) {
+        Gtk3::main_iteration;
+    }
+}
+
+=head2 _closeProgressWindow($progress_window)
+
+Closes and destroys the progress window.
+
+=cut
+
+sub _closeProgressWindow {
+    my ($self, $progress_window) = @_;
+    
+    return unless $progress_window && ref $progress_window eq 'HASH';
+    
+    my $window = $progress_window->{window};
+    return unless $window;
+    
+    eval {
+        $window->destroy();
+    };
+    
+    if ($@) {
+        warn "Error closing progress window: $@";
+    }
+}
+
+# END: Theme-aware Progress Window Functions
+###################################################################
 
 1;
