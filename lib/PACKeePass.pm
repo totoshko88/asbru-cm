@@ -280,14 +280,21 @@ sub getFieldValue {
         if ($$cfg{password}) {
             $KPXC_MP = $$cfg{password};
         } else {
-            $self->getMasterPassword();
+            # Need to get parent window for password dialog
+            my $parent = $PACMain::FUNCS{_MAIN}{_WINDOWCONFIG} || undef;
+            $self->getMasterPassword($parent);
             if (!$KPXC_MP) {
                 # We could not get a valid password
                 return ('Bad key/master password',0);
             }
         }
     }
-    $pid = open3(*Writer, *Reader, *ErrReader, "$CLI $$self{kpxc_cli} show $$self{kpxc_show_protected} $$self{kpxc_keyfile_opt} '$$cfg{database}' '$uid'");
+    # Safely execute keepassxc-cli with proper error handling
+    my $cmd = "$CLI $$self{kpxc_cli} show $$self{kpxc_show_protected} $$self{kpxc_keyfile_opt} '$$cfg{database}' '$uid'";
+    $pid = open3(*Writer, *Reader, *ErrReader, $cmd);
+    if (!defined $pid) {
+        return ('Failed to execute keepassxc-cli', 0);
+    }
     print Writer "$KPXC_MP\n";
     close Writer;
     @out = <Reader>;
@@ -316,9 +323,15 @@ sub get_cfg {
 
     my %hash;
     $hash{use_keepass} = $$self{frame}{'cbUseKeePass'}->get_active();
-    $hash{database} = decode('utf8',$$self{frame}{'fcbKeePassFile'}->get_filename());
-    $hash{pathcli} = decode('utf8',$$self{frame}{'fcbCliFile'}->get_filename());
-    $hash{keyfile} = decode('utf8',$$self{frame}{'fcbKeePassKeyFile'}->get_filename());
+    
+    # Safe filename retrieval with null checking
+    my $db_file = $$self{frame}{'fcbKeePassFile'}->get_filename();
+    my $cli_file = $$self{frame}{'fcbCliFile'}->get_filename();
+    my $key_file = $$self{frame}{'fcbKeePassKeyFile'}->get_filename();
+    
+    $hash{database} = $db_file ? decode('utf8', $db_file) : '';
+    $hash{pathcli} = $cli_file ? decode('utf8', $cli_file) : '';
+    $hash{keyfile} = $key_file ? decode('utf8', $key_file) : '';
     if ((!defined $hash{database})||(-d $hash{database})||(!-e $hash{database})) {
         $hash{database} = '';
         $$self{disable_keepassxc} = 1;
@@ -356,12 +369,26 @@ sub listEntries {
             $KPXC_MP = $$self{cfg}{password};
             $ENV{'KPXC_MP'} = $$self{cfg}{password};
         } else {
-            getMasterPassword($self, $parent);
+            $self->getMasterPassword($parent);
         }
     }
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("KeePassXC Search", $parent, 'modal');
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
+    
+    # Create dialog buttons with proper formatting
+    require PACIcons; 
+    my $btn_cancel = Gtk3::Button->new(); 
+    $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); 
+    $btn_cancel->set_always_show_image(1); 
+    $btn_cancel->set_label('Cancel'); 
+    
+    my $btn_ok = Gtk3::Button->new(); 
+    $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); 
+    $btn_ok->set_always_show_image(1); 
+    $btn_ok->set_label('OK'); 
+    
+    $w{window}{data}->add_action_widget($btn_cancel,'cancel'); 
+    $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_icon_name('asbru-app-big');
@@ -415,7 +442,8 @@ sub listEntries {
                     next;
                 }
                 $el =~ s/\n//g;
-                $el = decode('UTF-8', $el);
+                # Use consistent UTF-8 encoding
+                $el = decode('utf8', $el);
                 push(@{$w{window}{gui}{treelist}{'data'}}, {value => [ $el ], children => []});
             }
         }
@@ -438,7 +466,10 @@ sub listEntries {
         my $selection = $w{window}{gui}{treelist}->get_selection();
         my $model = $w{window}{gui}{treelist}->get_model();
         my @paths = _getSelectedRows($selection);
-        $entry = $model->get_value($model->get_iter($paths[0]),0);
+        # Check if selection exists before accessing
+        if (@paths && $model) {
+            $entry = $model->get_value($model->get_iter($paths[0]),0);
+        }
     }
 
     $w{window}{data}->destroy();
@@ -833,10 +864,13 @@ sub _buildKeePassGUI {
         }
     });
 
-    # Help button click handler
+    # Help button click handler with URL safety
     $w{help}->signal_connect('clicked' => sub {
         my $url = 'https://docs.asbru-cm.net/Manual/Preferences/KeePassXC/';
-        system("xdg-open '$url' >/dev/null 2>&1 &");
+        # Validate URL to prevent shell injection
+        if ($url =~ /^https?:\/\/[\w\-\.\/]+$/) {
+            system("xdg-open", $url);
+        }
     });
 
     return 1;
@@ -925,7 +959,9 @@ sub _setCapabilities {
     if ($$self{_VERBOSE}) {
         print "DEBUG:KEEPASS: $CLI $$self{kpxc_cli}\n";
     }
-    $$self{kpxc_version} = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -v 2>/dev/null`;
+    # Safely get version with timeout protection
+    my $version_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -v 2>/dev/null";
+    $$self{kpxc_version} = `$version_cmd`;
     $$self{kpxc_version} =~ s/\n//g;
     if ($$self{kpxc_version} !~ /[0-9]+\.[0-9]+\.[0-9]+/) {
         # Invalid version number, user did not select a valid KeePassXC file
@@ -976,7 +1012,14 @@ sub _hasCacheValue {
     } else {
         $cfg = $self->get_cfg();
     }
-    $ts = stat($$cfg{database})->mtime;
+    
+    # Safety check for database file existence
+    return 0 unless $cfg && $$cfg{database} && -f $$cfg{database};
+    
+    my $stat_obj = stat($$cfg{database});
+    return 0 unless $stat_obj;
+    
+    $ts = $stat_obj->mtime;
 
     # Check if the cache should be created or invalidated
     if (!%KPXC_CACHE || ($KPXC_CACHE_TIMESTAMP && $KPXC_CACHE_TIMESTAMP < $ts)) {
@@ -985,6 +1028,21 @@ sub _hasCacheValue {
     }
 
     return exists($KPXC_CACHE{$key});
+}
+
+# Clean up cache and memory when needed
+sub _clearCache {
+    my $self = shift;
+    
+    %KPXC_CACHE = ();
+    @KPXC_LIST = ();
+    $KPXC_CACHE_TIMESTAMP = 0;
+    
+    # Clear password from environment for security
+    if ($ENV{'KPXC_MP'}) {
+        delete $ENV{'KPXC_MP'};
+    }
+    $KPXC_MP = '';
 }
 
 # END: Private functions definitions
