@@ -185,13 +185,16 @@ sub _initGUI {
     _($self, "linkHelpNetwokSettings")->set_label('');
     _($self, "linkHelpNetwokSettings")->set_image(PACIcons::icon_image('help_link','help-browser'));
 
+    # Clear icon cache to ensure fresh KeePass icons
+    PACIcons::clear_cache();
+    
     _($self, 'btnEditNetworkSettingsCheckKPX')->set_label('');
-    _($self, 'btnEditNetworkSettingsCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
+    _($self, 'btnEditNetworkSettingsCheckKPX')->set_image(PACIcons::icon_image('keepass','dialog-password'));
 
     $$self{_SPECIFIC} = PACMethod->new();
     _($self, 'alignSpecific')->add($PACMethod::CONTAINER);
     _($self, 'alignTermOpts')->add(($$self{_TERMOPTS} = PACTermOpts->new())->{container});
-    _($self, 'imgTermOpts')->set_from_icon_name(PACIcons::icon_image('status_connected','network-transmit-receive')->get_icon_name,'button');
+    _($self, 'imgTermOpts')->set_from_icon_name('utilities-terminal','button');
     _($self, 'alignVar')->add(($$self{_VARIABLES} = PACVarEntry->new())->{container});
     _($self, 'alignPreExec')->add(($$self{_PRE_EXEC} = PACPrePostEntry->new())->{container});
     _($self, 'alignPostExec')->add(($$self{_POST_EXEC} = PACPrePostEntry->new())->{container});
@@ -217,7 +220,7 @@ sub _initGUI {
     $$self{cbLogsShowHidden} = Gtk3::CheckButton->new_with_mnemonic('Show _hidden files');
     _($self, 'btnEditSaveSessionLogs')->set_extra_widget($$self{cbLogsShowHidden});
 
-    _($self, 'btnCheckKPX')->set_image(PACIcons::icon_image('kpx','dialog-password'));
+    _($self, 'btnCheckKPX')->set_image(PACIcons::icon_image('keepass','dialog-password'));
     _($self, 'btnCheckKPX')->set_label('');
 
     _($self, 'btnSaveEdit')->set_use_underline(1);

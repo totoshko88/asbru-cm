@@ -110,8 +110,11 @@ our %ICON_MAP = (
     'help_link' => 'help-browser',
     'protected' => 'changes-prevent',
     'lock_off' => 'changes-allow',
+    'lock_on' => 'changes-prevent',
     'keepass' => 'dialog-password',
     'kpx' => 'dialog-password',
+    'buttonbar_show' => 'view-list',
+    'buttonbar_hide' => 'view-restore',
     
     # Execution icons
     'exec_run' => 'media-playback-start',

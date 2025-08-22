@@ -235,6 +235,8 @@ sub _initGUI {
                             } elsif ($label_text =~ /Remote Commands/) {
                                 $child->set_from_icon_name('network-server', 'button');
                             } elsif ($label_text =~ /KeePass Integration/) {
+                                # Use icon system instead of direct file path
+                                PACIcons::clear_cache();
                                 $child->set_from_icon_name('dialog-password', 'button');
                             } elsif ($label_text =~ /Keybindings/) {
                                 $child->set_from_icon_name('input-keyboard', 'button');
@@ -258,7 +260,7 @@ sub _initGUI {
     _($self, 'alignKeyBindings')->add(($$self{_KEYBINDS} = PACKeyBindings->new($$self{_CFG}{defaults}{keybindings}, $$self{_WINDOWCONFIG}))->{container});
     _($self, 'nbPreferences')->show_all();
 
-    _($self, 'btnCfgProxyCheckKPX')->set_image(Gtk3::Image->new_from_icon_name('dialog-password', 'button'));
+    _($self, 'btnCfgProxyCheckKPX')->set_image(PACIcons::icon_image('keepass','dialog-password'));
     _($self, 'btnCfgProxyCheckKPX')->set_label('');
 
     $$self{cbShowHidden} = Gtk3::CheckButton->new_with_mnemonic('Show _hidden files');

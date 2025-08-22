@@ -1225,7 +1225,9 @@ sub _initGUI {
 
     # Create "Lock/Unlock" button
     $$self{_GUI}{lockApplicationBtn} = Gtk3::ToggleButton->new();
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','asbru-unprotected'));
+    # Clear icon cache for fresh lock icons
+    PACIcons::clear_cache();
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
     $$self{_GUI}{lockApplicationBtn}->set_active(0);
     $$self{_GUI}{lockApplicationBtn}->set('can-focus' => 0);
     $$self{_GUI}{lockApplicationBtn}->set_tooltip_text('Password [un]lock GUI. In order to use this functionality, check the "Protect with password" field under "Preferences"->"Main Options"');
@@ -2785,7 +2787,7 @@ sub _setFavourite {
 sub _lockAsbru {
     my $self = shift;
 
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','asbru-protected'));
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','changes-prevent'));
     $$self{_GUI}{lockApplicationBtn}->set_active(1);
     $$self{_GUI}{vboxCommandPanel}->set_sensitive(0);
     $$self{_GUI}{showConnBtn}->set_sensitive(0);
@@ -2825,7 +2827,7 @@ sub _unlockAsbru {
         return 0;
     }
 
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','asbru-unprotected'));
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
     $$self{_GUI}{lockApplicationBtn}->set_active(0);
     $$self{_GUI}{vboxCommandPanel}->set_sensitive(1);
     $$self{_GUI}{showConnBtn}->set_sensitive(1);

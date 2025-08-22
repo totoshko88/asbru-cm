@@ -37,7 +37,7 @@ use FindBin qw ($RealBin $Bin $Script);
 
 # GTK
 use Gtk3 '-init';
-# use PACIcons; # symbolic icon mapping - REMOVED, will use PACUtils icon functions
+use PACIcons; # symbolic icon mapping
 
 # PAC modules
 use PACUtils;
@@ -127,7 +127,7 @@ sub _buildVarGUI {
 
     # Build 'add' button
     $w{btnadd} = Gtk3::Button->new();
-    $w{btnadd}->set_image(Gtk3::Image->new_from_icon_name('list-add', 'button'));
+    $w{btnadd}->set_image(PACIcons::icon_image('add_row','list-add'));
     $w{btnadd}->set_always_show_image(1);
     $w{bbox}->add($w{btnadd});
 

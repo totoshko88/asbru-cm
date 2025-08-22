@@ -9452,11 +9452,8 @@ For all other types of connection, this setting will be ignored.
                   <object class="GtkLabel" id="label75">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="margin_bottom">8</property>
-                    <property name="label" translatable="yes">&lt;b&gt;Integration of a KeePass database file&lt;/b&gt;
-&lt;small&gt;
-Ásbrú is using the command line interface of &lt;a href="https://keepassxc.org"&gt;KeePassXC&lt;/a&gt;
-to read any KeePass database file and use any entry to automate connection inside Ásbrú.&lt;/small&gt;</property>
+                    <property name="margin_bottom">4</property>
+                    <property name="label" translatable="yes">&lt;b&gt;Integration of a KeePass database file&lt;/b&gt;</property>
                     <property name="use_markup">True</property>
                   </object>
                 </child>

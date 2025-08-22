@@ -938,7 +938,9 @@ sub _initGUI {
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         # Create a checkbox to show/hide the button bar
         $$self{_GUI}{btnShowButtonBar} = Gtk3::Button->new();
-    $$self{_GUI}{btnShowButtonBar}->set_image(PACIcons::icon_image($$self{_CFG}{'defaults'}{'auto hide button bar'} ? 'buttonbar_show' : 'buttonbar_hide', 'view-list'));
+        # Clear icon cache for fresh button bar icons
+        PACIcons::clear_cache();
+        $$self{_GUI}{btnShowButtonBar}->set_image(PACIcons::icon_image($$self{_CFG}{'defaults'}{'auto hide button bar'} ? 'buttonbar_show' : 'buttonbar_hide', 'view-list'));
         $$self{_GUI}{btnShowButtonBar}->set('can-focus' => 0);
         $$self{_GUI}{btnShowButtonBar}->set_tooltip_text('Show/Hide button bar');
         $$self{_GUI}{bottombox}->pack_end($$self{_GUI}{btnShowButtonBar}, 0, 1, 4);
