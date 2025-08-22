@@ -1063,7 +1063,7 @@ sub _initGUI {
         $$self{_GUI}{scriptsBtn} = create_button('Scripts');
     }
     $$self{_GUI}{hboxclusters}->pack_start($$self{_GUI}{scriptsBtn}, 1, 1, 0);
-    $$self{_GUI}{scriptsBtn}->set_image(PACIcons::icon_image('settings','asbru-script'));
+    $$self{_GUI}{scriptsBtn}->set_image(PACIcons::icon_image('text-x-script','asbru-script'));
     $$self{_GUI}{scriptsBtn}->set('can-focus' => 0);
     if ($$self{_CFG}{'defaults'}{'layout'} eq 'Compact') {
         $$self{_GUI}{scriptsBtn}->get_style_context()->add_class("button-cp");
@@ -1078,7 +1078,7 @@ sub _initGUI {
         $$self{_GUI}{pccBtn} = create_button('PCC');
     }
     $$self{_GUI}{hboxclusters}->pack_start($$self{_GUI}{pccBtn}, 1, 1, 0);
-    $$self{_GUI}{pccBtn}->set_image(PACIcons::icon_image('settings','gtk-justify-fill'));
+    $$self{_GUI}{pccBtn}->set_image(PACIcons::icon_image('applications-system','gtk-justify-fill'));
     $$self{_GUI}{pccBtn}->set('can-focus' => 0);
     $$self{_GUI}{pccBtn}->set_tooltip_text("Open the Power Clusters Controller:\nexecute commands in every clustered terminal from this single window");
 
@@ -2886,17 +2886,18 @@ sub __treeBuildNodeName {
     my $p_color = $$self{_CFG}{defaults}{'protected color'};
     my $p_uncolor = $$self{_CFG}{defaults}{'unprotected color'} // '#000000';
 
-    # Auto-adjust colors for system theme and improve dark theme contrast
+    # For connection tree, let CSS handle the color instead of forcing Pango markup
+    # This ensures consistency with the rest of the GTK theme
     if ($$self{_CFG}{defaults}{theme} eq 'system' || $$self{_CFG}{defaults}{theme} eq 'asbru-dark') {
-        my $auto_color = $self->_getSystemThemeTextColor();
-        if ($auto_color) {
-            # For dark themes, use light text; for light themes, use dark text
-            $p_uncolor = $auto_color unless $protected;
-            
-            # Ensure "My Connections" also uses proper color
-            if ($uuid eq '__PAC__ROOT__') {
-                $p_uncolor = $auto_color;
-            }
+        # Skip color override for connection tree elements - let CSS do the work
+        # Only set color for protected items or non-tree elements
+        if ($protected) {
+            my $auto_color = $self->_getSystemThemeTextColor();
+            $p_uncolor = $auto_color if $auto_color;
+        } else {
+            # For unprotected tree elements, don't set color - let CSS handle it
+            $p_unset = '' if !$protected;
+            $p_uncolor = '';
         }
     }
 
@@ -2911,9 +2912,15 @@ sub __treeBuildNodeName {
     if ($protected) {
         $pset = "$p_set='$p_color'";
     } else {
-        $pset = "$p_unset='$p_uncolor'";
+        # Only set color if we have a color to set
+        if ($p_uncolor && $p_unset) {
+            $pset = "$p_unset='$p_uncolor'";
+        }
     }
-    $name = "<span $pset$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    $name = "<span$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    if ($pset) {
+        $name = "<span $pset$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    }
 
     return $name;
 }
@@ -2929,8 +2936,29 @@ sub _getSystemThemeTextColor {
     # Try to detect if we're using a dark theme
     my $is_dark = 0;
     
-    # Method 1: Check COSMIC theme settings
-    if ($ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
+    # Method 1: Check KDE theme settings
+    if ($ENV{XDG_CURRENT_DESKTOP} =~ /kde/i) {
+        # For KDE, check if the current theme contains "dark" or if it's a known dark theme
+        my $kde_theme = `kreadconfig6 --group "General" --key "ColorScheme" 2>/dev/null` || 
+                       `kreadconfig5 --group "General" --key "ColorScheme" 2>/dev/null` || '';
+        chomp $kde_theme;
+        $is_dark = 1 if $kde_theme =~ /dark|opensusedark|breeze.*dark/i;
+        
+        # Also check the window decoration theme
+        my $kde_window_theme = `kreadconfig6 --group "org.kde.kdecoration2" --key "theme" 2>/dev/null` || 
+                              `kreadconfig5 --group "org.kde.kdecoration2" --key "theme" 2>/dev/null` || '';
+        $is_dark = 1 if $kde_window_theme =~ /dark/i;
+        
+        # Fallback: check if system prefers dark mode globally
+        my $kde_global_theme = `kreadconfig6 --group "KDE" --key "LookAndFeelPackage" 2>/dev/null` || 
+                              `kreadconfig5 --group "KDE" --key "LookAndFeelPackage" 2>/dev/null` || '';
+        $is_dark = 1 if $kde_global_theme =~ /dark/i;
+        
+        print STDERR "DEBUG: KDE theme detection - kde_theme: '$kde_theme', window: '$kde_window_theme', global: '$kde_global_theme', is_dark: $is_dark\n" if $ENV{ASBRU_DEBUG};
+    }
+    
+    # Method 2: Check COSMIC theme settings (original code)
+    if (!$is_dark && $ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
         # For COSMIC, check if the system prefers dark mode
         my $cosmic_dark = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null` || '';
         $is_dark = 1 if $cosmic_dark =~ /prefer-dark/;
@@ -2944,11 +2972,33 @@ sub _getSystemThemeTextColor {
         $is_dark = 1 if $cosmic_appearance =~ /dark/i;
     }
     
-    # Method 2: Check GTK theme name
-    my $gtk_theme = $ENV{GTK_THEME} || `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
-    $is_dark = 1 if $gtk_theme =~ /dark/i;
+    # Method 3: Check GTK theme name
+    if (!$is_dark) {
+        my $gtk_theme = $ENV{GTK_THEME} || `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+        $is_dark = 1 if $gtk_theme =~ /dark/i;
+    }
     
-    # Method 3: Check if TreeView has dark background (heuristic)
+    # Method 4: Heuristic based on known dark themes
+    if (!$is_dark) {
+        my $all_theme_info = `echo "GTK: $ENV{GTK_THEME}" && gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+        $is_dark = 1 if $all_theme_info =~ /breeze.*dark|adwaita.*dark|arc.*dark|numix.*dark/i;
+    }
+    
+    # Method 5: For openSUSE with Breeze theme, assume dark if no explicit light theme
+    if (!$is_dark && -f '/etc/os-release') {
+        my $os_info = `cat /etc/os-release 2>/dev/null` || '';
+        if ($os_info =~ /opensuse/i) {
+            my $current_theme = `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+            # If it's Breeze and not explicitly light, assume it follows system dark preference
+            if ($current_theme =~ /breeze/i && $current_theme !~ /light/i) {
+                # Check if system has dark preference through various methods
+                $is_dark = 1 if -f "$ENV{HOME}/.config/kdeglobals" && 
+                               `grep -i "colorscheme.*dark" "$ENV{HOME}/.config/kdeglobals" 2>/dev/null`;
+            }
+        }
+    }
+    
+    # Method 6: Check if TreeView has dark background (heuristic) 
     if (!$is_dark && $$self{_GUI}{treeConnections}) {
         eval {
             my $style_context = $$self{_GUI}{treeConnections}->get_style_context();
@@ -2963,7 +3013,7 @@ sub _getSystemThemeTextColor {
         };
     }
     
-    # Method 4: Heuristic - if current window has dark background, assume dark theme
+    # Method 7: Heuristic - if current window has dark background, assume dark theme
     if (!$is_dark && $$self{_GUI}{main}) {
         eval {
             my $style_context = $$self{_GUI}{main}->get_style_context();
@@ -3013,11 +3063,11 @@ sub _getConnectionTypeIcon {
     } elsif ($method eq 'Generic Command') {
         $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_generic.png");
     } elsif ($method eq 'IBM 3270/5250') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.jpg");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_3270.png");
     } elsif ($method eq 'Serial (cu)') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.jpg");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_cu.png");
     } elsif ($method eq 'Serial (remote-tty)') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.jpg");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.png");
     }
     
     # Fallback to default connection icon if method-specific icon not found
@@ -3632,7 +3682,7 @@ sub _showAboutWindow {
         "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
         # Modernized fork attribution (2025)
         "copyright" => "Copyright © 2025 Anton Isaiev\nCopyright © 2017-2022 Ásbrú Connection Manager team\nCopyright © 2010-2016 David Torrejón Vaquerizas",
-        "website" => 'https://asbru-cm.net/',
+        "website" => 'https://github.com/totoshko88/asbru-cm',
     "license" => "\nÁsbrú Connection Manager (Modernized Fork)\n\nCopyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\nCopyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\nCopyright © 2010-2016 David Torrejón Vaquerizas\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n"
     ));
 

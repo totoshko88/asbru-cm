@@ -186,7 +186,53 @@ sub _initGUI {
     _($self, 'rbCfgStartTreeFavs')->set_image(Gtk3::Image->new_from_icon_name('starred', 'button'));
     _($self, 'rbCfgStartTreeHist')->set_image(Gtk3::Image->new_from_icon_name('document-open-recent', 'button'));
     _($self, 'rbCfgStartTreeCluster')->set_image(Gtk3::Image->new_from_icon_name('applications-system', 'button'));
+    # Set tab icons
+    _($self, 'imgTermOpts')->set_from_icon_name('utilities-terminal', 'button');
     _($self, 'imgKeePassOpts')->set_from_icon_name('dialog-password', 'button');
+    
+    # Add icons for other tabs that might exist
+    my $nb = _($self, 'nbPreferences');
+    if ($nb) {
+        my $n_pages = $nb->get_n_pages();
+        for my $page_num (0..$n_pages-1) {
+            my $tab_label = $nb->get_tab_label($nb->get_nth_page($page_num));
+            if ($tab_label && ref($tab_label) eq 'Gtk3::Box') {
+                my @children = $tab_label->get_children();
+                foreach my $child (@children) {
+                    if (ref($child) eq 'Gtk3::Image') {
+                        my $label_widget = undef;
+                        foreach my $sibling (@children) {
+                            if (ref($sibling) eq 'Gtk3::Label') {
+                                $label_widget = $sibling;
+                                last;
+                            }
+                        }
+                        if ($label_widget) {
+                            my $label_text = $label_widget->get_text() // '';
+                            if ($label_text =~ /Terminal Options/) {
+                                $child->set_from_icon_name('utilities-terminal', 'button');
+                            } elsif ($label_text =~ /Local Shell Options/) {
+                                $child->set_from_icon_name('application-x-shellscript', 'button');
+                            } elsif ($label_text =~ /Network Settings/) {
+                                $child->set_from_icon_name('network-wired', 'button');
+                            } elsif ($label_text =~ /Global Variables/) {
+                                $child->set_from_icon_name('folder-documents', 'button');
+                            } elsif ($label_text =~ /Local Commands/) {
+                                $child->set_from_icon_name('system-run', 'button');
+                            } elsif ($label_text =~ /Remote Commands/) {
+                                $child->set_from_icon_name('network-server', 'button');
+                            } elsif ($label_text =~ /KeePass Integration/) {
+                                $child->set_from_icon_name('dialog-password', 'button');
+                            } elsif ($label_text =~ /Keybindings/) {
+                                $child->set_from_icon_name('input-keyboard', 'button');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     _($self, 'btnCfgSetGUIPassword')->set_image(Gtk3::Image->new_from_icon_name('changes-prevent', 'button'));
     _($self, 'btnCfgSetGUIPassword')->set_label('Set...');
     _($self, 'btnExportYAML')->set_image(Gtk3::Image->new_from_icon_name('document-save-as', 'button'));

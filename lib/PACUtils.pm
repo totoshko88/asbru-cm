@@ -641,7 +641,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.jpg", 16, 16, 0),
+        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.png", 16, 16, 0),
         'escape' => ['~.']
     };
 
@@ -708,7 +708,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.jpg", 16, 16, 0)
+        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.png", 16, 16, 0)
     };
 
     my $c3270 = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which c3270 1>/dev/null 2>&1") eq 0);
@@ -760,7 +760,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.jpg", 16, 16, 0)
+        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.png", 16, 16, 0)
     };
 
     my $autossh = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which autossh 1>/dev/null 2>&1") eq 0);
@@ -1264,14 +1264,14 @@ sub _registerPACIcons {
         'asbru-keepass' => "$THEME_DIR/asbru_keepass.png",
         'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.svg",
         'asbru-method-MOSH' => "$THEME_DIR/asbru_method_mosh.svg",
-        'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.jpg",
-        'asbru-method-Serial (cu)' => "$THEME_DIR/asbru_method_cu.jpg",
+        'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.svg",
+        'asbru-method-Serial (cu)' => "$THEME_DIR/asbru_method_cu.svg",
         'asbru-method-FTP' => "$THEME_DIR/asbru_method_ftp.svg",
         'asbru-method-Generic Command' => "$THEME_DIR/asbru_method_generic.svg",
         'asbru-method-RDP (Windows)' => "$THEME_DIR/asbru_method_rdesktop.svg",
         'asbru-method-RDP (rdesktop)' => "$THEME_DIR/asbru_method_rdesktop.svg",
         'asbru-method-RDP (xfreerdp)' => "$THEME_DIR/asbru_method_rdesktop.svg",
-        'asbru-method-Serial (remote-tty)' => "$THEME_DIR/asbru_method_remote-tty.jpg",
+        'asbru-method-Serial (remote-tty)' => "$THEME_DIR/asbru_method_remote-tty.svg",
         'asbru-method-SFTP' => "$THEME_DIR/asbru_method_sftp.svg",
         'asbru-method-SSH' => "$THEME_DIR/asbru_method_ssh.svg",
         'asbru-method-Telnet' => "$THEME_DIR/asbru_method_telnet.svg",
