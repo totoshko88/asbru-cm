@@ -282,7 +282,7 @@ sub __text {
 
 sub _splash {
     my $show = shift;
-    my $txt = shift // "<b>Starting $APPNAME (v$APPVERSION)...</b>";
+    my $txt = shift // "🚀 <b>Starting $APPNAME (v$APPVERSION)...</b> ✨";
     my $partial = shift // 0;
     my $total = shift // 1;
 

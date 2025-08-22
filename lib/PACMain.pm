@@ -192,7 +192,7 @@ sub new {
     $_NO_SPLASH ||= $$self{_APP}->get_is_remote;
 
     # Show splash-screen while loading
-    PACUtils::_splash(1, "Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION)", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "🚀 Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION) ✨", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->{_START_TS} = time;
     $self->{_PROFILE} = [];
     push @{$self->{_PROFILE}}, sprintf('[%0.3f] start:new()', 0.0);
@@ -211,7 +211,7 @@ sub new {
     }
 
     # Read the config/connections file...
-    PACUtils::_splash(1, "Reading config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "📖 Reading config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     my $t0 = time; _readConfiguration($self); my $dt = time - $t0; push @{$self->{_PROFILE}}, sprintf('[%0.3f] config loaded', $dt);
 
     # Set conflictive layout options as early as possible
@@ -314,7 +314,7 @@ sub new {
         my $pass;
         grep({ if (/^--password=(.+)$/) { $pass = $1; } } @{ $$self{_OPTS} });
         if (!defined $pass) {
-            PACUtils::_splash(1, "Waiting for password...", $PAC_START_PROGRESS, $PAC_START_TOTAL);
+            PACUtils::_splash(1, "🔐 Waiting for password...", $PAC_START_PROGRESS, $PAC_START_TOTAL);
             $pass = _wEnterValue(undef, 'GUI Password Protection', 'Please, enter GUI Password...', undef, 0, 'asbru-protected');
         }
         if (!defined $pass) {
@@ -514,20 +514,20 @@ sub start {
     }
 
     # Build the GUI (only first invocation reaches here due to $STARTED latch)
-    PACUtils::_splash(1, "Building GUI...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "🎨 Building GUI...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     if (!$self->_initGUI()) {
         _splash(0);
         return 0;
     }
 
     # Build the Tree with the connections list
-    PACUtils::_splash(1, "Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "🔗 Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->_loadTreeConfiguration('__PAC__ROOT__');
 
     # Enable tray menu
     $FUNCS{_TRAY}->set_tray_menu();
 
-    PACUtils::_splash(1, "Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "✨ Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
 
     $STARTED = 1; # Mark successful initialization
 
@@ -3686,12 +3686,12 @@ sub _showAboutWindow {
     Gtk3::show_about_dialog(
         $$self{_GUI}{main},(
         "program_name" => '',  # name is shown in the logo
-        "version" => "v$APPVERSION",
+        "version" => "🚀 v$APPVERSION",
         "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
         # Modernized fork attribution (2025)
-        "copyright" => "Copyright © 2025 Anton Isaiev\nCopyright © 2017-2022 Ásbrú Connection Manager team\nCopyright © 2010-2016 David Torrejón Vaquerizas",
+        "copyright" => "🌟 Copyright © 2025 Anton Isaiev\n📡 Copyright © 2017-2022 Ásbrú Connection Manager team\n⚡ Copyright © 2010-2016 David Torrejón Vaquerizas",
         "website" => 'https://github.com/totoshko88/asbru-cm',
-    "license" => "\nÁsbrú Connection Manager (Modernized Fork)\n\nCopyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\nCopyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\nCopyright © 2010-2016 David Torrejón Vaquerizas\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n"
+    "license" => "\n🚀 Ásbrú Connection Manager (Modernized Fork)\n\n👨‍💻 Copyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\n🌐 Copyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\n⚡ Copyright © 2010-2016 David Torrejón Vaquerizas\n\n📜 This program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\n🔒 This program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\n📖 You should have received a copy of the GNU General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n✨ Modern SSH/Telnet connection manager optimized for PopOS 24.04 & Wayland\n🔗 GitHub: https://github.com/totoshko88/asbru-cm\n🌟 Features: KeePassXC integration, session recording, modern UI themes"
     ));
 
     return 1;
@@ -4148,7 +4148,7 @@ sub _readConfiguration {
      # PENDING: I think we should be able to remove this code
     if ($continue && (! -f "${CFG_FILE}.prev3") && (-f $CFG_FILE)) {
         print STDERR "INFO: Migrating config file to v3...\n";
-        PACUtils::_splash(1, "$APPNAME (v$APPVERSION):Migrating config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+        PACUtils::_splash(1, "🔄 $APPNAME (v$APPVERSION):Migrating config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
         $$self{_CFG} = _cfgCheckMigrationV3();
         copy($CFG_FILE, "${CFG_FILE}.prev3") or die "ERROR: Could not copy pre v.3 cfg file '$CFG_FILE' to '$CFG_FILE.prev3': $!";
         nstore($$self{_CFG}, $CFG_FILE_NFREEZE) or die"ERROR: Could not save config file '$CFG_FILE_NFREEZE': $!";
@@ -4182,7 +4182,7 @@ sub _readConfiguration {
     }
 
     # Make some sanity checks
-    $splash and PACUtils::_splash(1, "$APPNAME (v$APPVERSION):Checking config...", 4, 5);
+    $splash and PACUtils::_splash(1, "🔍 $APPNAME (v$APPVERSION):Checking config...", 4, 5);
     my $pre_override = $$self{_CFG}{'defaults'}{'system icon theme override'};
     _cfgSanityCheck($$self{_CFG});
     # Restore system icon theme override if sanity check discarded it (allow new key persistence)
@@ -4421,27 +4421,46 @@ sub _updateGUIWithUUID {
 
     if ($is_root) {
         $$self{_GUI}{descBuffer}->set_text(qq"
+🌟 Welcome to $APPNAME v$APPVERSION! 🌟
 
- * Welcome to $APPNAME version $APPVERSION *
- 
- This is a modernized fork optimized for PopOS 24.04 and Wayland.
- GitHub Repository: https://github.com/totoshko88/asbru-cm
+🚀 Modern SSH/Telnet Connection Manager
+   Optimized for PopOS 24.04 & Wayland environments
 
- - To create a New GROUP of Connections:
+┌─────────────────────────────────────────────────────────────┐
+│ 🔗 Quick Start Guide                                       │
+└─────────────────────────────────────────────────────────────┘
 
-   1- 'click' over 'My Connections' (to create it at root) or any other GROUP
-   2- 'click' on the most left icon over the connections tree (or right-click over selected GROUP)
-   3- Follow instructions
+📁 Create Connection Groups:
+   1️⃣ Click on 'My Connections' or existing group
+   2️⃣ Use the leftmost toolbar icon 📋 or right-click
+   3️⃣ Follow the setup wizard ✨
 
- - To create a New CONNECTION in a selected Group or at root:
+🖥️  Add New Connections:
+   1️⃣ Select target group (or root)
+   2️⃣ Click the connection icon ⚡ in toolbar
+   3️⃣ Configure your connection settings 🔧
 
-   1- Select the container group to create the new connection into (or 'My Connections' to create it at root)
-   2- 'click' on the second most left icon over the connections tree (or right-click over selected GROUP)
-   3- Follow instructions
+┌─────────────────────────────────────────────────────────────┐
+│ 🌐 Resources & Support                                     │
+└─────────────────────────────────────────────────────────────┘
 
- - For the latest news, check the original project website (https://asbru-cm.net/).
- - For this fork's updates, visit: https://github.com/totoshko88/asbru-cm
+🔗 This Fork: https://github.com/totoshko88/asbru-cm
+📖 Original Project: https://asbru-cm.net
+💡 Documentation: Full guides available online
+🐛 Issues: Report bugs on GitHub
 
+┌─────────────────────────────────────────────────────────────┐
+│ ✨ Key Features                                           │
+└─────────────────────────────────────────────────────────────┘
+
+🔐 Secure connection management with KeePassXC integration
+🖼️  Screenshot capture and session recording
+📊 Connection statistics and usage tracking
+🎨 Modern UI with dark/light theme support
+🌍 Multi-protocol support (SSH, Telnet, RDP, VNC)
+⚡ Fast connection clustering and automation
+
+Start exploring by expanding 'My Connections' in the tree! 🎯
 ");
     } else {
         if (!$$self{_CFG}{'environments'}{$uuid}{'description'}) {
