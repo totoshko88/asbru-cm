@@ -157,16 +157,24 @@ sub icon_image {
     $fallback_name ||= 'image-missing';
     $size ||= 'button';
     
-    # Check cache first
+    # Cache pixbufs instead of GTK images to avoid parent issues
     my $cache_key = "$logical_name:$fallback_name:$size";
+    my $pixbuf;
+    
     if (exists $ICON_CACHE->{$cache_key}) {
-        return $ICON_CACHE->{$cache_key};
+        $pixbuf = $ICON_CACHE->{$cache_key};
+    } else {
+        $pixbuf = _create_icon_pixbuf($logical_name, $fallback_name, $size);
+        $ICON_CACHE->{$cache_key} = $pixbuf;
     }
     
-    my $image = _create_icon_image($logical_name, $fallback_name, $size);
-    
-    # Cache the result
-    $ICON_CACHE->{$cache_key} = $image;
+    # Always create a new GTK image to avoid parent conflicts
+    my $image;
+    if ($pixbuf) {
+        $image = Gtk3::Image->new_from_pixbuf($pixbuf);
+    } else {
+        $image = Gtk3::Image->new();
+    }
     
     return $image;
 }
@@ -250,11 +258,15 @@ sub load_icon_from_theme {
     
     my $pixbuf;
     eval {
-        $pixbuf = $theme->load_icon($icon_name, $size, 'GTK_ICON_LOOKUP_USE_BUILTIN');
+        # First try to check if icon exists to avoid warnings
+        if ($theme->has_icon($icon_name)) {
+            $pixbuf = $theme->load_icon($icon_name, $size, 'GTK_ICON_LOOKUP_USE_BUILTIN');
+        }
     };
     
     if ($@) {
-        warn "PACIcons: Error loading icon '$icon_name' at size $size: $@" if $ENV{ASBRU_DEBUG};
+        # Only show debug messages for actual errors, not missing icons
+        warn "PACIcons: Error loading icon '$icon_name' at size $size: $@" if $ENV{ASBRU_DEBUG} && $@ !~ /not present in theme/;
         return undef;
     }
     
@@ -292,7 +304,7 @@ sub get_fallback_icon {
 ###################################################################
 # Private Functions
 
-sub _create_icon_image {
+sub _create_icon_pixbuf {
     my ($logical_name, $fallback_name, $size) = @_;
     
     # Convert size to numeric if it's a string
@@ -303,30 +315,53 @@ sub _create_icon_image {
         $icon_size = $ICON_SIZES{'button'};
     }
     
-    # Try logical name first
-    my $system_name = $ICON_MAP{$logical_name} || $logical_name;
-    my $pixbuf = load_icon_from_theme($system_name, $icon_size);
+    # Enhanced fallback mechanism for better icon support
+    my @icon_candidates;
     
-    # Try fallback name if logical name failed
-    if (!$pixbuf && $fallback_name) {
-        $pixbuf = load_icon_from_theme($fallback_name, $icon_size);
+    # Add logical name and its mapping
+    push @icon_candidates, $logical_name if $logical_name;
+    push @icon_candidates, $ICON_MAP{$logical_name} if $logical_name && $ICON_MAP{$logical_name};
+    
+    # Add fallback name
+    push @icon_candidates, $fallback_name if $fallback_name;
+    
+    # Add generic system icon mappings for common names
+    my %generic_fallbacks = (
+        'add' => ['list-add', 'gtk-add', 'document-new'],
+        'delete' => ['list-remove', 'gtk-delete', 'edit-delete'],
+        'edit' => ['document-edit', 'gtk-edit', 'accessories-text-editor'],
+        'folder' => ['folder', 'gtk-directory', 'inode-directory'],
+        'settings' => ['preferences-system', 'gtk-preferences', 'configure'],
+        'about' => ['help-about', 'gtk-about', 'dialog-information'],
+        'quit' => ['application-exit', 'gtk-quit', 'system-log-out'],
+        'help' => ['help-contents', 'gtk-help', 'system-help'],
+        'previous' => ['go-previous', 'gtk-media-previous', 'media-skip-backward'],
+        'next' => ['go-next', 'gtk-media-next', 'media-skip-forward'],
+        'history' => ['document-open-recent', 'gtk-revert-to-saved', 'edit-undo'],
+        'favourite_on' => ['bookmark-new', 'starred', 'emblem-favorite'],
+        'favourite_off' => ['bookmark-new', 'non-starred', 'emblem-default'],
+        'shell' => ['utilities-terminal', 'gnome-terminal', 'terminal'],
+        'scripts' => ['text-x-script', 'application-x-shellscript', 'text-x-generic']
+    );
+    
+    if ($logical_name && exists $generic_fallbacks{$logical_name}) {
+        push @icon_candidates, @{$generic_fallbacks{$logical_name}};
     }
     
-    # Try fallback icon if both failed
+    # Try each candidate
+    my $pixbuf;
+    foreach my $candidate (@icon_candidates) {
+        next unless $candidate;
+        $pixbuf = load_icon_from_theme($candidate, $icon_size);
+        last if $pixbuf;
+    }
+    
+    # Try fallback icon if all candidates failed
     if (!$pixbuf) {
         $pixbuf = get_fallback_icon($icon_size);
     }
     
-    # Create image from pixbuf
-    my $image;
-    if ($pixbuf) {
-        $image = Gtk3::Image->new_from_pixbuf($pixbuf);
-    } else {
-        # Last resort: create empty image
-        $image = Gtk3::Image->new();
-    }
-    
-    return $image;
+    return $pixbuf;
 }
 
 ###################################################################

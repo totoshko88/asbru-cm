@@ -62,19 +62,9 @@ my $SOURCEVIEW = ! $@;
 use PACUtils;
 use PACCompat;  # AI-assisted modernization: GTK3/GTK4 compatibility layer
 
-# VteTerminal (terminal widget)
-my $HAVE_VTE = 1;
-# Check if VTE is already loaded (from ex/Vte.pm)
-if (defined $Vte::VTE_VERSION) {
-    # VTE already loaded successfully
-    $HAVE_VTE = 1;
-} else {
-    # Try to load VTE directly
-    eval { require Vte; Vte->import(); 1 } or do { 
-        warn "WARNING: VTE not available ($@). Terminal functionality reduced.\n"; 
-        $HAVE_VTE = 0; 
-    };
-}
+# VteTerminal (terminal widget) - AI-assisted modernization: Updated VTE binding
+use PACVte;  # Modern VTE compatibility layer
+my $HAVE_VTE = $PACVte::HAVE_VTE;
 
 # END: Import Modules
 ###################################################################
@@ -844,7 +834,7 @@ sub _initGUI {
     # Note: set_shadow_type deprecated in GTK4, handled by compatibility layer
 
     # Build a Gnome VTE Terminal (AI-assisted modernization: VTE 3.91/2.91 compatible)
-    $$self{_GUI}{_VTE} = Vte::Terminal->new();
+    $$self{_GUI}{_VTE} = PACVte::new_terminal();
 
     # , add VTE to the scrolled window and...
     if (!$$self{'EMBED'}) {
@@ -4454,7 +4444,12 @@ sub _wFindInTerminal {
         }
     });
     $w{window}{gui}{btnfind}->set_can_default(1);
-    $w{window}{gui}{btnfind}->grab_default;
+    eval {
+        # Fix GTK critical error: ensure button can grab default before calling grab_default
+        if ($w{window}{gui}{btnfind}->get_can_default()) {
+            $w{window}{gui}{btnfind}->grab_default;
+        }
+    };
 
     # Create frame 2
     $w{window}{gui}{frame2} = Gtk3::Frame->new();

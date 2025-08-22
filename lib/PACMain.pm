@@ -59,8 +59,8 @@ use POSIX qw (strftime);
 use Scalar::Util qw(blessed);
 use PACCryptoCompat;
 use SortedTreeStore;
-my $HAVE_VTE = 1;
-eval { require Vte; Vte->import(); 1 } or do { warn "WARNING: VTE bindings unavailable ($@). Running in limited mode.\n"; $HAVE_VTE=0; };
+use PACVte;  # Modern VTE compatibility layer
+my $HAVE_VTE = $PACVte::HAVE_VTE;
 use PACIcons;  # Modern symbolic icon mapping
 
 use Config;
@@ -778,12 +778,18 @@ sub _initGUI {
     $$self{_GUI}{scroll1}->set_overlay_scrolling($$self{_CFG}{'defaults'}{'tree overlay scrolling'});
     $$self{_GUI}{nbTreeTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbTreeTabLabel} = create_label();
-    my $tree_icon = PACIcons::icon_image('folder','asbru-treelist');
-    if ($tree_icon && eval { $tree_icon->get_parent }) {
-        # Icon already has parent, create a new one
-        $tree_icon = PACIcons::icon_image('folder','asbru-treelist'); 
-    }
-    $$self{_GUI}{nbTreeTab}->pack_start($tree_icon, 0, 1, 0) if $tree_icon;
+    
+    # Fix GTK critical error: ensure icon has no parent before packing
+    eval {
+        my $tree_icon = PACIcons::icon_image('folder','asbru-treelist');
+        if ($tree_icon) {
+            # Check if icon already has a parent and remove it if necessary
+            if (my $parent = $tree_icon->get_parent()) {
+                $parent->remove($tree_icon);
+            }
+            $$self{_GUI}{nbTreeTab}->pack_start($tree_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbTreeTab}->pack_start($$self{_GUI}{nbTreeTabLabel}, 0, 1, 0);
     }
@@ -856,7 +862,17 @@ sub _initGUI {
     $$self{_GUI}{scroll2} = create_scrolled_window();
     $$self{_GUI}{nbFavTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbFavTabLabel} = create_label();
-    $$self{_GUI}{nbFavTab}->pack_start(PACIcons::icon_image('favourite_on','asbru-favourite-on'), 0, 1, 0);
+    
+    # Fix GTK critical error for favourites icon
+    eval {
+        my $fav_icon = PACIcons::icon_image('favourite_on','asbru-favourite-on');
+        if ($fav_icon) {
+            if (my $parent = $fav_icon->get_parent()) {
+                $parent->remove($fav_icon);
+            }
+            $$self{_GUI}{nbFavTab}->pack_start($fav_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbFavTab}->pack_start($$self{_GUI}{nbFavTabLabel}, 0, 1, 0);
     }
@@ -892,7 +908,17 @@ sub _initGUI {
     $$self{_GUI}{scroll3} = create_scrolled_window();
     $$self{_GUI}{nbHistTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbHistTabLabel} = create_label();
-    $$self{_GUI}{nbHistTab}->pack_start(PACIcons::icon_image('history','asbru-history'), 0, 1, 0);
+    
+    # Fix GTK critical error for history icon
+    eval {
+        my $hist_icon = PACIcons::icon_image('history','asbru-history');
+        if ($hist_icon) {
+            if (my $parent = $hist_icon->get_parent()) {
+                $parent->remove($hist_icon);
+            }
+            $$self{_GUI}{nbHistTab}->pack_start($hist_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbHistTab}->pack_start($$self{_GUI}{nbHistTabLabel}, 0, 1, 0);
     }
@@ -933,7 +959,17 @@ sub _initGUI {
     $$self{_GUI}{scrolledclu} = create_scrolled_window();
     $$self{_GUI}{nbCluTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbCluTabLabel} = create_label();
-    $$self{_GUI}{nbCluTab}->pack_start(PACIcons::icon_image('group','asbru-cluster-manager'), 0, 1, 0);
+    
+    # Fix GTK critical error for cluster icon
+    eval {
+        my $clu_icon = PACIcons::icon_image('group','asbru-cluster-manager');
+        if ($clu_icon) {
+            if (my $parent = $clu_icon->get_parent()) {
+                $parent->remove($clu_icon);
+            }
+            $$self{_GUI}{nbCluTab}->pack_start($clu_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbCluTab}->pack_start($$self{_GUI}{nbCluTabLabel}, 0, 1, 0);
     }
@@ -5602,58 +5638,70 @@ sub _ApplyLayout {
 # to centralize all tests concerning VTE into a single function
 sub _setVteCapabilities {
     my $self = shift;
-    my $vte = Vte::Terminal->new();
-
-    local $SIG{__WARN__} = sub {};
-    $$self{_Vte}{major_version} = Vte::get_major_version();
-    $$self{_Vte}{minor_version} = Vte::get_minor_version();
     
-    # Store VTE binding version information (AI-assisted modernization)
-    $$self{_Vte}{binding_version} = Vte::get_vte_version() if Vte->can('get_vte_version');
-    $$self{_Vte}{gtk4_compatible} = Vte::is_gtk4_compatible() if Vte->can('is_gtk4_compatible');
-    $$self{_Vte}{is_legacy} = Vte::is_legacy_vte() if Vte->can('is_legacy_vte');
-
-    # Does VTE supports 'set_bold_is_bright'
-    # (supposingly added in v0.52)
-    eval {
-        $vte->set_bold_is_bright(0);
+    # Use modern VTE compatibility layer
+    my $capabilities = PACVte::get_vte_capabilities();
+    
+    # Copy capabilities to internal structure
+    $$self{_Vte} = {
+        major_version => $capabilities->{major_version},
+        minor_version => $capabilities->{minor_version},
+        binding_version => $capabilities->{binding_version},
+        gtk4_compatible => $capabilities->{gtk4_compatible},
+        is_legacy => $capabilities->{is_legacy},
+        has_bright => $capabilities->{has_bright},
+        vte_feed_child => $capabilities->{vte_feed_child},
+        vte_feed_binary => $capabilities->{vte_feed_binary}
     };
-    if ($@) {
-        $$self{_Vte}{has_bright} = 0;
-    } else {
-        $$self{_Vte}{has_bright} = 1;
-    }
-
-    # Does VTE supports 1 or 2 parameters for 'feed_child'
-    # (supposingly 1 parameter as of v0.52 but some distros have a special patched version of v0.52 that
-    #  still requires 2 parameters; so let's discover this by trying ;
-    #  See https://bugs.launchpad.net/ubuntu/+source/ubuntu-release-upgrader/+bug/1780501)
-    $$self{_Vte}{vte_feed_child} = 0;
-    eval {
-        local $SIG{__WARN__} = sub { die @_ };
-        $vte->feed_child('abc', 3);
-        1;
-    } or do {
-        $$self{_Vte}{vte_feed_child} = 1;
-    };
-
-    # Does VTE supports 1 or 2 parameters for 'feed_child_binary'
-    # (1 parameter as of v0.46)
-    $$self{_Vte}{vte_feed_binary} = 0;
-    if ($$self{_Vte}{major_version} >= 1 or $$self{_Vte}{minor_version} >= 46) {
-        $$self{_Vte}{vte_feed_binary} = 1;
-    }
-
-    # Tell the world what we found out (AI-assisted modernization)
-    my $binding_info = $$self{_Vte}{binding_version} ? " (binding: $$self{_Vte}{binding_version})" : "";
-    my $gtk4_info = $$self{_Vte}{gtk4_compatible} ? " [GTK4 Compatible]" : " [GTK3 Legacy]";
-    print STDERR "INFO: Virtual terminal emulator (VTE) version is $$self{_Vte}{major_version}.$$self{_Vte}{minor_version}$binding_info$gtk4_info\n";
-    if ($$self{_VERBOSE}) {
-        foreach my $k (sort keys %{$$self{_Vte}}) {
-            print STDERR "       - $k = $$self{_Vte}{$k}\n";
+    
+    # Create temporary terminal for testing (only if VTE is available)
+    my $vte;
+    if ($HAVE_VTE) {
+        $vte = PACVte::new_terminal();
+        
+        if ($vte) {
+            # Test set_bold_is_bright support (VTE 0.52+)
+            eval {
+                $vte->set_bold_is_bright(0);
+                $$self{_Vte}{has_bright} = 1;
+            };
+            if ($@) {
+                $$self{_Vte}{has_bright} = 0;
+            }
+            
+            # Test feed_child parameter count
+            $$self{_Vte}{vte_feed_child} = 0;
+            eval {
+                local $SIG{__WARN__} = sub { die @_ };
+                $vte->feed_child('abc', 3);
+                1;
+            } or do {
+                $$self{_Vte}{vte_feed_child} = 1;
+            };
+            
+            # Test feed_child_binary (VTE 0.46+)
+            $$self{_Vte}{vte_feed_binary} = 0;
+            if ($$self{_Vte}{major_version} >= 1 or $$self{_Vte}{minor_version} >= 46) {
+                $$self{_Vte}{vte_feed_binary} = 1;
+            }
         }
     }
-    # Proactively destroy the temporary VTE widget to avoid lingering signal disconnect warnings
+    
+    # Report VTE capabilities (AI-assisted modernization)
+    if ($HAVE_VTE) {
+        my $binding_info = $$self{_Vte}{binding_version} ? " (binding: $$self{_Vte}{binding_version})" : "";
+        my $gtk4_info = $$self{_Vte}{gtk4_compatible} ? " [GTK4 Compatible]" : " [GTK3 Legacy]";
+        print STDERR "INFO: Virtual terminal emulator (VTE) version is $$self{_Vte}{major_version}.$$self{_Vte}{minor_version}$binding_info$gtk4_info\n";
+        if ($$self{_VERBOSE}) {
+            foreach my $k (sort keys %{$$self{_Vte}}) {
+                print STDERR "       - $k = $$self{_Vte}{$k}\n";
+            }
+        }
+    } else {
+        print STDERR "WARNING: VTE not available - terminal functionality limited\n";
+    }
+    
+    # Cleanup temporary VTE widget
     eval {
         if ($vte && ref($vte) && $vte->can('destroy')) {
             $vte->destroy();
