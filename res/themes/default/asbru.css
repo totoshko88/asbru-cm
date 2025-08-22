@@ -66,10 +66,12 @@ messagedialog > box {
 .w-renamenode {
 }
 .w-warning {
-    background-color: #F6F877;
+    background-color: #3064ac;
+    color: #ffffff;
 }
 .w-error {
-    background-color: #FFFFEB;
+    background-color: #3064ac;
+    color: #ffffff;
 }
 .w-info {
 }

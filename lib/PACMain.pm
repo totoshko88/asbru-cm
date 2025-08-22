@@ -2888,7 +2888,7 @@ sub __treeBuildNodeName {
 
     # For connection tree, let CSS handle the color instead of forcing Pango markup
     # This ensures consistency with the rest of the GTK theme
-    if ($$self{_CFG}{defaults}{theme} eq 'system' || $$self{_CFG}{defaults}{theme} eq 'asbru-dark') {
+    if ($$self{_CFG}{defaults}{theme} eq 'system' || $$self{_CFG}{defaults}{theme} eq 'asbru-dark' || $$self{_CFG}{defaults}{theme} eq 'default') {
         # Skip color override for connection tree elements - let CSS do the work
         # Only set color for protected items or non-tree elements
         if ($protected) {
@@ -4410,6 +4410,9 @@ sub _updateGUIWithUUID {
         $$self{_GUI}{descBuffer}->set_text(qq"
 
  * Welcome to $APPNAME version $APPVERSION *
+ 
+ This is a modernized fork optimized for PopOS 24.04 and Wayland.
+ GitHub Repository: https://github.com/totoshko88/asbru-cm
 
  - To create a New GROUP of Connections:
 
@@ -4423,7 +4426,8 @@ sub _updateGUIWithUUID {
    2- 'click' on the second most left icon over the connections tree (or right-click over selected GROUP)
    3- Follow instructions
 
- - For the latest news, check the project website (https://asbru-cm.net/).
+ - For the latest news, check the original project website (https://asbru-cm.net/).
+ - For this fork's updates, visit: https://github.com/totoshko88/asbru-cm
 
 ");
     } else {
@@ -5892,28 +5896,20 @@ sub _checkDependencies {
             'description' => 'VNC viewer client',
             'install_hint' => 'tigervnc-viewer or xtightvncviewer',
             'critical' => 0,
-            'version_cmd' => 'vncviewer --version 2>&1 | head -1',
-            'alternatives' => ['xtightvncviewer', 'vinagre']
-        },
-        'xtightvncviewer' => {
-            'description' => 'TightVNC viewer client',
-            'install_hint' => 'xtightvncviewer',
-            'critical' => 0,
-            'version_cmd' => 'xtightvncviewer -h 2>&1 | grep -i version | head -1',
-            'alternatives' => ['vncviewer']
+            'version_cmd' => 'vncviewer --version 2>&1 | head -2 | tail -1',
+            'alternatives' => ['vinagre']
         },
         'vinagre' => {
             'description' => 'GNOME VNC/RDP viewer',
             'install_hint' => 'vinagre',
             'critical' => 0,
-            'version_cmd' => 'vinagre --version 2>&1 | head -1',
             'alternatives' => ['vncviewer', 'remmina']
         },
         'remmina' => {
             'description' => 'Multi-protocol remote desktop client',
             'install_hint' => 'remmina',
             'critical' => 0,
-            'version_cmd' => 'remmina --version 2>&1 | head -1',
+            'version_cmd' => 'remmina --version 2>&1 | tail -1',
             'alternatives' => ['vinagre']
         },
         
@@ -5946,14 +5942,12 @@ sub _checkDependencies {
         'ftp' => {
             'description' => 'FTP client for file transfers',
             'install_hint' => 'ftp',
-            'critical' => 0,
-            'version_cmd' => 'ftp -? 2>&1 | head -1 | sed "s/usage: /ftp /" || echo "ftp (available)"'
+            'critical' => 0
         },
         'sftp' => {
             'description' => 'Secure FTP client',
             'install_hint' => 'openssh-client',
-            'critical' => 0,
-            'version_cmd' => 'sftp -V 2>&1 | head -1'
+            'critical' => 0
         },
         
         # Serial connection tools
@@ -5991,6 +5985,13 @@ sub _checkDependencies {
             'install_hint' => 'socat',
             'critical' => 0,
             'version_cmd' => 'socat -V 2>&1 | head -1'
+        },
+        
+        # IBM Mainframe connection tools
+        'x3270' => {
+            'description' => 'IBM 3270 terminal emulator for mainframe connections',
+            'install_hint' => 'x3270',
+            'critical' => 0
         }
     );
     
@@ -6030,8 +6031,9 @@ sub _checkDependencies {
     print STDERR "\nINFO: Alternative tool analysis:\n";
     my %categories = (
         'RDP' => ['xfreerdp', 'rdesktop', 'remmina'],
-        'VNC' => ['vncviewer', 'xtightvncviewer', 'vinagre', 'remmina'],
-        'Serial' => ['cu', 'screen', 'minicom']
+        'VNC' => ['vncviewer', 'vinagre', 'remmina'],
+        'Serial' => ['cu', 'screen', 'minicom'],
+        'Mainframe' => ['x3270']
     );
     
     foreach my $category (sort keys %categories) {
@@ -6101,7 +6103,6 @@ sub _provideInstallationSuggestions {
             'xfreerdp' => 'freerdp2-x11',
             'rdesktop' => 'rdesktop',
             'vncviewer' => 'tigervnc-viewer',
-            'xtightvncviewer' => 'xtightvncviewer',
             'vinagre' => 'vinagre',
             'remmina' => 'remmina',
             'ssh' => 'openssh-client',
@@ -6114,13 +6115,13 @@ sub _provideInstallationSuggestions {
             'screen' => 'screen',
             'minicom' => 'minicom',
             'expect' => 'expect',
-            'socat' => 'socat'
+            'socat' => 'socat',
+            'x3270' => 'x3270'
         },
         'debian' => {
             'xfreerdp' => 'freerdp2-x11',
             'rdesktop' => 'rdesktop',
             'vncviewer' => 'tigervnc-viewer',
-            'xtightvncviewer' => 'xtightvncviewer',
             'vinagre' => 'vinagre',
             'remmina' => 'remmina',
             'ssh' => 'openssh-client',
@@ -6133,7 +6134,8 @@ sub _provideInstallationSuggestions {
             'screen' => 'screen',
             'minicom' => 'minicom',
             'expect' => 'expect',
-            'socat' => 'socat'
+            'socat' => 'socat',
+            'x3270' => 'x3270'
         },
         'fedora' => {
             'xfreerdp' => 'freerdp',
@@ -6151,7 +6153,8 @@ sub _provideInstallationSuggestions {
             'screen' => 'screen',
             'minicom' => 'minicom',
             'expect' => 'expect',
-            'socat' => 'socat'
+            'socat' => 'socat',
+            'x3270' => 'x3270'
         },
         'arch' => {
             'xfreerdp' => 'freerdp',
@@ -6169,7 +6172,8 @@ sub _provideInstallationSuggestions {
             'screen' => 'screen',
             'minicom' => 'minicom',
             'expect' => 'expect',
-            'socat' => 'socat'
+            'socat' => 'socat',
+            'x3270' => 'x3270'
         }
     );
     
