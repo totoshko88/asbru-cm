@@ -998,6 +998,17 @@ sub _initGUI {
         # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
         $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
         $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+        
+        # Add connection method icon to tab if available
+        my $connection_method = $$self{_CFG}{'method'} // '';
+        if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+            my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+            if ($method_icon) {
+                my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+                $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+            }
+        }
+        
         $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($$self{_TITLE});
         # First add to parent container
         $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
@@ -2943,6 +2954,16 @@ sub _winToTab {
     # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
+    # Add connection method icon to tab if available
+    my $connection_method = $$self{_CFG}{'method'} // '';
+    if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+        my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+        if ($method_icon) {
+            my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+            $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+        }
+    }
+
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
     # Safe pack with validation
     if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
@@ -3314,6 +3335,16 @@ sub _split {
 
     # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
+
+    # Add connection method icon to tab if available
+    my $connection_method = $$self{_CFG}{'method'} // '';
+    if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+        my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+        if ($method_icon) {
+            my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+            $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+        }
+    }
 
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
     # Safe pack with validation

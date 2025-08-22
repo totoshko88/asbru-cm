@@ -3997,7 +3997,8 @@ If you have the option "Automatically save every configuration change" checked, 
                       <object class="GtkImage" id="image18">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -5143,7 +5144,8 @@ Otherwise, only the icon will be shown and save screen space.</property>
                       <object class="GtkImage" id="image17">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -5648,7 +5650,8 @@ sudo -p sudo_prompt_string ...</property>
                       <object class="GtkImage" id="image19">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-preferences</property>
+                        <property name="icon_name">preferences-other</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -6453,7 +6456,8 @@ sudo -p sudo_prompt_string ...</property>
                       <object class="GtkImage" id="image20">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -7830,7 +7834,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image21">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8218,7 +8223,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image22">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-preferences</property>
+                        <property name="icon_name">preferences-other</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8483,7 +8489,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image23">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8529,7 +8536,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image24">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>

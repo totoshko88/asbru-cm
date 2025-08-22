@@ -78,3 +78,14 @@ messagedialog > box {
 .w-confirm {
 }
 
+/* Connection tree styling */
+.asbru-connection-tree {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.asbru-connection-tree:selected {
+    background-color: #3584e4;
+    color: #ffffff;
+}
+

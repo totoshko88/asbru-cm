@@ -228,6 +228,10 @@ sub new {
             $d->{'terminal transparency'} = 0;
         }
     }
+    
+    # Initialize UI appearance defaults
+    my $d = $$self{_CFG}{defaults} ||= {};
+    $d->{'use_native_connection_icons'} //= 1;  # Use method-specific icons by default
 
     if ($$self{_CFG}{'defaults'}{'theme'}) {
         my $cfg_theme = $$self{_CFG}{'defaults'}{'theme'} // 'default';
@@ -3062,6 +3066,8 @@ sub _getConnectionTypeIcon {
         $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.png");
     } elsif ($method eq 'Generic Command') {
         $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_generic.png");
+    } elsif ($method eq 'PACShell' || $method eq 'Local') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_local.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_local.png");
     } elsif ($method eq 'IBM 3270/5250') {
         $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_3270.png");
     } elsif ($method eq 'Serial (cu)') {
@@ -4219,7 +4225,12 @@ sub __recurLoadTree {
     if (!$$self{_CFG}{environments}{$uuid}{'_is_group'}) {
         # Leaf connection node (not a group)
         my $icon = $$self{_CFG}{environments}{$uuid}{'icon'};
-        if (!$icon) {
+        
+        # Use native connection icons if preference is set or no custom icon
+        my $use_native = $$self{_CFG}{'defaults'}{'use_native_connection_icons'} // 1;
+        if ($use_native && $$self{_CFG}{environments}{$uuid}{'method'}) {
+            $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
+        } elsif (!$icon) {
             $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
         }
         my $label = $node_name;
@@ -5987,6 +5998,14 @@ sub _checkDependencies {
             'version_cmd' => 'socat -V 2>&1 | head -1'
         },
         
+        # KeePass integration tools
+        'keepassxc-cli' => {
+            'description' => 'KeePassXC command line interface',
+            'install_hint' => 'keepassxc',
+            'critical' => 0,
+            'version_cmd' => 'keepassxc-cli --version 2>&1 | head -1'
+        },
+        
         # IBM Mainframe connection tools
         'x3270' => {
             'description' => 'IBM 3270 terminal emulator for mainframe connections',
@@ -6116,6 +6135,7 @@ sub _provideInstallationSuggestions {
             'minicom' => 'minicom',
             'expect' => 'expect',
             'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
             'x3270' => 'x3270'
         },
         'debian' => {
@@ -6135,6 +6155,7 @@ sub _provideInstallationSuggestions {
             'minicom' => 'minicom',
             'expect' => 'expect',
             'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
             'x3270' => 'x3270'
         },
         'fedora' => {
@@ -6154,6 +6175,7 @@ sub _provideInstallationSuggestions {
             'minicom' => 'minicom',
             'expect' => 'expect',
             'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
             'x3270' => 'x3270'
         },
         'arch' => {
@@ -6173,6 +6195,7 @@ sub _provideInstallationSuggestions {
             'minicom' => 'minicom',
             'expect' => 'expect',
             'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
             'x3270' => 'x3270'
         }
     );

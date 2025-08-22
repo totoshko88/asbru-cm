@@ -188,7 +188,20 @@ sub _initGUI {
     _($self, 'rbCfgStartTreeCluster')->set_image(Gtk3::Image->new_from_icon_name('applications-system', 'button'));
     # Set tab icons
     _($self, 'imgTermOpts')->set_from_icon_name('utilities-terminal', 'button');
-    _($self, 'imgKeePassOpts')->set_from_icon_name('dialog-password', 'button');
+    
+    # Use theme-specific KeePass icon if available, fallback to dialog-password
+    my $keepass_icon = "$THEME_DIR/asbru_keepass.svg";
+    if (-f $keepass_icon) {
+        my $pixbuf = PACUtils::_pixBufFromFile($keepass_icon);
+        if ($pixbuf) {
+            $pixbuf = $pixbuf->scale_simple(16, 16, 'hyper');
+            _($self, 'imgKeePassOpts')->set_from_pixbuf($pixbuf);
+        } else {
+            _($self, 'imgKeePassOpts')->set_from_icon_name('dialog-password', 'button');
+        }
+    } else {
+        _($self, 'imgKeePassOpts')->set_from_icon_name('dialog-password', 'button');
+    }
     
     # Add icons for other tabs that might exist
     my $nb = _($self, 'nbPreferences');
