@@ -257,15 +257,19 @@ sub new {
     # _registerPACIcons($THEME_DIR); # Removed - will be restored in PACUtils.pm
     $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.png");
     $CLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_connection.svg");
-    $GROUPICON_ROOT = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
+    # Scale root group icon to 16x16 to match other group icons
+    my $root_pixbuf = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
+    $GROUPICON_ROOT = $root_pixbuf ? $root_pixbuf->scale_simple(16, 16, 'hyper') : _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICON = _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICONOPEN = _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICONCLOSED = _pixBufFromFile("$THEME_DIR/asbru_group_closed_16x16.svg");
     # Try preferred themed connection icon; fallback to cluster connection icon if missing
     if (-f "$THEME_DIR/asbru_quick_connect.svg") {
-        $DEFCONNICON = _pixBufFromFile("$THEME_DIR/asbru_quick_connect.svg");
+        my $def_pixbuf = _pixBufFromFile("$THEME_DIR/asbru_quick_connect.svg");
+        $DEFCONNICON = $def_pixbuf ? $def_pixbuf->scale_simple(16, 16, 'hyper') : $CLUSTERICON;
     } else {
-        $DEFCONNICON = $CLUSTERICON; # reasonable fallback
+        my $cluster_pixbuf = $CLUSTERICON;
+        $DEFCONNICON = $cluster_pixbuf ? $cluster_pixbuf->scale_simple(16, 16, 'hyper') : $cluster_pixbuf;
     }
 
     map({
@@ -815,13 +819,16 @@ sub _initGUI {
     
     # Apply theme-aware styling to connection tree (Task 4.1)
     PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeConnections});
+    
+    # Set custom CSS class for better theme targeting
+    $$self{_GUI}{treeConnections}->get_style_context()->add_class('asbru-connection-tree');
     # Implement a "TreeModelSort" to auto-sort the data
     $$self{_GUI}{treeConnections}->set_model(SortedTreeStore->create($$self{_GUI}{treeConnections}->get_model(), $$self{_CFG}, $$self{_VERBOSE}));
     $$self{_GUI}{treeConnections}->get_selection()->set_mode('GTK_SELECTION_MULTIPLE');
 
     @{$$self{_GUI}{treeConnections}{'data'}}=(
         {
-            value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+            value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
             children => []
         }
     );
@@ -903,6 +910,9 @@ sub _initGUI {
     
     # Apply theme-aware styling to favourites tree (Task 4.1)
     PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeFavourites});
+    
+    # Set custom CSS class for better theme targeting
+    $$self{_GUI}{treeFavourites}->get_style_context()->add_class('asbru-connection-tree');
 
     # Create a scrolled3 scrolled window to contain the history tree - AI-assisted modernization: Updated for GTK4 compatibility
     $$self{_GUI}{scroll3} = create_scrolled_window();
@@ -2876,11 +2886,17 @@ sub __treeBuildNodeName {
     my $p_color = $$self{_CFG}{defaults}{'protected color'};
     my $p_uncolor = $$self{_CFG}{defaults}{'unprotected color'} // '#000000';
 
-    # Auto-adjust colors for system theme
-    if ($$self{_CFG}{defaults}{theme} eq 'system') {
+    # Auto-adjust colors for system theme and improve dark theme contrast
+    if ($$self{_CFG}{defaults}{theme} eq 'system' || $$self{_CFG}{defaults}{theme} eq 'asbru-dark') {
         my $auto_color = $self->_getSystemThemeTextColor();
         if ($auto_color) {
+            # For dark themes, use light text; for light themes, use dark text
             $p_uncolor = $auto_color unless $protected;
+            
+            # Ensure "My Connections" also uses proper color
+            if ($uuid eq '__PAC__ROOT__') {
+                $p_uncolor = $auto_color;
+            }
         }
     }
 
@@ -2969,6 +2985,50 @@ sub _getSystemThemeTextColor {
     $$self{_CACHED_THEME_TIME} = time();
     
     return $color;
+}
+
+sub _getConnectionTypeIcon {
+    my $self = shift;
+    my $method = shift // '';
+    
+    my $icon;
+    
+    # Use method-specific icons based on asbru_method_* naming
+    if ($method eq 'SSH') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.png");
+    } elsif ($method =~ /^RDP|xfreerdp|rdesktop/i) {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.png");
+    } elsif ($method eq 'VNC') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.png");
+    } elsif ($method eq 'SFTP') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.png");
+    } elsif ($method eq 'FTP') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.png");
+    } elsif ($method eq 'Telnet') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.png");
+    } elsif ($method eq 'MOSH') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.png");
+    } elsif ($method eq 'WebDAV') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.png");
+    } elsif ($method eq 'Generic Command') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_generic.png");
+    } elsif ($method eq 'IBM 3270/5250') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.jpg");
+    } elsif ($method eq 'Serial (cu)') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.jpg");
+    } elsif ($method eq 'Serial (remote-tty)') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.jpg");
+    }
+    
+    # Fallback to default connection icon if method-specific icon not found
+    $icon //= $DEFCONNICON;
+    
+    # Ensure all connection icons are scaled to 16x16 for consistency
+    if ($icon && $icon->get_width() != 16 || $icon->get_height() != 16) {
+        $icon = $icon->scale_simple(16, 16, 'hyper');
+    }
+    
+    return $icon;
 }
 
 sub _hasProtectedChildren {
@@ -4086,7 +4146,7 @@ sub _loadTreeConfiguration {
 
     @{ $$self{_GUI}{treeConnections}{'data'} } =
     ({
-        value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+        value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
         children => []
     });
     foreach my $child (keys %{ $$self{_CFG}{environments}{'__PAC__ROOT__'}{children} }) {
@@ -4110,19 +4170,7 @@ sub __recurLoadTree {
         # Leaf connection node (not a group)
         my $icon = $$self{_CFG}{environments}{$uuid}{'icon'};
         if (!$icon) {
-            my $method = $$self{_CFG}{environments}{$uuid}{'method'} // '';
-            my $logical;
-            if ($method =~ /ssh/i) { $logical = 'ssh'; }
-            elsif ($method =~ /xfreerdp|rdesktop|RDP/i) { $logical = 'rdp'; }
-            elsif ($method =~ /vnc/i) { $logical = 'vnc'; }
-            elsif ($method =~ /sftp/i) { $logical = 'sftp'; }
-            elsif ($method =~ /telnet/i) { $logical = 'telnet'; }
-            elsif ($method =~ /ftp/i) { $logical = 'ftp'; }
-            if ($logical) {
-                my $img = PACIcons::icon_image($logical);
-                if ($img) { $icon = $img->get_pixbuf; }
-            }
-            $icon //= $DEFCONNICON;
+            $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
         }
         my $label = $node_name;
         my $node = {
@@ -5186,7 +5234,7 @@ sub __importNodes {
         Gtk3::main_iteration() while Gtk3::events_pending();
         @{ $$self{_GUI}{treeConnections}{'data'} } = ();
         @{ $$self{_GUI}{treeConnections}{'data'} } = ({
-            value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+            value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
             children => []
         });
         Gtk3::main_iteration() while Gtk3::events_pending();

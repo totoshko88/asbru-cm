@@ -952,7 +952,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cadaver.png", 16, 16, 0),
+        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cadaver.svg", 16, 16, 0),
         'escape' => ["\cc", "quit\n"]
     };
 
@@ -1262,7 +1262,7 @@ sub _registerPACIcons {
         'asbru-group' => "$THEME_DIR/asbru_group.svg",
         'asbru-history' => "$THEME_DIR/asbru_history.svg",
         'asbru-keepass' => "$THEME_DIR/asbru_keepass.png",
-        'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.png",
+        'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.svg",
         'asbru-method-MOSH' => "$THEME_DIR/asbru_method_mosh.svg",
         'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.jpg",
         'asbru-method-Serial (cu)' => "$THEME_DIR/asbru_method_cu.jpg",

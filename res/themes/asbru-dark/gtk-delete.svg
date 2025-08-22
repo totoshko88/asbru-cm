@@ -32,7 +32,7 @@
      id="namedview5"
      showgrid="false"
      inkscape:zoom="14.75"
-     inkscape:cx="-13.355932"
+     inkscape:cx="8"
      inkscape:cy="8"
      inkscape:window-x="0"
      inkscape:window-y="30"
@@ -41,4 +41,4 @@
      d="M 16,0 C 14.896,0 14,0.896 14,2 H 0 v 4 h 2 v 22 c 0,2.21 1.79,4 4,4 h 20 c 2.21,0 4,-1.79 4,-4 V 6 h 2 V 2 H 18 C 18,0.896 17.104,0 16,0 Z M 8,28 H 6 V 10 h 2 z m 6,0 H 12 V 10 h 2 z m 6,0 H 18 V 10 h 2 z m 6,0 H 24 V 10 h 2 z"
      id="path2"
      inkscape:connector-curvature="0"
-     style="stroke-width:1;fill:#aa0000" /></svg>
+     style="stroke-width:1" /></svg>

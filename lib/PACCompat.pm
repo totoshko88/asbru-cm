@@ -1152,58 +1152,72 @@ sub _generateTreeCSS {
     if ($is_dark) {
         # Dark theme colors with proper contrast
         $css = qq{
-            treeview {
-                color: #ffffff;
+            .asbru-connection-tree, treeview {
+                color: #e6e6e6;
                 background-color: #2d2d2d;
             }
-            treeview:selected {
+            .asbru-connection-tree:selected, treeview:selected {
                 color: #ffffff;
                 background-color: #4a90d9;
             }
-            treeview:hover {
+            .asbru-connection-tree:hover, treeview:hover {
                 background-color: #3d3d3d;
             }
-            treeview:selected:hover {
+            .asbru-connection-tree:selected:hover, treeview:selected:hover {
                 background-color: #5aa0e9;
             }
-            treeview:focus:selected {
+            .asbru-connection-tree:focus:selected, treeview:focus:selected {
                 color: #ffffff;
                 background-color: #4a90d9;
             }
             /* Ensure text remains visible in all states */
-            treeview text {
+            .asbru-connection-tree text, treeview text {
+                color: #e6e6e6;
+            }
+            .asbru-connection-tree:selected text, treeview:selected text {
                 color: #ffffff;
             }
-            treeview:selected text {
+            /* Specific styling for connection tree entries */
+            .asbru-connection-tree cell, treeview cell {
+                color: #e6e6e6;
+            }
+            .asbru-connection-tree cell:selected, treeview cell:selected {
                 color: #ffffff;
             }
         };
     } else {
         # Light theme colors with proper contrast
         $css = qq{
-            treeview {
-                color: #000000;
+            .asbru-connection-tree, treeview {
+                color: #1a1a1a;
                 background-color: #ffffff;
             }
-            treeview:selected {
+            .asbru-connection-tree:selected, treeview:selected {
                 color: #ffffff;
                 background-color: #4a90d9;
             }
-            treeview:hover {
+            .asbru-connection-tree:hover, treeview:hover {
                 background-color: #f0f0f0;
             }
-            treeview:selected:hover {
+            .asbru-connection-tree:selected:hover, treeview:selected:hover {
                 background-color: #5aa0e9;
             }
-            treeview:focus:selected {
+            .asbru-connection-tree:focus:selected, treeview:focus:selected {
                 color: #ffffff;
                 background-color: #4a90d9;
             }
             /* Ensure text remains visible in all states */
-            treeview text {
-                color: #000000;
+            .asbru-connection-tree text, treeview text {
+                color: #1a1a1a;
             }
-            treeview:selected text {
+            .asbru-connection-tree:selected text, treeview:selected text {
+                color: #ffffff;
+            }
+            /* Specific styling for connection tree entries */
+            .asbru-connection-tree cell, treeview cell {
+                color: #1a1a1a;
+            }
+            .asbru-connection-tree cell:selected, treeview cell:selected {
                 color: #ffffff;
             }
         };
