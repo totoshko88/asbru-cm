@@ -58,6 +58,7 @@ use PACPrePostEntry;
 use PACVarEntry;
 use PACTermOpts;
 use PACKeePass;
+use PACCompat;
 
 # END: Import Modules
 ###################################################################
@@ -185,6 +186,9 @@ sub _initGUI {
     _($self, "linkHelpNetwokSettings")->set_label('');
     _($self, "linkHelpNetwokSettings")->set_image(PACIcons::icon_image('help_link','help-browser'));
 
+    # Normalize styling for help link buttons (flat, theme-aware)
+    _styleHelpLinks($self);
+
     # Clear icon cache to ensure fresh KeePass icons
     PACIcons::clear_cache();
     
@@ -202,6 +206,15 @@ sub _initGUI {
     _($self, 'alignLocal')->add(($$self{_LOCAL_EXEC} = PACExecEntry->new(undef, undef, 'clocal'))->{container});
     _($self, 'alignExpect')->add(($$self{_EXPECT_EXEC} = PACExpectEntry->new())->{container});
     _($self, 'nbProps')->show_all();
+
+    # Apply consistent, theme-based icons to left pane (tabs) similar to Preferences
+    _applyLeftPaneIcons($self);
+    # Ensure connection method icons use dialog size
+    _resizeMethodIcons($self, 'dialog');
+    # Ensure the connection options glyph is a themed gear, not the method icon
+    _applyConnOptionsGlyph($self, 'dialog');
+    # Add/refresh icons for frame label boxes in the left pane
+    _applyLeftPaneLabelIcons($self);
 
     # Populate 'Method' combobox
     my $i = 0;
@@ -228,6 +241,191 @@ sub _initGUI {
     _($self, 'btnCheckKPX')->set_sensitive($$self{'_CFG'}{'defaults'}{'keepass'}{'use_keepass'});
 
     return 1;
+}
+
+# Ensure Connection Editor help link buttons render consistently across themes.
+sub _styleHelpLinks {
+    my ($self) = @_;
+    my @ids = qw(linkHelpConn1 linkHelpNetwokSettings);
+
+    my $css = join "\n", (
+        ".asbru-help-link {",
+        "  background-color: transparent;",
+        "  padding: 0;",
+        "}",
+        ".asbru-help-link:backdrop {",
+        "  background-color: transparent;",
+        "}",
+    );
+    my $prov = eval { PACCompat::create_css_provider() };
+    eval { $prov && PACCompat::load_css_from_data($prov, $css); };
+
+    for my $id (@ids) {
+        my $w = eval { _($self, $id) } or next;
+        eval { $w->set_relief('none') if $w->can('set_relief'); };
+        eval { $w->set_always_show_image(1) if $w->can('set_always_show_image'); };
+        if ($prov) {
+            my $ctx = eval { $w->get_style_context };
+            eval { $ctx && $ctx->add_class('asbru-help-link'); };
+            eval { PACCompat::add_css_provider_to_widget($w, $prov, PACCompat::STYLE_PROVIDER_PRIORITY_APPLICATION()); };
+        }
+    }
+}
+
+# Set consistent icons for Connection Editor tabs (left pane) using theme icons, dialog size
+sub _applyLeftPaneIcons {
+    my ($self) = @_;
+    my $nb = eval { _($self, 'nbProps') } or return;
+    return unless eval { $nb->can('get_n_pages') };
+
+    my $n = eval { $nb->get_n_pages } // 0;
+    for my $i (0 .. $n-1) {
+        my $page = eval { $nb->get_nth_page($i) } or next;
+        my $tab = eval { $nb->get_tab_label($page) } or next;
+        next unless ref($tab) eq 'Gtk3::Box';
+
+        # Find the label text and existing image (if any)
+        my ($label_widget, $image_widget);
+        for my $child (eval { $tab->get_children } ) {
+            if (eval { $child->isa('Gtk3::Label') }) { $label_widget = $child; }
+            if (eval { $child->isa('Gtk3::Image') }) { $image_widget = $child; }
+        }
+        next unless $label_widget;
+        my $text = eval { $label_widget->get_text } // '';
+
+        # Map tab text to a suitable system icon name
+        my $icon_name;
+        if ($text =~ /^(Connection)\b/i && $text !~ /specific options/i) {
+            # General connection tab
+            $icon_name = 'applications-internet';
+        } elsif ($text =~ /Terminal Options/i) {
+            $icon_name = 'utilities-terminal';
+        } elsif ($text =~ /Variables|User Variables/i) {
+            $icon_name = 'folder-documents';
+        } elsif ($text =~ /Pre\s*Exec/i) {
+            $icon_name = 'system-run';
+        } elsif ($text =~ /Post\s*Exec/i) {
+            $icon_name = 'system-run';
+        } elsif ($text =~ /Expect/i) {
+            # Prefer modern spelling-check icon; fallbacks handled below
+            $icon_name = 'tools-check-spelling';
+        } elsif ($text =~ /Remote\s*Macros/i) {
+            $icon_name = 'network-server';
+        } elsif ($text =~ /Local\s*Macros/i) {
+            $icon_name = 'text-x-script';
+        } elsif ($text =~ /Network Settings/i) {
+            $icon_name = 'network-wired';
+        } elsif ($text =~ /Connection specific options/i) {
+            $icon_name = 'preferences-other';
+        } else {
+            next; # unknown tab; skip without forcing
+        }
+
+        # Load themed pixbuf at dialog size with fallbacks for broader theme support
+        my @candidates = grep { $_ } (
+            $icon_name,
+            ($icon_name && $icon_name eq 'applications-internet') ? 'preferences-system-network' : undef,
+            ($icon_name && $icon_name eq 'applications-internet') ? 'network-workgroup' : undef,
+            ($icon_name && $icon_name eq 'tools-check-spelling') ? 'gtk-spell-check' : undef,
+            'edit-find'
+        );
+        my $pixbuf;
+        for my $cand (@candidates) {
+            $pixbuf = eval { PACIcons::load_icon_from_theme($cand, 'dialog') };
+            last if $pixbuf;
+        }
+        # Fallbacks if needed
+        if (!$pixbuf) {
+            $pixbuf = eval { PACIcons::get_fallback_icon('dialog') };
+        }
+        next unless $pixbuf;
+
+        if ($image_widget) {
+            eval { $image_widget->set_from_pixbuf($pixbuf) };
+        } else {
+            # Create and pack an image before the label
+            my $img = Gtk3::Image->new_from_pixbuf($pixbuf);
+            eval { $tab->pack_start($img, 0, 0, 0); $tab->reorder_child($img, 0); $tab->show_all; };
+        }
+    }
+}
+
+# Resize method icons in Connection Editor to match dialog size for consistency
+sub _resizeMethodIcons {
+    my ($self, $size_label) = @_;
+    $size_label ||= 'dialog';
+    my $size = $size_label;
+    if (exists $PACIcons::ICON_SIZES{$size_label}) { $size = $PACIcons::ICON_SIZES{$size_label}; }
+    $size = 48 if !$size || $size !~ /^\d+$/;
+
+    for my $id (qw(imageMethod imageConnOptions)) {
+        my $img = eval { _($self, $id) } or next;
+        my $pix = eval { $img->get_pixbuf } or next;
+        my $scaled = eval { $pix->scale_simple($size, $size, 'hyper') };
+        eval { $img->set_from_pixbuf($scaled) } if $scaled;
+    }
+}
+
+# Inject icons into frame label boxes on the left pane (consistent size and theme)
+sub _applyLeftPaneLabelIcons {
+    my ($self) = @_;
+    my %map = (
+        labelPreExec        => ['system-run'],
+        labelPostExec       => ['system-run'],
+        labelExpect         => ['tools-check-spelling', 'gtk-spell-check', 'edit-find-replace', 'edit-find'],
+        labelRemoteMacros   => ['network-server', 'system-run'],
+        labelLocalMacros    => ['text-x-script', 'system-run'],
+        labelVariables      => ['folder-documents', 'document-properties'],
+        labelConnOptions    => ['preferences-other', 'applications-utilities'],
+        labelTerminalOptions=> ['utilities-terminal'],
+    );
+
+    for my $id (keys %map) {
+        my $box = eval { _($self, $id) } or next;
+        next unless ref($box) eq 'Gtk3::Box';
+
+        # Locate label and image children
+        my ($label_widget, $image_widget);
+        for my $child (eval { $box->get_children }) {
+            if (eval { $child->isa('Gtk3::Label') }) { $label_widget = $child; }
+            if (eval { $child->isa('Gtk3::Image') }) { $image_widget = $child; }
+        }
+        # Pick the first available icon from candidates
+        my $pixbuf;
+        CAND: for my $cand (@{ $map{$id} }) {
+            $pixbuf = eval { PACIcons::load_icon_from_theme($cand, 'dialog') };
+            last CAND if $pixbuf;
+        }
+        $pixbuf ||= eval { PACIcons::get_fallback_icon('dialog') };
+        next unless $pixbuf;
+
+        if ($image_widget) {
+            eval { $image_widget->set_from_pixbuf($pixbuf) };
+        } else {
+            my $img = Gtk3::Image->new_from_pixbuf($pixbuf);
+            # Prepend image before label if a label exists; else just pack at start
+            eval {
+                $box->pack_start($img, 0, 0, 0);
+                $box->reorder_child($img, 0);
+                $box->show_all;
+            };
+        }
+    }
+}
+
+# Force the Options glyph in the Connection Editor to a consistent themed gear at dialog size
+sub _applyConnOptionsGlyph {
+    my ($self, $size_label) = @_;
+    $size_label ||= 'dialog';
+    my @cands = qw(preferences-other preferences-system applications-utilities settings);
+    my $pixbuf;
+    for my $c (@cands) {
+        $pixbuf = eval { PACIcons::load_icon_from_theme($c, $size_label) };
+        last if $pixbuf;
+    }
+    $pixbuf ||= eval { PACIcons::get_fallback_icon($size_label) };
+    my $img = eval { _($self, 'imageConnOptions') };
+    eval { $img->set_from_pixbuf($pixbuf) } if $img && $pixbuf;
 }
 
 sub __checkRBAuth {
@@ -314,6 +512,8 @@ sub _setupCallbacks {
         $$self{_SPECIFIC}->change($method, $$self{_CFG}{'environments'}{$$self{_UUID}});
         $$self{_WINDOWEDIT}->show_all(); # Without this line, $$self{_SPECIFIC} widgets WILL NOT BE SHOWN!!!!!!!!!
         __checkRBAuth($self);
+    _resizeMethodIcons($self, 'dialog');
+    _applyConnOptionsGlyph($self, 'dialog');
     });
 
     # Capture "User/Pass" connection radiobutton state change

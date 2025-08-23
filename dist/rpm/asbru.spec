@@ -1,5 +1,5 @@
 %define _bashcompletiondir %(pkg-config --variable=completionsdir bash-completion)
-%{!?_version:%global _version 7.0.0+modern41}
+%{!?_version:%global _version 7.1.0}
 %{!?_release:%global _release 1}
 
 Name:       asbru-cm

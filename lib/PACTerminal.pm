@@ -599,6 +599,15 @@ sub start {
 
     $self->_startSendStringTimeout();
 
+    # If this is a Local shell (PACShell), mark as connected immediately to keep UI stable
+    if (($method // '') eq 'PACShell') {
+        $$self{CONNECTED} = 1;
+        $$self{CONNECTING} = 0;
+        if ($$self{_GUI}{status}) {
+            $$self{_GUI}{status}->push(0, 'Connected');
+        }
+    }
+
     $$self{_CFG}{'environments'}{$$self{_UUID}}{'startup script'} and $PACMain::FUNCS{_SCRIPTS}->_execScript($$self{_CFG}{'environments'}{$$self{_UUID}}{'startup script name'}, $self->{_PARENTWINDOW}, $$self{_UUID_TMP});
     $$self{_GUI}{_VTE}->grab_focus();
     if ($PACMain::FUNCS{_MAIN}{_Vte}{has_bright}) {
@@ -802,8 +811,16 @@ sub _startSendStringTimeout {
 sub _getLocalPort {
     my $LPORT = shift;
 
-    my $PING = Net::Ping->new('tcp');
-    $PING->service_check(0);
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+    # Guard service-name based checks; default to no service check if unavailable
+    eval {
+        $PING->tcp_service_check(1);
+        1;
+    } or do {
+    $PING->tcp_service_check(0);
+    $PING->port_number($default_ping_port);
+    };
 
     for (my $break = 0; $break < 100; ++$break) {
         $PING->port_number($LPORT);
@@ -1002,7 +1019,11 @@ sub _initGUI {
         $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
         
         # Add connection method icon to tab if available
-        my $connection_method = $$self{_CFG}{'method'} // '';
+        # Determine connection method for tab icon from environment config
+        my $connection_method = '';
+        if (ref($$self{_CFG}{'environments'}) eq 'HASH' && $$self{_UUID}) {
+            $connection_method = $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} // '';
+        }
         if ($connection_method && $PACMain::FUNCS{_MAIN}) {
             my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
             if ($method_icon) {
@@ -2958,7 +2979,10 @@ sub _winToTab {
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
     # Add connection method icon to tab if available
-    my $connection_method = $$self{_CFG}{'method'} // '';
+    my $connection_method = '';
+    if (ref($$self{_CFG}{'environments'}) eq 'HASH' && $$self{_UUID}) {
+        $connection_method = $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} // '';
+    }
     if ($connection_method && $PACMain::FUNCS{_MAIN}) {
         my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
         if ($method_icon) {

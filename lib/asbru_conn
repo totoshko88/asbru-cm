@@ -306,6 +306,10 @@ sub open_socket {
     if ($GETCMD) {
         return 0;
     }
+    # Allow tests/headless runs to skip PACMain sockets entirely
+    if ($ENV{ASBRU_SKIP_SOCKETS}) {
+        return 1;
+    }
     $SOCKET = IO::Socket::UNIX->new(
         Type => SOCK_STREAM,
         Peer => $SOCK_FILE
@@ -337,6 +341,10 @@ sub ctrl {
         msg($msg);
     }
     if (!defined $SOCKET) {
+        # When running without PACMain socket (e.g., tests), emit a plain line
+        if ($ENV{ASBRU_TEST_VERBOSE} || $ENV{ASBRU_SKIP_SOCKETS}) {
+            print "$msg\n";
+        }
         return 1;
     }
 
@@ -414,8 +422,12 @@ sub subst {
 
     if (!$GETCMD && $get) {
         ctrl("$get:");
-        $get = readData($get);
-        return $get;
+        if ($ENV{ASBRU_SKIP_SOCKETS} || !defined $SOCKET) {
+            # In tests/headless, just use current string value
+            return $string;
+        }
+        my $val = readData($get);
+        return $val;
     }
     if (!defined $$CFG{'environments'}{$UUID}) {
         return $string;
@@ -992,7 +1004,8 @@ sub _openSocksTunnel {
 sub _getLocalPort {
     my $LPORT = shift;
 
-    my $PING = Net::Ping->new('tcp');
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
     $PING->service_check(0);
 
     for (my $break = 0; $break < 100; ++$break) {

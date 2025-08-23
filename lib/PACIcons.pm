@@ -211,6 +211,15 @@ sub get_icon_theme {
         warn "PACIcons: Failed to get icon theme: $@";
         $ICON_THEME = undef;
     }
+    # Ensure we have a valid theme; under AppImage sometimes theme isn't set early
+    if ($ICON_THEME) {
+        eval {
+            my $name = $ICON_THEME->get_theme_name();
+            if (!defined $name || $name eq '') {
+                $ICON_THEME->set_custom_theme('Adwaita');
+            }
+        };
+    }
     
     return $ICON_THEME;
 }

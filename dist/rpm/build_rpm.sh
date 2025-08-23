@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
-VERSION=7.0.0+modern41
+# Derive version from lib/PACUtils.pm (APPVERSION)
+VERSION=$(grep "our \$APPVERSION" lib/PACUtils.pm | sed "s/.*'\(.*\)'.*/\1/")
 RELEASE=1
 SPEC=dist/rpm/asbru.spec
 WORK=dist/rpm

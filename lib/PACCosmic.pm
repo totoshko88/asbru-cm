@@ -102,7 +102,8 @@ sub has_workspace_integration {
 }
 
 # Get Cosmic theme information
-sub get_theme_info {
+BEGIN { *get_theme_info = \
+    sub {
     my %theme_info = (
         'name' => 'cosmic',
         'variant' => 'light',
@@ -119,7 +120,7 @@ sub get_theme_info {
     $theme_info{'accent_color'} = _detect_accent_color();
     
     return \%theme_info;
-}
+    } unless defined &get_theme_info; }
 
 # Check if we should use Cosmic-specific adaptations
 sub should_use_cosmic_adaptations {

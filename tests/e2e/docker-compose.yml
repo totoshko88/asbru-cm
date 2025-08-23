@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  rdp:
+    image: linuxserver/xrdp:latest
+    container_name: asbru-test-rdp
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      # Default test credentials; override via environment or .env as needed
+      - USER=tester
+      - PASSWORD=Passw0rd!
+    ports:
+      - "3389:3389"
+    restart: unless-stopped
+
+  # Web-based desktop (noVNC) via LinuxServer's webtop image.
+  # NOTE: This serves a desktop over HTTP(S) on port 3000. Some tags expose an internal VNC server,
+  # but raw VNC is not guaranteed to be accessible externally. We map 5901 opportunistically; if the
+  # image/tag doesn't expose it, use the web UI on http://localhost:3000 for manual checks.
+  vnc:
+    image: ghcr.io/linuxserver/webtop:ubuntu-xfce
+    container_name: asbru-test-webtop
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      # Uncomment to set a password for the web UI if desired
+      # - PASSWORD=Passw0rd!
+    ports:
+      - "3000:3000"   # noVNC/web UI
+      - "5901:5901"   # raw VNC (may not be active for all tags)
+    shm_size: "1gb"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: asbru-e2e-net

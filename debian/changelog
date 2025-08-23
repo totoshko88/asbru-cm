@@ -1,3 +1,13 @@
+asbru-cm (7.1.0) unstable; urgency=medium
+
+  * Tests: Full protocol coverage via linuxserver/* images (SSH, Webtop, RDP)
+  * E2E: Headless end-to-end app test with stdout control markers
+  * Integration: Robust KeePassXC stdin bridge and safer subprocess exec
+  * Stability: Hardened SSH/VNC/RDP flows; Wayland/X11 guards and temp cleanup
+  * Docs: Updated README, NEWS, and testing sections; logo attribution and cultural notes
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 23 Aug 2025 10:00:00 +0000
+
 asbru-cm (7.0.2) unstable; urgency=medium
 
   * Icons: Restored original icon system with GTK4 compatibility via PACCompat

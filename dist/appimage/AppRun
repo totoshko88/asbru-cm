@@ -8,9 +8,31 @@ export ASBRU_ENV_FOR_EXTERNAL="$(getCompressedEnv)"
 
 export ASBRU_IS_APPIMAGE="1"
 
-export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${APPDIR}/usr/local/lib:${APPDIR}/usr/local/share:${APPDIR}/lib:${APPDIR}/usr/lib/perl5/core_perl/CORE/"
+###############################################
+# Display backend: prefer Xwayland on Wayland #
+###############################################
+# If running under Wayland, force GTK to use the X11 backend so embedding works via Xwayland.
+if [ -n "${WAYLAND_DISPLAY}" ] || [ "${XDG_SESSION_TYPE}" = "wayland" ]; then
+    if [ "${GDK_BACKEND}" != "x11" ] && [ -z "${ASBRU_NO_XWAYLAND}" ]; then
+        export GDK_BACKEND="x11"
+        export ASBRU_XWAYLAND="1"
+    fi
+fi
 
-export PERL5LIB="${APPDIR}/usr/local/lib/perl5/site_perl:${APPDIR}/usr/local/share/perl5/site_perl:${APPDIR}/usr/lib/perl5/vendor_perl:${APPDIR}/usr/share/perl5/vendor_perl:${APPDIR}/usr/lib/perl5/core_perl:${APPDIR}/usr/share/perl5/core_perl"
+###############################################
+# Sanitize Perl environment                   #
+###############################################
+# Avoid leaking host Perl paths which can cause XS API mismatches (e.g. Cwd.c).
+unset PERL5LIB PERLLIB PERL5OPT PERL_MM_OPT PERL_MB_OPT PERL_LOCAL_LIB_ROOT
+
+# Keep runtime search paths minimal and self-contained, but include Perl CORE for libperl.so.
+# Avoid placing our usr/lib first to prevent host shells from loading bundled readline and spamming
+# "no version information" warnings. Prefer CORE explicitly and leave the rest to be found lazily.
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib/perl5/core_perl/CORE:${APPDIR}/lib:${APPDIR}/usr/local/lib"
+
+# Ensure Perl core modules resolve inside the AppImage by prepending our core_perl paths.
+# Then add our app, site, and vendor libs. Keep our paths before any host paths Perl may append.
+export PERL5LIB="${APPDIR}/usr/lib/perl5/core_perl:${APPDIR}/usr/share/perl5/core_perl:${APPDIR}/opt/asbru-cm/lib:${APPDIR}/opt/asbru-cm/lib/ex:${APPDIR}/opt/asbru-cm/lib/edit:${APPDIR}/usr/local/lib/perl5/site_perl:${APPDIR}/usr/local/share/perl5/site_perl:${APPDIR}/usr/lib/perl5/vendor_perl:${APPDIR}/usr/share/perl5/vendor_perl"
 
 export GI_TYPELIB_PATH="${APPDIR}/usr/lib/girepository-1.0"
 
@@ -20,6 +42,8 @@ export XDG_CONFIG_DIRS="${APPDIR}/etc/xdg"
 export GTK_PATH="${APPDIR}/usr/lib/gtk-3.0"
 export GTK_EXE_PREFIX="${APPDIR}/usr"
 export GTK_DATA_PREFIX="${APPDIR}/usr"
+# Avoid noisy host GTK module load failures (colorreload-gtk-module, window-decorations-gtk-module) when not present
+export GTK_MODULES=""
 
 export GDK_PIXBUF_MODULEDIR="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
 export GDK_PIXBUF_MODULE_FILE="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"

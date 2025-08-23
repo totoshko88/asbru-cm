@@ -178,6 +178,9 @@ sub _initGUI {
     _($self, $t)->set_image(Gtk3::Image->new_from_icon_name('help-browser', 'button'));
     }
 
+    # Normalize styling for all "Open Online Help" link buttons (flat, theme-aware)
+    _styleHelpLinks($self);
+
     # Option currently disabled (legacy Gtk3 stock image call removed)
     # _($self, 'btnCheckVersion')->set_image(PACIcons::icon_image('refresh','view-refresh'));
     # _($self, 'btnCheckVersion')->set_label('Check _now');
@@ -222,24 +225,24 @@ sub _initGUI {
                         }
                         if ($label_widget) {
                             my $label_text = $label_widget->get_text() // '';
-                            if ($label_text =~ /Terminal Options/) {
-                                $child->set_from_icon_name('utilities-terminal', 'button');
+                            if ($label_text =~ /Main Options/) {
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('preferences-other', 'dialog') || PACIcons::load_icon_from_theme('preferences-system', 'dialog'));
+                            } elsif ($label_text =~ /Terminal Options/) {
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('utilities-terminal', 'dialog'));
                             } elsif ($label_text =~ /Local Shell Options/) {
-                                $child->set_from_icon_name('application-x-shellscript', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('application-x-shellscript', 'dialog'));
                             } elsif ($label_text =~ /Network Settings/) {
-                                $child->set_from_icon_name('network-wired', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('network-wired', 'dialog'));
                             } elsif ($label_text =~ /Global Variables/) {
-                                $child->set_from_icon_name('folder-documents', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('folder-documents', 'dialog'));
                             } elsif ($label_text =~ /Local Commands/) {
-                                $child->set_from_icon_name('system-run', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('system-run', 'dialog'));
                             } elsif ($label_text =~ /Remote Commands/) {
-                                $child->set_from_icon_name('network-server', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('network-server', 'dialog'));
                             } elsif ($label_text =~ /KeePass Integration/) {
-                                # Use icon system instead of direct file path
-                                PACIcons::clear_cache();
-                                $child->set_from_icon_name('dialog-password', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('dialog-password', 'dialog'));
                             } elsif ($label_text =~ /Keybindings/) {
-                                $child->set_from_icon_name('input-keyboard', 'button');
+                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('input-keyboard', 'dialog'));
                             }
                         }
                     }
@@ -656,6 +659,43 @@ sub _setupCallbacks {
     });
 
     return 1;
+}
+
+# Ensure all "Open Online Help" link buttons render consistently across themes.
+sub _styleHelpLinks {
+    my ($self) = @_;
+    my @ids = (
+        map { ("linkHelp${_}BE", "linkHelp${_}LF", "linkHelp${_}AD") } qw(MO TO),
+        qw(linkHelpConn1 linkHelpNetwokSettings linkHelpLocalShell linkHelpGlobalNetwork)
+    );
+
+    # Create a tiny CSS provider to make link buttons flat and transparent.
+    my $css = join "\n", (
+        # Make link buttons background transparent and remove extra padding
+        ".asbru-help-link {",
+        "  background-color: transparent;",
+        "  padding: 0;",
+        "}",
+        # In dark themes ensure no forced light background leaks in
+        ".asbru-help-link:backdrop {",
+        "  background-color: transparent;",
+        "}",
+    );
+    my $prov = eval { PACCompat::create_css_provider() };
+    eval { $prov && PACCompat::load_css_from_data($prov, $css); };
+
+    for my $id (@ids) {
+        my $w = eval { _($self, $id) } or next;
+        # Make it a flat button without relief and no text
+        eval { $w->set_relief('none') if $w->can('set_relief'); };
+        eval { $w->set_always_show_image(1) if $w->can('set_always_show_image'); };
+        # Apply CSS class
+        if ($prov) {
+            my $ctx = eval { $w->get_style_context }; 
+            eval { $ctx && $ctx->add_class('asbru-help-link'); };
+            eval { PACCompat::add_css_provider_to_widget($w, $prov, PACCompat::STYLE_PROVIDER_PRIORITY_APPLICATION()); };
+        }
+    }
 }
 
 sub _exporter {

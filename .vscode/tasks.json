@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "run e2e app test",
+			"type": "shell",
+			"command": "PERL5LIB=lib prove -l t/integration/test_app_fullstack_e2e.pl 2>&1",
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "run e2e app test",
+			"type": "shell",
+			"command": "PERL5LIB=lib prove -l t/integration/test_app_fullstack_e2e.pl 2>&1",
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}

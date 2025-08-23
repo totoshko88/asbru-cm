@@ -41,6 +41,8 @@ use Getopt::Long qw(GetOptionsFromString);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons;      # for themed icon mapping
+use PACCompat;     # for CSS provider helpers
 
 # END: Import Modules
 ###################################################################
@@ -414,7 +416,16 @@ sub _buildGUI
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(Gtk3::Image->new_from_icon_name('help-browser-symbolic', 'button'));
+    # Theme-aware, icon-only help button consistent with the rest of the app
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
+    eval {
+        my $css = ".asbru-help-link { background-color: transparent; padding: 0; }\n.asbru-help-link:backdrop { background-color: transparent; }";
+        my $prov = PACCompat::create_css_provider();
+        PACCompat::load_css_from_data($prov, $css);
+        my $ctx = $w{help}->get_style_context; $ctx->add_class('asbru-help-link');
+        PACCompat::add_css_provider_to_widget($w{help}, $prov, PACCompat::STYLE_PROVIDER_PRIORITY_APPLICATION());
+        $w{help}->set_relief('none') if $w{help}->can('set_relief');
+    };
 
     my $lblsshv = Gtk3::Label->new('SSH Version ');
     $lblsshv->set_alignment(1, 0.5);

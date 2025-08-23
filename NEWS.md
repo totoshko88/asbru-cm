@@ -2,6 +2,21 @@
 
 Here you can find important news on the project
 
+## 23.08.2025 - Version 7.1.0 - Testable and Hardened
+
+This release focuses on reliability, security-hardening, and complete automated testing:
+
+- Full protocol coverage in CI using containerized services:
+	- SSH/Telnet baseline via linuxserver/openssh-server
+	- GUI readiness via linuxserver/webtop (VNC-like)
+	- RDP connectivity via linuxserver/rdesktop (xfreerdp recommended for embedding)
+- End-to-end headless application test for asbru_conn with stdout control markers
+- Safer subprocess execution, KeePassXC integration via stdin, and temp cleanup
+- Wayland/X11 guards and improved quit behavior
+- Documentation refresh with logo attribution and cultural symbolism notes
+
+Downloads and packages will be published on the releases page.
+
 ## 22.08.2025 - Version 7.0.2 - Modernization Completion Release
 
 We are excited to announce version **7.0.2** of Ásbrú Connection Manager, completing the modernization process with restored icon and theme systems, GTK4 compatibility, and comprehensive testing framework:

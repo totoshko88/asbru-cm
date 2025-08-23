@@ -197,8 +197,20 @@ sub new {
     $self->{_PROFILE} = [];
     push @{$self->{_PROFILE}}, sprintf('[%0.3f] start:new()', 0.0);
 
-    $self->{_PING} = Net::Ping->new('tcp');
-    $self->{_PING}->tcp_service_check(1);
+    # Initialize Net::Ping safely: some systems lack the 'echo' service in /etc/services.
+    # Construct with an explicit TCP port to avoid croak during object creation.
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    $self->{_PING} = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+    # Some systems lack the 'echo' tcp service in /etc/services, which makes
+    # tcp_service_check(1) die when resolving the port name. Guard and fall back.
+    eval {
+        $self->{_PING}->tcp_service_check(1);
+        1;
+    } or do {
+        # Disable service name check and use a reasonable default TCP port; later code may override.
+        $self->{_PING}->tcp_service_check(0);
+        $self->{_PING}->port_number($default_ping_port);
+    };
 
     if (grep({ /^--verbose$/ } @{ $$self{_OPTS} })) {
         $$self{_VERBOSE} = 1;
@@ -1090,7 +1102,8 @@ sub _initGUI {
 
     my $tablbl = create_box('horizontal', 0);
     $tablbl->pack_start(create_label('Info '), 0, 1, 0);
-    $$self{_GUI}{_TABIMG} = PACIcons::icon_image('settings','gtk-info');
+    # Use current theme's information icon for Info tab
+    $$self{_GUI}{_TABIMG} = PACIcons::icon_image('info','dialog-information');
     $tablbl->pack_start($$self{_GUI}{_TABIMG}, 0, 1, 0);
     $tablbl->show_all();
 
@@ -1207,6 +1220,7 @@ sub _initGUI {
     # Clear icon cache for fresh lock icons
     PACIcons::clear_cache();
     $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
+    eval { $$self{_GUI}{lockApplicationBtn}->set_always_show_image(1); };
     $$self{_GUI}{lockApplicationBtn}->set_active(0);
     $$self{_GUI}{lockApplicationBtn}->set('can-focus' => 0);
     $$self{_GUI}{lockApplicationBtn}->set_tooltip_text('Password [un]lock GUI. In order to use this functionality, check the "Protect with password" field under "Preferences"->"Main Options"');
@@ -1230,6 +1244,9 @@ sub _initGUI {
         $$self{_GUI}{hbuttonbox1}->pack_start($$self{_GUI}{quitBtn}, 1, 1, 0);
     }
     $$self{_GUI}{quitBtn}->set_image(PACIcons::icon_image('quit','gtk-quit'));
+    # Harden: avoid becoming default or being triggered by Enter on startup
+    eval { $$self{_GUI}{quitBtn}->set_can_default(0); };
+    eval { $$self{_GUI}{quitBtn}->set_activates_default(0); };
     $$self{_GUI}{quitBtn}->set('can-focus' => 0);
     $$self{_GUI}{quitBtn}->set_tooltip_text('Close all terminals and terminate the application');
 
@@ -2441,15 +2458,30 @@ sub _setupCallbacks {
     });
     $$self{_GUI}{scriptsBtn}->signal_connect('clicked' => sub { $$self{_SCRIPTS}->show(); });
     $$self{_GUI}{pccBtn}->signal_connect('clicked' => sub { $$self{_PCC}->show(); });
-    $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub { $self->_quitProgram(); });
+    if ($ENV{ASBRU_DEBUG}) {
+        $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub {
+            my $age = time() - ($self->{_START_TS} // time);
+            print STDERR "DEBUG: quitBtn clicked ignored under ASBRU_DEBUG (age=${age}s)\n";
+            return 1; # ignore accidental activations during debug runs
+        });
+    } else {
+        $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub {
+            print STDERR "DEBUG: quitBtn clicked -> invoking _quitProgram()\n" if $ENV{ASBRU_DEBUG};
+            $self->_quitProgram();
+        });
+    }
     $$self{_GUI}{saveBtn}->signal_connect('clicked' => sub { $self->_saveConfiguration(); });
     $$self{_GUI}{aboutBtn}->signal_connect('clicked' => sub { $self->_showAboutWindow(); });
     $$self{_GUI}{wolBtn}->signal_connect('clicked' => sub { _wakeOnLan(); });
     $$self{_GUI}{lockApplicationBtn}->signal_connect('toggled' => sub {
         if ($$self{_GUI}{lockApplicationBtn}->get_active()) {
             $self->_lockAsbru();
+            # Update icon to locked
+            $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','changes-prevent'));
         } else {
             $self->_unlockAsbru();
+            # Update icon to unlocked
+            $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
         }
     });
     if ($$self{_CFG}{'defaults'}{'layout'} eq 'Compact') {
@@ -2491,19 +2523,16 @@ sub _setupCallbacks {
         if (!defined $$self{_GUI}{_PACTABS}) {
             return 1;
         }
-        if ($$self{_GUI}{nb}->get_n_pages == 0) {
+        my $pages = $$self{_GUI}{nb}->get_n_pages();
+        if ($pages == 0) {
+            # No more tabs left: apply user preference
             $$self{_GUI}{_PACTABS}->hide();
-        } elsif ($$self{_GUI}{nb}->get_n_pages == 1) {
-            $$self{_GUI}{treeConnections}->grab_focus();
-            $$self{_GUI}{showConnBtn}->set_active(1);
-
-            if ($$self{_CFG}{defaults}{'when no more tabs'} == 0) {
-                #nothing
-            } elsif ($$self{_CFG}{defaults}{'when no more tabs'} == 1) {
-                #quit
+            my $pref = $$self{_CFG}{defaults}{'when no more tabs'} // 0;
+            if ($pref == 1) {
+                # quit
                 $self->_quitProgram();
-            } elsif ($$self{_CFG}{defaults}{'when no more tabs'} == 2) {
-                #hide
+            } elsif ($pref == 2) {
+                # hide
                 $$self{_TRAY}->set_active();
                 # Trigger the "lock" procedure ?
                 if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
@@ -2511,7 +2540,13 @@ sub _setupCallbacks {
                 }
                 # Hide main window
                 $self->_hideConnectionsList();
+            } else {
+                # nothing
             }
+        } elsif ($pages == 1) {
+            # Still one tab left: just reset focus UI, do not apply "no more tabs" preference
+            $$self{_GUI}{treeConnections}->grab_focus();
+            $$self{_GUI}{showConnBtn}->set_active(1);
         }
         return 1;
     });
@@ -2635,21 +2670,16 @@ sub _setupCallbacks {
 
     # Capture window closing
     $$self{_GUI}{main}->signal_connect('delete_event' => sub {
-        if ($$self{_CFG}{defaults}{'close to tray'}) {
-            # Show tray icon
-            $$self{_TRAY}->set_active();
-            # Trigger the "lock" procedure ?
-            if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
-                $$self{_GUI}{lockApplicationBtn}->set_active(1);
-            }
-            # Hide main window
-            if (!$STRAY) {
-                $$self{_GUI}{main}->iconify();
-            } else {
-                $self->_hideConnectionsList();
-            }
+        print STDERR "DEBUG: main delete_event received (hiding window, not quitting)\n" if $ENV{ASBRU_DEBUG};
+        # Always hide to tray instead of quitting directly; users can exit via menu/quit button
+        $$self{_TRAY}->set_active();
+        if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
+            $$self{_GUI}{lockApplicationBtn}->set_active(1);
+        }
+        if (!$STRAY) {
+            $$self{_GUI}{main}->iconify();
         } else {
-            $self->_quitProgram();
+            $self->_hideConnectionsList();
         }
         return 1;
     });
@@ -3695,15 +3725,19 @@ sub _showAboutWindow {
             . "🌟 Features: KeePassXC integration, session recording, modern UI themes"
         );
 
-        Gtk3::show_about_dialog(
-                $$self{_GUI}{main},(
+    Gtk3::show_about_dialog(
+        $$self{_GUI}{main},(
                 "program_name" => '',  # name is shown in the logo
                 "version" => $version_txt,
                 "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
                 # Modernized fork attribution (2025)
                 "copyright" => $copyright,
                 "website" => 'https://github.com/totoshko88/asbru-cm',
-                "license" => $license_txt,
+        # Keep dialog size stable and avoid jitter when showing license
+        "license" => $license_txt,
+        "wrap-license" => 1,
+        "default-width" => 640,
+        "default-height" => 480,
         ));
 
     return 1;

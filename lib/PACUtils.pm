@@ -134,7 +134,9 @@ sub run_cmd {
     my %opt = @_ == 1 && ref($_[0]) eq 'HASH' ? %{$_[0]} : @_;
     my $argv  = $opt{argv} // [];
     my $cwd   = $opt{cwd};
-    my $envp  = $opt{env} // {};
+    # Use a sanitized environment by default for external commands so we don't leak
+    # AppImage LD_LIBRARY_PATH (prevents libreadline "no version information" spam from host shells)
+    my $envp  = exists $opt{env} ? $opt{env} : _external_env_hash();
     my $stdin = defined $opt{stdin} ? $opt{stdin} : undef;
     my ($out, $err) = ('','');
     my $pid;
@@ -143,8 +145,18 @@ sub run_cmd {
     if ($cwd) { $old_cwd = Cwd::getcwd(); chdir $cwd; }
     my %env_backup;
     if ($envp && %$envp) {
+        # Start from current env, but scrub noisy libs unless explicitly provided
         foreach my $k (keys %$envp) { $env_backup{$k} = $ENV{$k}; $ENV{$k} = $envp->{$k}; }
     }
+    # Ensure host shell and helpers don't inherit our AppImage library paths by default
+    delete $ENV{LD_LIBRARY_PATH} unless ($opt{preserve_app_env});
+    if (!exists $envp->{GTK_PATH}) { delete $ENV{GTK_PATH}; }
+    if (!exists $envp->{GDK_PIXBUF_MODULE_FILE}) { delete $ENV{GDK_PIXBUF_MODULE_FILE}; }
+    if (!exists $envp->{GTK_IM_MODULE}) { delete $ENV{GTK_IM_MODULE}; }
+    if (!exists $envp->{GTK_IM_MODULE_FILE}) { delete $ENV{GTK_IM_MODULE_FILE}; }
+    if (!exists $envp->{PANGO_LIBDIR}) { delete $ENV{PANGO_LIBDIR}; }
+    # Force a sane host PATH unless the caller supplied one
+    if (!exists $envp->{PATH}) { $ENV{PATH} = '/usr/bin:/bin'; }
 
     my $err_fh = gensym;
     my $ran = 0;
@@ -279,7 +291,7 @@ require Exporter;
 # Define GLOBAL CLASS variables
 
 our $APPNAME = 'Ásbrú Connection Manager';
-our $APPVERSION = '7.0.2';
+our $APPVERSION = '7.1.0';
 our $DEBUG_LEVEL = 1;
 our $ARCH = '';
 my ($ARCH_TMP, $_ae, $_ac) = run_cmd({ argv => ['/bin/uname','-m'], env => _external_env_hash() });
@@ -522,17 +534,23 @@ sub _screenshot {
 
 # TODO: This should validate for file existence, eval generates errors an warnings in verbose mode
 sub _scale {
-    my $file = shift;
-    my $w = shift;
-    my $h = shift;
+    my $file  = shift;
+    my $w     = shift;
+    my $h     = shift;
     my $ratio = shift // '';
 
+    # Avoid invoking the pixbuf loader on missing files; this can raise GErrors via introspection
+    if (!ref($file)) {
+        if (!defined $file || !-r $file) {
+            print STDERR "WARN: Pixbuf source not readable: '" . ($file // 'undef') . "'\n";
+            return 0;
+        }
+    }
+
     my $gdkpixbuf;
-    eval {
-        $gdkpixbuf = ref($file) ? $file : Gtk3::Gdk::Pixbuf->new_from_file($file)
-    };
-    if ($@) {
-        print STDERR "WARN: Error while loading pixBuf from file '$file': $@";
+    eval { $gdkpixbuf = ref($file) ? $file : Gtk3::Gdk::Pixbuf->new_from_file($file); };
+    if ($@ || !$gdkpixbuf) {
+        print STDERR "WARN: Error while loading pixBuf from file '" . ($file // 'undef') . "': $@";
         return 0;
     }
 
@@ -551,13 +569,16 @@ sub _scale {
 sub _pixBufFromFile {
     my $file = shift;
 
-    my $gdkpixbuf;
-    eval {
-        $gdkpixbuf = Gtk3::Gdk::Pixbuf->new_from_file($file)
-    };
+    # Guard against unreadable/missing paths to prevent introspection errors during startup
+    if (!defined $file || !-r $file) {
+        print STDERR "WARN: Pixbuf file not readable: '" . ($file // 'undef') . "'\n";
+        return 0;
+    }
 
-    if ($@) {
-        print STDERR "WARN: Error while loading pixBuf from file '$file': $@";
+    my $gdkpixbuf;
+    eval { $gdkpixbuf = Gtk3::Gdk::Pixbuf->new_from_file($file); };
+    if ($@ || !$gdkpixbuf) {
+        print STDERR "WARN: Error while loading pixBuf from file '" . ($file // 'undef') . "': $@";
         return 0;
     }
     return $gdkpixbuf;
@@ -579,10 +600,6 @@ sub _getMethods {
             my $cfg = shift;
 
             my @faults;
-
-            if (! _($self, 'entryIP')->get_chars(0, -1)) {
-                push(@faults, 'IP/Hostname');
-            }
             if (! _($self, 'entryPort')->get_chars(0, -1)) {
                 push(@faults, 'Port');
             }
@@ -1677,7 +1694,21 @@ sub _wEnterValue {
     if (!defined $default) {
         $default = '';
     } elsif (ref($default)) {
-        @list = @{$default};
+        # Load splash image safely with fallbacks
+        my $img_ok = 0;
+        if (defined $SPLASH_IMG && -r $SPLASH_IMG) {
+            eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new_from_file($SPLASH_IMG); $img_ok = 1; };
+            if ($@) {
+                print STDERR "WARN: Failed to load splash image '$SPLASH_IMG': $@";
+            }
+        }
+        if (!$img_ok) {
+            # Fallback to a stock/icon-name image; if that also fails, use an empty image
+            eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new_from_icon_name('dialog-information', 'dialog'); $img_ok = 1; };
+            if ($@ || !$img_ok) {
+                eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new(); $img_ok = 1; };
+            }
+        }
     } elsif ($default =~ /.+?\|.+?\|/) {
         @list = split /\|/,$default;
     }
@@ -3389,9 +3420,18 @@ sub _wakeOnLan {
         while (Gtk3::events_pending) {
             Gtk3::main_iteration;
         }
-        my $PING = Net::Ping->new('tcp');
-        $PING->tcp_service_check(1);
-        $PING->port_number($ping_port);
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+        # Guard tcp_service_check in case 'echo' is not present in /etc/services
+        eval {
+            $PING->tcp_service_check(1);
+            1;
+        } or do {
+            $PING->tcp_service_check(0);
+            $PING->port_number($default_ping_port);
+        };
+        # If a specific ping port is provided, prefer it
+        $PING->port_number($ping_port) if defined $ping_port;
         my $up = $PING->ping($ip, '1');
         $mac = Net::ARP::arp_lookup('', $ip);
         if (! $mac || ($mac eq 'unknown') || ($mac eq '00:00:00:00:00:00')) {

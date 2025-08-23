@@ -20,7 +20,8 @@ my @test_files = (
     'test_local_shell.pl',
     'test_ssh_connections.pl',
     'test_rdp_connections.pl',
-    'test_vnc_connections.pl'
+    'test_vnc_connections.pl',
+    'test_fullstack_protocols.pl'
 );
 
 # Convert to full paths
