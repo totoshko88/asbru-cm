@@ -1,0 +1,452 @@
+#!/usr/bin/perl
+
+###############################################################################
+# This file is part of Ásbrú Connection Manager
+#
+# Copyright (C) 2017-2021 Ásbrú Connection Manager team (https://asbru-cm.net)
+# Copyright (C) 2010-2016 David Torrejón Vaquerizas
+#
+# Ásbrú Connection Manager is free software: you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Ásbrú Connection Manager is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License version 3
+# along with Ásbrú Connection Manager.
+# If not, see <http://www.gnu.org/licenses/gpl-3.0.html>.
+###############################################################################
+
+use utf8;
+binmode STDOUT,':utf8';
+binmode STDERR,':utf8';
+
+$|++;
+
+# Execute this code before anything else, even loading modules
+BEGIN {
+    if (grep({ /^-{1,2}(help|h)$/gi } @ARGV)) {
+        print "\n";
+        print "Usage: $0 [options]\n";
+        print "Options:\n";
+        print "\t--help : show this message\n";
+        print "\t--config-dir=path : absolute '/path' or relative 'path' to ~/.config for Ásbrú configuration files/\n";
+        print "\t--temp-dir=path : path to store temporary socket files (default is system temporary directory)\n";
+        print "\t--no-backup : do no create alternative config files as a backup (faster shutdown)\n";
+        print "\t--start-shell : start a local terminal\n";
+        print "\t--password=<pwd> : automatically logon with given password without prompting user\n";
+        print "\t--start-uuid=<uuid>[:<cluster] : start connection in cluster (if given)\n";
+        print "\t--edit-uuid=<uuid> : edit connection\n";
+        print "\t--dump-uuid=<uuid> : dump data for given connection\n";
+        print "\t--scripts : open scripts window\n";
+        print "\t--start-script=<script> : start given script\n";
+        print "\t--preferences : open global preferences dialog\n";
+        print "\t--quick-conn : open the Quick Connect dialog on startup\n";
+        print "\t--list-uuids : list existing connections/groups and their UUIDs\n";
+        print "\t--no-splash : no splash screen on startup\n";
+        print "\t--iconified : go to tray once started\n";
+        print "\t--readonly : start in read only mode (no config changes allowed)\n";
+        print "\t--verbose : display more debugging information\n";
+        print "\n";
+        print "See 'man asbru' for additional information.\n";
+        print "\n";
+        exit 0;
+    }
+
+    # Check if user wants to use a different configuration directory
+    foreach my $arg (@ARGV) {
+        if ($arg =~ /^-{1,2}config-dir=\s*(.+)$/i) {
+            my $path = $1;
+            # Check if configuration directory is an absolute (starts with /) or relative path (does not starts with /)
+            if ($path =~ m|^/|) {
+                # Absolute
+                $ENV{"ASBRU_CFG"} = $path;
+            } else {
+                # Relative path to ~./config
+                $ENV{"ASBRU_CFG"} = "$ENV{'HOME'}/.config/$path";
+            }
+        } elsif ($arg =~ /^-{1,2}temp-dir=\s*(.+)$/i) {
+            $ENV{"ASBRU_TMP"} = $1;
+        } elsif ($arg !~ /-{1,2}[\w\-]+/i) {
+            print STDERR "INFO: bad start up parameter $arg\n";
+        }
+    }
+    if (!$ENV{"ASBRU_CFG"}) {
+        ###################################################################
+        # DEFAULT CONFIG DIR SHOULD BE DEFINED HERE
+        ###################################################################
+        $ENV{"ASBRU_CFG"} = "$ENV{'HOME'}/.config/asbru";
+    }
+    # Workaround to unexpected SSH disconnections due to wrong handling of the WINCH event in some Gnome versions
+    # See https://www.perlmonks.org/?node_id=11109454
+    delete $ENV{'GTK_OVERLAY_SCROLLING'};
+
+    # Prefer Xwayland on Wayland for embedding compatibility (no restart if AppRun already set it)
+    my $is_wayland = ($ENV{WAYLAND_DISPLAY} || ($ENV{XDG_SESSION_TYPE} // '') eq 'wayland');
+    if ($is_wayland) {
+        my $current_backend = $ENV{GDK_BACKEND} || '';
+        if ($current_backend ne 'x11') {
+            # If not already set by launcher, force it once without re-exec to avoid loops in AppImage
+            print STDERR "INFO: Wayland detected, using X11 backend (Xwayland) for embedding\n";
+            $ENV{GDK_BACKEND} = 'x11';
+        }
+    }
+
+    # Ensure ASBRU_ENV_FOR_EXTERNAL is defined
+    # (it should be defined when running inside AppImage, otherwise must remain empty)
+    if (!defined($ENV{'ASBRU_ENV_FOR_EXTERNAL'})) {
+        $ENV{'ASBRU_ENV_FOR_EXTERNAL'} = "";
+    }
+}
+
+###################################################################
+# START: Import Modules
+
+use FindBin qw ($RealBin $Bin $Script);
+use lib "$RealBin/lib", "$RealBin/lib/ex", "$RealBin/lib/edit";
+use File::Copy;
+use PACConfigData qw(load_yaml_config);
+use YAML::XS;
+use PACMain;
+use PACUtils qw (_appName);
+use File::Temp qw (tempdir);
+
+# Standard
+use strict;
+use warnings;
+
+# END: Import Modules
+###################################################################
+
+###################################################################
+# START: Define GLOBAL variables
+our $CFG_FILE_NAME  = "asbru.yml";
+our $INIT_CFG_FILE  = "$RealBin/res/$CFG_FILE_NAME";
+our $CFG_DIR        = $ENV{"ASBRU_CFG"};
+our $CFG_DIR_OLD    = "$ENV{'HOME'}/.config/pac";
+our $CFG_FILE_OLD   = "pac.yml";
+our $CFG_FILE       = "$CFG_DIR/$CFG_FILE_NAME";
+our $BACKUP_DIR     = "bak";
+our $APP_NAME       = PACUtils::_appName();
+our $ASBRU_LANG     = 'en_US.UTF-8'; # no i18n support yet
+our $ASBRU;
+our $VERBOSE        = 0;
+# END: Define GLOBAL variables
+###################################################################
+
+###################################################################
+
+# START: MAIN program
+# Load PACMain now, so it can read the global $CFG_DIR
+print "INFO: $APP_NAME ($Script) started with PID $$\n";
+$ENV{'VERBOSE'} = 0;
+
+# Early --version handling (avoid full GUI init)
+if (grep { /^--version$/ } @ARGV) {
+    require PACUtils; # ensure version symbol loaded
+    print "$APP_NAME $PACUtils::APPVERSION\n";
+    exit 0;
+}
+
+foreach my $arg (@ARGV) {
+    if ($arg =~ /-{1,2}verbose/) {
+        $VERBOSE = 1;
+        $ENV{'VERBOSE'} = 1;
+    }
+}
+
+# Detect language
+print STDERR "INFO: Language detected : $ENV{'LANG'}, forcing to ${ASBRU_LANG}\n";
+$ENV{'LANG'} = $ASBRU_LANG;
+
+# Display server detection (Wayland vs X11) - modernization 2025
+my $display_server = 'unknown';
+if ($ENV{WAYLAND_DISPLAY}) {
+    $display_server = 'Wayland';
+} elsif (($ENV{XDG_SESSION_TYPE} // '') eq 'wayland') {
+    $display_server = 'Wayland';
+} elsif ($ENV{DISPLAY}) {
+    $display_server = 'X11';
+}
+print STDERR "INFO: Display server detected: $display_server\n";
+
+# Check for Unity's systray-whitelist presence of 'asbru'
+my $wl = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} gsettings get com.canonical.Unity.Panel systray-whitelist 2>/dev/null`;
+chomp $wl;
+
+if (($? eq 0) && (!grep(/'asbru'/, $wl))) {
+    print "INFO: Adding 'asbru' to Unity's 'systray-whitelist'\n";
+    $wl =~ s/'\s*]/', 'asbru']/;
+    `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} gsettings set com.canonical.Unity.Panel systray-whitelist "$wl"`;
+}
+
+# Set up configuration directories
+
+# Create config dir if necessary
+if (!-d "$ENV{'HOME'}/.config") {
+    mkdir( "$ENV{'HOME'}/.config" );
+}
+
+# Code for future configuration migrations when needed
+if ($CFG_DIR ne $CFG_DIR_OLD && -e $CFG_DIR_OLD && !-e $CFG_DIR && $CFG_DIR =~ /\/asbru$/) {
+    # Production user data
+    if ($VERBOSE) {
+        print "INFO: Migration of default directory\n";
+    }
+    config_migration($CFG_DIR_OLD, $CFG_DIR);
+} elsif (-e "$CFG_DIR/$CFG_FILE_OLD") {
+    # Alternate configuration directory
+    $CFG_DIR_OLD = "$CFG_DIR.migration";
+    if ($VERBOSE) {
+        print "INFO: Migration of alternate directory\n";
+    }
+    system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} rm -Rf \"$CFG_DIR_OLD\"";
+    system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} mv -f \"$CFG_DIR\" \"$CFG_DIR.migration\"";
+    config_migration($CFG_DIR_OLD, $CFG_DIR);
+}
+
+# Create Ásbrú configuration directory (if necessary)
+if (!-d $CFG_DIR) {
+    mkdir($CFG_DIR);
+}
+
+# Create all subdirectories
+foreach my $subdir ('autostart','screenshots','session_logs','scripts','tmp','bak') {
+    if (!-d "$CFG_DIR/$subdir") {
+        mkdir("$CFG_DIR/$subdir");
+    }
+}
+
+# Copy sample files if they do not exist
+for (my $n = 1; $n < 5; $n++) {
+    if ((!-e "$CFG_DIR/scripts/sample$n.pl") && (-e "$RealBin/res/sample$n.pl")) {
+        copy("$RealBin/res/sample$n.pl", "$CFG_DIR/scripts/");
+    }
+}
+
+# Default directory for temporary socket files
+if (!defined($ENV{"ASBRU_TMP"})) {
+    $ENV{"ASBRU_TMP"} = File::Temp::tempdir('asbru-cm-XXXX', TMPDIR => 1, CLEANUP => 1);
+}
+if (!-d $ENV{"ASBRU_TMP"}) {
+    mkdir($ENV{"ASBRU_TMP"});
+}
+if ($VERBOSE) {
+    print "INFO: Path for temporary socket files: " . $ENV{"ASBRU_TMP"} . "\n";
+}
+
+# Detect desktop
+getDesktopEnvironment();
+
+# Check if configuration is valid
+CheckConfigurationFile();
+
+# Start Àsbrú Connection Manager :)
+if (!($ASBRU = PACMain -> new(@ARGV))) {
+    print STDERR "WARN: Ásbrú aborted.\n";
+    exit 0
+}
+
+$ASBRU->start();
+
+print "INFO: Finished $APP_NAME ($Script) (PID:$$)...\n";
+exit 0;
+
+# Implemented when necessary
+
+sub config_migration {
+    my ($old_dir, $new_dir) = @_;
+    my $PATH = "$RealBin/";
+    my $status;
+
+    if (-e "$PATH/utils/pac2asbru.pl") {
+        if ($status = system($^X, "$PATH/utils/pac2asbru.pl", $old_dir, $new_dir, $VERBOSE)) {
+            print "INFO: Migration aborted or errors occured, execute with --verbose to see more information ($status)\n";
+            exit 0;
+        }
+    } else {
+        print "ERROR: Missing migration script $PATH/utils/pac2asbru.pl ; please check your installation.\n";
+        exit 0;
+    }
+}
+
+sub getDesktopEnvironment {
+    my $c;
+    # Fast path: explicit Cosmic indicators
+    if (($ENV{XDG_CURRENT_DESKTOP} && $ENV{XDG_CURRENT_DESKTOP} =~ /COSMIC/i) ||
+        ($ENV{XDG_SESSION_DESKTOP} && $ENV{XDG_SESSION_DESKTOP} =~ /COSMIC/i) ||
+        ($ENV{ORIGINAL_XDG_CURRENT_DESKTOP} && $ENV{ORIGINAL_XDG_CURRENT_DESKTOP} =~ /COSMIC/i) ||
+        $ENV{COSMIC_SESSION} || $ENV{POP_OS_COSMIC}) {
+        $ENV{'ASBRU_DESKTOP'} = 'cosmic';
+    }
+    # Legacy process name probing if still unknown
+    if (!$ENV{'ASBRU_DESKTOP'}) {
+        foreach my $d ('gnome-shell','cinnamon','lxde','xfce','unity') {
+            $c = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ps -eo 'comm=' | grep '$d' | wc -l`;
+            if ($c + 0) {
+                $ENV{'ASBRU_DESKTOP'} = $d;
+                last;
+            }
+        }
+    }
+    if (!$ENV{'ASBRU_DESKTOP'}) {
+        $ENV{'ASBRU_DESKTOP'} = 'other';
+    } elsif ($ENV{'ASBRU_DESKTOP'} eq 'gnome-shell') {
+        if (defined $ENV{'XDG_SESSION_DESKTOP'}) {
+            $ENV{'ASBRU_DESKTOP'} .= ":$ENV{'XDG_SESSION_DESKTOP'}";
+        }
+        foreach my $extension ('unite@hardpixel.eu', 'top-icons@gnome-shell-extensions.gcampax.github.com', 'appindicatorsupport@rgcjonas.gmail.com') {
+            if (-e "$ENV{'HOME'}/.local/share/gnome-shell/extensions/$extension" || -e "/usr/share/gnome-shell/extensions/$extension") {
+                $ENV{'ASBRU_DESKTOP'} .= '-withtray';
+                last;
+            }
+        }
+    }
+    # Desktop environment detected (logging deferred to PACMain->start to avoid duplicates)
+    $ENV{ASBRU_DESKTOP_DETECTED} = 1; # mark detected so PACMain can still gate if needed
+}
+
+sub CheckConfigurationFile {
+    use POSIX qw(strftime);
+
+    my $nfreeze = "$CFG_DIR/asbru.nfreeze";
+    my $now = strftime "%Y%m%d%H%M%S", localtime;
+    my $BACKUP_CFG_FILE  = "$CFG_DIR/$BACKUP_DIR/$CFG_FILE_NAME";
+    my $MAX_BACKUP_FILES = 10;
+    my $cfg;
+
+    if (!-e $CFG_FILE) {
+        # No configuration file, do not check anyting, it's probably the first time we start Ásbrú
+        return;
+    }
+    eval {
+        $cfg = PACConfigData::load_yaml_config($CFG_FILE);
+    };
+    if ($@ || !$cfg) {
+        my $OK = 0;
+        print "INFO: Config file lost or corrupted, trying to recover a previous configuration file...\n";
+        # Remove freeze file
+        unlink $nfreeze;
+        # Find the last good configuration
+        for (my $n=0; $n < $MAX_BACKUP_FILES; $n++) {
+            if (!-e "$BACKUP_CFG_FILE.$n") {
+                next;
+            }
+            print "INFO: Testing recovery file $CFG_FILE_NAME.$n...\n";
+            eval {
+                $cfg = PACConfigData::load_yaml_config("$BACKUP_CFG_FILE.$n");
+            };
+            if (!$@ && $cfg) {
+                print "INFO: Found valid file $CFG_FILE_NAME.$n, recovering...\n";
+                system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} mv -f \"$CFG_FILE\" \"$BACKUP_CFG_FILE.$now.bad\"";
+                system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cp -fp \"$BACKUP_CFG_FILE.$n\" \"$CFG_FILE\"";
+                $OK = 1;
+                last;
+            } else {
+                system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} mv -f \"$BACKUP_CFG_FILE.$n\" \"$BACKUP_CFG_FILE.$n.$now.bad\"";
+            }
+        }
+        if (!$OK) {
+            die "ERROR: You have no valid configuration file to load!\nERROR: Please inspect $CFG_FILE manually.";
+        }
+    } elsif ((-e $nfreeze) && (-s $nfreeze == 0)) {
+        # nfreeze corrupted remove so it can be recreated
+        print "INFO: file.nfreeze lost on last session, recreating\n";
+        unlink $nfreeze;
+    }
+
+    # Backup file already exists, roll previous backups
+    if (-e "$BACKUP_CFG_FILE.0") {
+        for (my $n=$MAX_BACKUP_FILES-1; $n > 0; $n--) {
+            my $p = $n-1; # previous
+            if (-e "$BACKUP_CFG_FILE.$p") {
+                system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cp -fp \"$BACKUP_CFG_FILE.$p\" \"$BACKUP_CFG_FILE.$n\"";
+            }
+        }
+    }
+    # Save current known configuration
+    system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cp -fp \"$CFG_FILE\" \"$BACKUP_CFG_FILE.0\"";
+}
+
+sub _wPopUP {
+    my ($type, $title, $msg) = @_;
+    my $PATH = "$RealBin";
+
+    $msg =~ s/\t//mg;
+    $msg =~ s/^ +//mg;
+    $msg =~ s/\n/&cr;/g;
+    $msg =~ s/\"/&dquot;/g;
+    $msg =~ s/\'/&squot;/g;
+    return `'$^X' $PATH/utils/asbru_confirm.pl '$type' '$title' '$msg' `;
+}
+
+END {
+    $ENV{"ASBRU_CFG"} = '';
+}
+
+# END: MAIN program
+###################################################################
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+asbru-cm
+
+=head1 SYNOPSYS
+
+asbru-cm [options]
+
+B<Options>
+
+    --help                          : show this message
+    --config-dir=path               : absolute '/path' or relative 'path' to ~/.config/
+    --no-backup                     : do no create alternative config files as a backup (faster shutdown)
+    --start-shell                   : start a local terminal
+    --password=<pwd>                : automatically logon with given password without prompting user
+    --start-uuid=<uuid>[:<cluster]  : start connection in cluster (if given)
+    --edit-uuid=<uuid>              : edit connection
+    --dump-uuid=<uuid>              : dump data for given connection
+    --scripts                       : open scripts window
+    --start-script=<script>         : start given script
+    --preferences                   : open global preferences dialog
+    --quick-conn                    : open the Quick Connect dialog on startup
+    --list-uuids                    : list existing connections/groups and their UUIDs
+    --no-splash                     : no splash screen on startup
+    --iconified                     : go to tray once started
+    --readonly                      : start in read only mode (no config changes allowed)
+
+=head1 DESCRIPTION
+
+=head2 Global Variables
+
+I<$ENV{"ASBRU_CFG"}>    Setup your default configuration directory here.
+
+You may run different versions of Ásbru and each have different configuration settings and connections.
+
+=head2 Functions
+
+C<sub config_migration> (no parameters) (no return values)
+
+Function normally empty unless there is a migration of the configuration files.
+
+C<sub getDesktopEnvironment> (no parameters)
+
+Attempts to set $ENV{'ASBRU_DESKTOP'} to the current Desktop Environment name
+
+Used to deal with limitations on certain desktop environments.
+
+For example: gnome-shell at the time of this documentation has no Tray capability in Gtk3
+
+C<sub CheckConfigurationFile> (no parameters)
+
+Check that the configuration file is valid.  If the valid is invalid, try to recover a valid
+configuration file from a previous version.
+
+If configuration is valid, make a copy of the file into the backup directory.
