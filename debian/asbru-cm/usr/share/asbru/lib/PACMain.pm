@@ -267,24 +267,92 @@ sub new {
     $d->{'use_native_connection_icons'} //= 1;  # Use method-specific icons by default
     $d->{'ui emojis'} //= 1;                    # Enable UI emojis by default (toggleable)
 
+    # Unless told otherwise, load our CSS; we'll disable it when following system theme
+    $$self{_USE_APP_CSS} = 1;
     if ($$self{_CFG}{'defaults'}{'theme'}) {
         my $cfg_theme = $$self{_CFG}{'defaults'}{'theme'} // 'default';
-        if ($cfg_theme =~ /^(asbru-dark|asbru-color|default)$/) {
+        if ($cfg_theme eq 'asbru-dark' || $cfg_theme eq 'asbru-color') {
             $THEME_DIR = "$RES_DIR/themes/$cfg_theme";
+            # If user explicitly chose dark, hint GTK too
+            if ($cfg_theme eq 'asbru-dark') { eval { my $s = Gtk3::Settings::get_default(); $s && $s->set_property('gtk-application-prefer-dark-theme', 1); 1; }; }
             eval { require PACIcons; PACIcons::set_theme_dir($THEME_DIR, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+        } elsif ($cfg_theme eq 'default') {
+            # Treat 'default' as follow-system (don't force our light CSS)
+            my $prefer_dark = 0;
+            eval { my ($n,$p, $info) = PACCompat::_detectSystemTheme(); $prefer_dark = ($info && $info->{is_dark}) ? 1 : ($p ? 1 : 0); 1 } or do { };
+            # Explicit GTK_THEME override wins in both directions
+            if (defined $ENV{GTK_THEME} && $ENV{GTK_THEME} ne '') {
+                my $gtk_env = $ENV{GTK_THEME};
+                if ($gtk_env =~ /dark/i) { $prefer_dark = 1; }
+                elsif ($gtk_env =~ /light/i) { $prefer_dark = 0; }
+            }
+            eval { my $settings = Gtk3::Settings::get_default(); $settings && $settings->set_property('gtk-application-prefer-dark-theme', $prefer_dark ? 1 : 0); 1; };
+            # Apply system GTK theme name (if available) when no explicit GTK_THEME override
+            if (!defined $ENV{GTK_THEME} || $ENV{GTK_THEME} eq '') {
+                my ($gtk_sys) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+                if (defined $gtk_sys && $gtk_sys ne '') {
+                    $gtk_sys =~ s/^\s*'//; $gtk_sys =~ s/'\s*$//; # strip quotes
+                    eval { my $s = Gtk3::Settings::get_default(); $s && $s->set_property('gtk-theme-name', $gtk_sys); 1; } or do { };
+                    print STDERR "INFO: Applied system GTK theme '$gtk_sys'\n" if $$self{_VERBOSE};
+                }
+            }
+            # Use internal assets but skip app CSS so system palette applies
+            $THEME_DIR = $prefer_dark ? "$RES_DIR/themes/asbru-dark" : "$RES_DIR/themes/default";
+            $$self{_USE_APP_CSS} = 0;
+            eval { require PACIcons; PACIcons::set_theme_dir($THEME_DIR, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+            print STDERR sprintf("INFO: Following system theme (cfg=default): %s\n", $prefer_dark?'dark':'light') if $$self{_VERBOSE};
         } elsif ($cfg_theme eq 'system') {
-            # System theme: we don't force an override; if user supplied one we defer apply, else we let GTK pick current desktop icon theme
+            # System theme: follow OS dark/light preference for our CSS and hint GTK
             if (my $sys_theme = $$self{_CFG}{'defaults'}{'system icon theme override'}) {
                 $$self{_DEFER_SYSTEM_ICON_THEME} = $sys_theme; # apply later (realized)
             }
-            # For internal-only icons still need default assets
-            $THEME_DIR = "$RES_DIR/themes/default";
+            my $prefer_dark = 0;
+            eval { my ($n,$p,$info) = PACCompat::_detectSystemTheme(); $prefer_dark = ($info && $info->{is_dark}) ? 1 : ($p ? 1 : 0); 1 } or do { $prefer_dark = 0; };
+            # Also honor GTK_THEME env as a simple hint
+            if (!$prefer_dark) { my $gtk_env = $ENV{GTK_THEME} || ''; $prefer_dark = 1 if $gtk_env =~ /dark/i; }
+            # Hint GTK so native widgets follow dark on supported themes
+            eval { my $settings = Gtk3::Settings::get_default(); $settings && $settings->set_property('gtk-application-prefer-dark-theme', $prefer_dark ? 1 : 0); 1; } or do { };
+            # Apply system GTK theme name (if available) when no explicit GTK_THEME override
+            if (!defined $ENV{GTK_THEME} || $ENV{GTK_THEME} eq '') {
+                my ($gtk_sys) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+                if (defined $gtk_sys && $gtk_sys ne '') {
+                    $gtk_sys =~ s/^\s*'//; $gtk_sys =~ s/'\s*$//; # strip quotes
+                    eval { my $s = Gtk3::Settings::get_default(); $s && $s->set_property('gtk-theme-name', $gtk_sys); 1; } or do { };
+                    print STDERR "INFO: Applied system GTK theme '$gtk_sys'\n" if $$self{_VERBOSE};
+                }
+            }
+            # Prefer system palette: skip our CSS when following system to avoid forcing light colors
+            $THEME_DIR = $prefer_dark ? "$RES_DIR/themes/asbru-dark" : "$RES_DIR/themes/default";
+            $$self{_USE_APP_CSS} = 0;
             eval { require PACIcons; PACIcons::set_theme_dir($THEME_DIR, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+            print STDERR sprintf("INFO: System theme detected: %s (GTK prefer-dark=%d)\n", ($prefer_dark?'dark':'light'), $prefer_dark) if $$self{_VERBOSE};
         } else {
             # Unknown -> fallback
             $THEME_DIR = "$RES_DIR/themes/default";
             eval { require PACIcons; PACIcons::set_theme_dir($THEME_DIR, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
         }
+    } else {
+        # No explicit theme configured -> follow system preference as a sensible default
+        my $prefer_dark = 0;
+        eval { my ($n,$p,$info) = PACCompat::_detectSystemTheme(); $prefer_dark = ($info && $info->{is_dark}) ? 1 : ($p ? 1 : 0); 1 } or do { $prefer_dark = 0; };
+        if (defined $ENV{GTK_THEME} && $ENV{GTK_THEME} ne '') {
+            my $gtk_env = $ENV{GTK_THEME};
+            if ($gtk_env =~ /dark/i) { $prefer_dark = 1; }
+            elsif ($gtk_env =~ /light/i) { $prefer_dark = 0; }
+        }
+        eval { my $settings = Gtk3::Settings::get_default(); $settings && $settings->set_property('gtk-application-prefer-dark-theme', $prefer_dark ? 1 : 0); 1; } or do { };
+        if (!defined $ENV{GTK_THEME} || $ENV{GTK_THEME} eq '') {
+            my ($gtk_sys) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+            if (defined $gtk_sys && $gtk_sys ne '') {
+                $gtk_sys =~ s/^\s*'//; $gtk_sys =~ s/'\s*$//; # strip quotes
+                eval { my $s = Gtk3::Settings::get_default(); $s && $s->set_property('gtk-theme-name', $gtk_sys); 1; } or do { };
+                print STDERR "INFO: Applied system GTK theme '$gtk_sys'\n" if $$self{_VERBOSE};
+            }
+        }
+        $THEME_DIR = $prefer_dark ? "$RES_DIR/themes/asbru-dark" : "$RES_DIR/themes/default";
+        $$self{_USE_APP_CSS} = 0; # let system theme drive palette by default
+        eval { require PACIcons; PACIcons::set_theme_dir($THEME_DIR, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+        print STDERR sprintf("INFO: Defaulting to %s theme based on system (GTK prefer-dark=%d)\n", ($prefer_dark?'dark':'light'), $prefer_dark) if $$self{_VERBOSE};
     }
     $$self{_THEME} = $THEME_DIR;
     # Capture GUI builder reference early when available (preferences & refresh use it)
@@ -389,22 +457,26 @@ sub new {
         $$self{_READONLY} = 1;
     }
 
-    # Gtk style
-    my $css_provider = Gtk3::CssProvider->new();
-    $css_provider->load_from_path("$THEME_DIR/asbru.css");
-    # Guard deprecated Gdk::Screen usage (Wayland/GTK4 forward compatibility)
-    eval {
-    my $screen = Gtk3::Gdk::Screen::get_default(); # may be undef
-        if ($screen) {
-            Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, 600);
-            $$self{_THEME_CSS_PROVIDER} = $css_provider; # Store for later replacement
-        } else {
-            # Fallback: apply provider to a dummy widget so rules cascade
-            my $dummy = Gtk3::Window->new();
-            $dummy->get_style_context->add_provider($css_provider, 600);
-        }
-        1;
-    } or do { };
+    # Gtk style (skip when following system theme to avoid forcing light palette)
+    if ($$self{_USE_APP_CSS}) {
+        my $css_provider = Gtk3::CssProvider->new();
+        $css_provider->load_from_path("$THEME_DIR/asbru.css");
+        # Guard deprecated Gdk::Screen usage (Wayland/GTK4 forward compatibility)
+        eval {
+            my $screen = Gtk3::Gdk::Screen::get_default(); # may be undef
+            if ($screen) {
+                Gtk3::StyleContext::add_provider_for_screen($screen, $css_provider, 600);
+                $$self{_THEME_CSS_PROVIDER} = $css_provider; # Store for later replacement
+            } else {
+                # Fallback: apply provider to a dummy widget so rules cascade
+                my $dummy = Gtk3::Window->new();
+                $dummy->get_style_context->add_provider($css_provider, 600);
+            }
+            1;
+        } or do { };
+    } else {
+        print STDERR "INFO: Skipping app CSS to honor system theme palette\n" if $$self{_VERBOSE};
+    }
     # Load optional modern icon tweaks
     if (-f "$THEME_DIR/modern-icons.css") {
         my $css_icons = Gtk3::CssProvider->new();

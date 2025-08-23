@@ -885,7 +885,10 @@ sub _detectSystemTheme {
     if ($desktop_env eq 'gnome') {
         # Check GNOME-specific settings
         my $gnome_theme = $ENV{GTK_THEME} || '';
-        $is_dark = 1 if $gnome_theme =~ /dark/i;
+        if ($gnome_theme ne '') {
+            if ($gnome_theme =~ /dark/i) { $is_dark = 1; }
+            elsif ($gnome_theme =~ /light/i) { $is_dark = 0; }
+        }
         
         # Check gsettings if available
         my $gsettings_bin = PACUtils::which_cached('gsettings');
@@ -899,8 +902,18 @@ sub _detectSystemTheme {
         my $kde_theme = $ENV{KDEDIRS} || '';
         # KDE theme detection could be enhanced here
     } elsif ($desktop_env eq 'cosmic') {
-        # Check Cosmic-specific settings
-        # Cosmic theme detection could be enhanced here
+        # COSMIC: follow GNOME's color-scheme key and GTK_THEME env
+        my $gtk_env = $ENV{GTK_THEME} || '';
+        if ($gtk_env ne '') {
+            if ($gtk_env =~ /dark/i) { $is_dark = 1; }
+            elsif ($gtk_env =~ /light/i) { $is_dark = 0; }
+        }
+        my $gsettings_bin = PACUtils::which_cached('gsettings');
+        if ($gsettings_bin) {
+            my ($color_scheme) = PACUtils::run_cmd({ argv => [$gsettings_bin, 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
+            chomp $color_scheme if $color_scheme;
+            $is_dark = 1 if $color_scheme && $color_scheme =~ /prefer-dark|dark/i;
+        }
     }
     
     # Add additional theme metadata
@@ -1117,7 +1130,14 @@ sub _applyTreeTheme {
         $force_theme = $ENV{ASBRU_FORCE_DARK} ? 1 : 0;
     }
 
+    # Start with cached/auto detection
     my $is_dark = $force_theme // $theme_info{is_dark} // prefers_dark_theme();
+    # Respect explicit GTK_THEME override when present
+    if (defined $ENV{GTK_THEME} && $ENV{GTK_THEME} ne '') {
+        my $gtk_hint = $ENV{GTK_THEME};
+        if ($gtk_hint =~ /dark/i) { $is_dark = 1; }
+        elsif ($gtk_hint =~ /light/i) { $is_dark = 0; }
+    }
 
     # On KDE, avoid false dark positives unless the theme name explicitly contains "dark".
     # Be extra conservative inside AppImage where GTK settings can mismatch KDE color scheme.

@@ -2,7 +2,7 @@ abbd6ef44f59e92c13fc3cabd57cc580  usr/bin/asbru-cm
 799279468f6acae778d65192c9497fb2  usr/share/applications/asbru-cm.desktop
 eb30b4e3ae0c23ff3ef87ea86b79fc4a  usr/share/asbru/asbru-cm
 c5e6e077a19cb08a8ebd2b32f60a9a91  usr/share/asbru/lib/PACCluster.pm
-ad36c93c0eae9f2c402f400cb385f34f  usr/share/asbru/lib/PACCompat.pm
+363a4cfe7be20efefb19939f8b9b64bd  usr/share/asbru/lib/PACCompat.pm
 851f5c7ba06e39d9cc91c7aa1f4f9d84  usr/share/asbru/lib/PACCompatConfig.pm
 dee14b623975dbac2157614bfb887e69  usr/share/asbru/lib/PACConfig.pm
 974da9cdf184ca08bf521fd36b8b1607  usr/share/asbru/lib/PACConfigData.pm
@@ -19,7 +19,7 @@ b83d9cc7d318cf8348e58d531e1d60c8  usr/share/asbru/lib/PACCryptoCompat.pm
 8c6ce950a6502c5c10c826cea79872c0  usr/share/asbru/lib/PACKeyBindings.pm
 bf503a11a350a830c2b65f2e6813b6bf  usr/share/asbru/lib/PACKeyring.pm
 f284269e1727734527243a56da6dcad8  usr/share/asbru/lib/PACLogger.pm
-7faa44256e6ca59b32d59ca7555bb25b  usr/share/asbru/lib/PACMain.pm
+7fb47f310438ed2c6c06b6a5cbfedff3  usr/share/asbru/lib/PACMain.pm
 2cb611702a218ca4ab45fa749c35ff00  usr/share/asbru/lib/PACNetworking.pm
 720fd3502c475f8fb6784d3018c59677  usr/share/asbru/lib/PACPCC.pm
 59315893fd67545ea6918bad86a51533  usr/share/asbru/lib/PACPipe.pm
