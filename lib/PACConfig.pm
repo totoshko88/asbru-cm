@@ -226,7 +226,17 @@ sub _initGUI {
                         if ($label_widget) {
                             my $label_text = $label_widget->get_text() // '';
                             if ($label_text =~ /Main Options/) {
-                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('preferences-other', 'dialog') || PACIcons::load_icon_from_theme('preferences-system', 'dialog'));
+                                # Use branded app logo for Main Options tab per requirement
+                                my $pix = undef;
+                                eval {
+                                    $pix = Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$RES_DIR/asbru-logo-64.png", 48, 48, 0);
+                                };
+                                if ($pix) {
+                                    $child->set_from_pixbuf($pix);
+                                } else {
+                                    # Fallback to a reasonable theme icon if file missing
+                                    $child->set_from_icon_name('preferences-system', 'dialog');
+                                }
                             } elsif ($label_text =~ /Terminal Options/) {
                                 $child->set_from_pixbuf(PACIcons::load_icon_from_theme('utilities-terminal', 'dialog'));
                             } elsif ($label_text =~ /Local Shell Options/) {
