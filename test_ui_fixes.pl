@@ -91,15 +91,10 @@ sub test_webdav_icons {
     
     for my $theme (@themes) {
         my $svg_exists = -f "$RealBin/res/themes/$theme/asbru_method_cadaver.svg";
-        my $png_exists = -f "$RealBin/res/themes/$theme/asbru_method_cadaver.png";
         
         unless ($svg_exists) {
             print "   ✗ $theme theme missing WebDAV SVG icon\n";
             $files_present = 0;
-        }
-        # Note: cadaver.svg embeds cadaver.png; keep PNG present for now
-        unless ($png_exists) {
-            print "   ⚠ $theme theme missing cadaver.png referenced by SVG\n";
         }
     }
     

@@ -25,10 +25,26 @@ The original Ásbrú Connection Manager project has compatibility issues with mo
 
 ### 🆕 **Modern Features**
 
-- **COSMIC Desktop Support**: Native integration with System76's COSMIC desktop environment
-- **Enhanced Theme Detection**: Automatic system theme detection with 5-second caching for performance
-- **Improved Error Handling**: Safe widget management preventing application freezes
-- **Better Debugging**: Enhanced debug output for easier troubleshooting
+
+## Tested on this system
+
+This fork has been validated on the maintainer's workstation:
+
+- OS: openSUSE Tumbleweed (20250727)
+- Kernel: 6.15.8-1-default x86_64
+- Desktop: KDE Plasma on Wayland (XDG_SESSION_TYPE=wayland)
+- Perl: 5.42.0
+- Tooling: rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
+
+Connection tests and UI smoke checks were executed; protocol mocks are skipped if Test::MockObject is missing.
+
+## This fork
+
+Modernization-focused fork; additionally tested on:
+- openSUSE Tumbleweed 20250727, kernel 6.15.8-1-default, KDE (Wayland)
+- Perl 5.42.0, rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
+
+See `RELEASE_NOTES_7.1.0.md` for 7.1.0 highlights.
 
 ## 📦 Quick Installation
 

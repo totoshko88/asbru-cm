@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_prompt.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <rect x="2" y="3" width="12" height="9" rx="1.5" fill="#343a40"/>
+  <rect x="2" y="3" width="12" height="2" fill="#495057"/>
+  <circle cx="3.5" cy="4" r=".5" fill="#dc3545"/>
+  <circle cx="5" cy="4" r=".5" fill="#ffc107"/>
+  <circle cx="6.5" cy="4" r=".5" fill="#28a745"/>
+  <path d="M4 9l2-2M6 7l-2 2M8 10h3" stroke="#20c997" stroke-width="1.2" stroke-linecap="round"/>
 </svg>

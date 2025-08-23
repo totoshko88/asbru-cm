@@ -102,6 +102,9 @@ our %ICON_MAP = (
     
     # UI icons
     'treelist' => 'view-list',
+    'preferences' => 'preferences-system',
+    'quit_action' => 'application-exit',
+    'asbru-favourite-on' => 'starred',
     'folder' => 'folder',
     'favourite_start' => 'starred',
     'history_start' => 'document-open-recent',
@@ -215,10 +218,8 @@ sub get_icon_theme {
     # Ensure we have a valid theme; under AppImage sometimes theme isn't set early
     if ($ICON_THEME) {
         eval {
-            my $name = $ICON_THEME->get_theme_name();
-            if (!defined $name || $name eq '') {
-                $ICON_THEME->set_custom_theme('Adwaita');
-            }
+            # Avoid forcing custom theme on initialized singleton; just rescan so bundled themes are visible
+            $ICON_THEME->rescan_if_needed();
         };
     }
     
@@ -345,8 +346,10 @@ sub _create_icon_pixbuf {
         'edit' => ['document-edit', 'gtk-edit', 'accessories-text-editor'],
         'folder' => ['folder', 'gtk-directory', 'inode-directory'],
         'settings' => ['preferences-system', 'gtk-preferences', 'configure'],
+    'preferences' => ['preferences-system', 'gtk-preferences', 'configure'],
         'about' => ['help-about', 'gtk-about', 'dialog-information'],
         'quit' => ['application-exit', 'gtk-quit', 'system-log-out'],
+    'quit_action' => ['application-exit', 'gtk-quit', 'system-log-out'],
         'help' => ['help-contents', 'gtk-help', 'system-help'],
         'previous' => ['go-previous', 'gtk-media-previous', 'media-skip-backward'],
         'next' => ['go-next', 'gtk-media-next', 'media-skip-forward'],
@@ -354,7 +357,11 @@ sub _create_icon_pixbuf {
         'favourite_on' => ['bookmark-new', 'starred', 'emblem-favorite'],
         'favourite_off' => ['bookmark-new', 'non-starred', 'emblem-default'],
         'shell' => ['utilities-terminal', 'gnome-terminal', 'terminal'],
-        'scripts' => ['text-x-script', 'application-x-shellscript', 'text-x-generic']
+        'scripts' => ['text-x-script', 'application-x-shellscript', 'text-x-generic'],
+        # Preferences tab common icons
+    'terminal-options' => ['utilities-terminal-symbolic', 'utilities-terminal', 'terminal', 'preferences-desktop'],
+    'local-shell-options' => ['application-x-shellscript', 'text-x-script', 'utilities-terminal-symbolic', 'utilities-terminal'],
+    'network-settings' => ['network-wired-symbolic', 'network-wired', 'preferences-system-network', 'network-workgroup'],
     );
     
     if ($logical_name && exists $generic_fallbacks{$logical_name}) {

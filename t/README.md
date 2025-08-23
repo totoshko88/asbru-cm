@@ -1,3 +1,9 @@
+# Test Suite
+
+Run all: `perl t/run_all_tests.pl`
+Core dependency: Test::More
+Optional: Test::MockObject (skips mocked desktop tests if missing)
+You can also run `prove -r t` for TAP-style runs.
 # Ásbrú Connection Manager Test Suite
 
 This directory contains the comprehensive test suite for Ásbrú Connection Manager 7.0.0, including automated GUI tests, connection protocol tests, and performance benchmarks.

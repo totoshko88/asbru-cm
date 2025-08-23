@@ -1,4 +1,22 @@
-
+# Reduce build context size for AppImage build
+.git
+.github
+doc/
+scripts/
+dist/appimage/build/
+dist/rpm/build/
+*.AppImage
+*.rpm
+*.deb
+*.iso
+*.img
+*.log
+*.tar
+*.tar.gz
+node_modules/
+venv/
+__pycache__/
+*.swp
 .git
 .github
 dist/appimage-raw/build

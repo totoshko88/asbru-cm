@@ -39,6 +39,7 @@ use PACIcons; # Modern symbolic icon mapping
 
 use FindBin qw ($RealBin $Bin $Script);
 use lib "$RealBin/lib", "$RealBin/lib/ex";
+use File::Spec;
 use Storable qw (dclone nstore nstore_fd fd_retrieve);
 use POSIX qw (strftime);
 use File::Copy;
@@ -81,6 +82,34 @@ my $PAC_CONN = "$RealBin/lib/asbru_conn";
 
 my $SHELL_BIN = -x '/bin/sh' ? '/bin/sh' : '/bin/bash';
 my $SHELL_NAME = -x '/bin/sh' ? 'sh' : 'bash';
+
+# Resolve an absolute perl path for child spawns (AppImage-safe)
+my $PERL_BIN = $^X;
+my $LOADER_BIN = undef;
+my @LOADER_PREFIX = ();
+if ($ENV{ASBRU_IS_APPIMAGE}) {
+    # Prefer the bundled perl inside the AppImage
+    my $appdir = $ENV{APPDIR} // '';
+    if ($appdir && -x "$appdir/usr/bin/perl") {
+        $PERL_BIN = "$appdir/usr/bin/perl";
+    } elsif ($PERL_BIN !~ m{^/} && -x "$RealBin/../usr/bin/perl") {
+        # Fallback: resolve relative to RealBin when running from build tree
+        $PERL_BIN = File::Spec->rel2abs("$RealBin/../usr/bin/perl");
+    }
+    # Detect and use the bundled dynamic loader to avoid PT_INTERP issues
+    if ($appdir) {
+        # Prefer glibc-compat loader if available (packaged Perl and XS modules are glibc-linked)
+        if (-x "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2") {
+            $LOADER_BIN = "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2";
+        } elsif (-x "$appdir/lib/ld-musl-x86_64.so.1") {
+            $LOADER_BIN = "$appdir/lib/ld-musl-x86_64.so.1";
+        }
+        if ($LOADER_BIN) {
+            # For spawn, set env LD_LIBRARY_PATH; no flags needed for the loader
+            @LOADER_PREFIX = ($LOADER_BIN, $LOADER_BIN);
+        }
+    }
+}
 
 my $_C = 1;
 my $EXEC_STORM_TIME = 0.2;
@@ -551,30 +580,96 @@ sub start {
     my @args;
     my $spawn_env;
     my $subCwd = $method eq 'PACShell' ? $$self{_CFG}{'defaults'}{'shell directory'} : '.';
-    if ($$self{_CFG}{'defaults'}{'use login shell to connect'}) {
-        @args = [$SHELL_BIN, $SHELL_NAME, '-l', '-c', "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$^X' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)"];
+    my $use_login_shell = $$self{_CFG}{'defaults'}{'use login shell to connect'};
+    $use_login_shell = 0 if $ENV{ASBRU_IS_APPIMAGE};
+    # Special-case local shell: spawn the configured shell directly inside VTE for robustness
+    if (($method // '') eq 'PACShell') {
+        my $sh_bin = $$self{_CFG}{'defaults'}{'shell binary'} || $SHELL_BIN;
+        my $sh_opts = $$self{_CFG}{'defaults'}{'shell options'} || '';
+        my @opt_tokens = grep { length($_) } split(/\s+/, $sh_opts);
+        # Duplicate argv[0] to satisfy FILE_AND_ARGV_ZERO semantics
+        @args = [$sh_bin, $sh_bin, @opt_tokens];
+        # Use external minimal env and working dir
+        $spawn_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'} // '';
+        $spawn_env .= " ASBRU_SUB_CWD='$subCwd'";
+        # Ensure TERM/SHELL present
+        foreach my $pair (['TERM', ($ENV{TERM} // 'xterm-256color')], ['SHELL', ($ENV{SHELL} // $sh_bin)]) {
+            my ($k,$v) = @$pair; $spawn_env .= " $k='$v'" if index($spawn_env, "$k=") < 0;
+        }
+        my @arr_spawn_env = $self->_convertEnv($spawn_env);
+        if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
+            my $dbg_args = join(' ', @{$args[0]});
+            print STDERR "DIAG: about to spawn local shell uuid=$$self{_UUID} method=$method cwd=$subCwd args=[${dbg_args}] env='$spawn_env'\n";
+        }
+        my $ok = eval { $$self{_GUI}{_VTE}->spawn_sync([], $subCwd, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef); };
+        if (!$ok || $@) {
+            $$self{ERROR} = "ERROR: VTE could not start local shell '$sh_bin' with opts '$sh_opts' at: $@";
+            print STDERR "DIAG: spawn_sync failed (local shell) uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
+            $$self{CONNECTING} = 0;
+            return 0;
+        } else {
+            print STDERR "DIAG: spawn_sync ok (local shell) uuid=$$self{_UUID} method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+        }
+    }
+    elsif ($use_login_shell) {
+        # Use login shell but execute the in-bundle perl explicitly (via loader if set)
+        my $cmd = '';
+        if (@LOADER_PREFIX) {
+            my ($ld0, $ld_argv0) = @LOADER_PREFIX;
+            $cmd = "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$ld0' '$PERL_BIN' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)";
+        } else {
+            $cmd = "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$PERL_BIN' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)";
+        }
+        @args = [$SHELL_BIN, $SHELL_NAME, '-l', '-c', $cmd];
         $spawn_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'};
     } else {
-        @args = [$^X, $^X, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        # Direct exec of perl + asbru_conn (no shell). Optionally via loader
+        if (@LOADER_PREFIX) {
+            @args = [@LOADER_PREFIX, $PERL_BIN, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        } else {
+            # Duplicate $PERL_BIN to satisfy FILE_AND_ARGV_ZERO semantics
+            @args = [$PERL_BIN, $PERL_BIN, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        }
         $spawn_env = "";
     }
     $spawn_env .= " ASBRU_SUB_CWD='$subCwd'";
-    my @arr_spawn_env = $self->_convertEnv($spawn_env);
-    if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
-        my $dbg_args = join(' ', @{$args[0]});
-        print STDERR "DIAG: about to spawn asbru_conn uuid=$$self{_UUID} method=$method tmpcfg=$$self{_TMPCFG} cluster=$isCluster args=[${dbg_args}] env='$spawn_env'\n";
+    # Ensure essential runtime env is present for AppImage children (always add/merge)
+    if ($ENV{ASBRU_IS_APPIMAGE}) {
+        my @vars = qw(LD_LIBRARY_PATH PERL5LIB GI_TYPELIB_PATH XDG_DATA_DIRS XDG_CONFIG_DIRS GTK_PATH GTK_EXE_PREFIX GTK_DATA_PREFIX GDK_PIXBUF_MODULE_FILE GTK_IM_MODULE GTK_IM_MODULE_FILE PANGO_LIBDIR APPDIR PATH LANG LC_ALL TERM SHELL DISPLAY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_RUNTIME_DIR);
+        foreach my $k (@vars) {
+            next unless defined $ENV{$k};
+            my $v = $ENV{$k};
+            $spawn_env .= " $k='$v'";
+        }
+        # Ensure perl CORE dir is present in LD_LIBRARY_PATH for libperl.so
+        my $appdir = $ENV{APPDIR} // '';
+        if ($appdir) {
+            my $core = "$appdir/usr/lib/perl5/core_perl/CORE";
+            my $ld = $ENV{LD_LIBRARY_PATH} // '';
+            if (index($ld, $core) == -1) {
+                my $newld = $core . ($ld ? ":$ld" : '');
+                $spawn_env .= " LD_LIBRARY_PATH='$newld'";
+            }
+        }
     }
-    my $spawnSyncResult = undef;
-    eval {
-        $spawnSyncResult = $$self{_GUI}{_VTE}->spawn_sync([], undef, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef);
-    };
-    if (!$spawnSyncResult || $@) {
-        $$self{ERROR} = "ERROR: VTE could not fork command '$PAC_CONN $$self{_TMPCFG} $$self{_UUID} $isCluster $subCwd'!! at: $@";
-        print STDERR "DIAG: spawn_sync failed uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
-        $$self{CONNECTING} = 0;
-        return 0;
-    } else {
-        print STDERR "DIAG: spawn_sync ok uuid=$$self{_UUID} pid? (implicit) method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+    my @arr_spawn_env = $self->_convertEnv($spawn_env);
+    if (($method // '') ne 'PACShell') {
+        if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
+            my $dbg_args = join(' ', @{$args[0]});
+            print STDERR "DIAG: about to spawn asbru_conn uuid=$$self{_UUID} method=$method tmpcfg=$$self{_TMPCFG} cluster=$isCluster args=[${dbg_args}] env='$spawn_env'\n";
+        }
+        my $spawnSyncResult = undef;
+        eval {
+            $spawnSyncResult = $$self{_GUI}{_VTE}->spawn_sync([], undef, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef);
+        };
+        if (!$spawnSyncResult || $@) {
+            $$self{ERROR} = "ERROR: VTE could not fork command '$PAC_CONN $$self{_TMPCFG} $$self{_UUID} $isCluster $subCwd'!! at: $@";
+            print STDERR "DIAG: spawn_sync failed uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
+            $$self{CONNECTING} = 0;
+            return 0;
+        } else {
+            print STDERR "DIAG: spawn_sync ok uuid=$$self{_UUID} pid? (implicit) method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+        }
     }
 
     # ... and save its data

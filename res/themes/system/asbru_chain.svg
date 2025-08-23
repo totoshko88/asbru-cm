@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_chain.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="none" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="4" width="7" height="4" rx="2" ry="2"/>
+    <rect x="7" y="8" width="7" height="4" rx="2" ry="2"/>
+    <path d="M7 8 L9 6"/>
+  </g>
 </svg>

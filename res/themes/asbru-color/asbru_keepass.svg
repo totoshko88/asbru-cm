@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_keepass.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <circle cx="8" cy="8" r="7" fill="#6c757d"/>
+  <path d="M5 8.5h6v2H5z" fill="#fff"/>
+  <circle cx="8" cy="7" r="2.5" fill="#fff"/>
+  <circle cx="8" cy="7" r="1" fill="#6c757d"/>
 </svg>

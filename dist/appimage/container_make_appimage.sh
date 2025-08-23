@@ -33,13 +33,26 @@ for binfile in /var/appimage-dir/usr/bin/*; do
     filequery="$(file "${binfile}")"
     if [[ "${filequery}" == *"ld-musl-x86_64.so.1"* ]]; then
         echo "patching ELF header for file ${binfile}"
-        patchelf ${binfile} --set-interpreter "./lib/ld-musl-x86_64.so.1"
+        # ELF PT_INTERP must be absolute; point to loader shipped inside the AppImage
+        patchelf "${binfile}" --set-interpreter "/lib/ld-musl-x86_64.so.1"
     fi
 done
 
+# Rebuild GTK input method modules cache and patch to relative paths
 /usr/bin/gtk-query-immodules-3.0 > /var/appimage-dir/usr/lib/gtk-3.0/3.0.0/immodules.cache
 sed -i 's@/usr/lib/@./usr/lib/@g' /var/appimage-dir/usr/lib/gtk-3.0/3.0.0/immodules.cache
 
-sed -i 's@/usr/lib/@./usr/lib/@g' /var/appimage-dir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache
+# Ensure gdk-pixbuf loaders include librsvg svg loader and cache references local path
+if [ -x /usr/bin/gdk-pixbuf-query-loaders ]; then
+    /usr/bin/gdk-pixbuf-query-loaders > /var/appimage-dir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache
+fi
+sed -i 's@/usr/lib/@./usr/lib/@g' /var/appimage-dir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache || true
+
+# Refresh icon caches if available (improves lookup speed inside AppImage)
+if [ -x /usr/bin/gtk-update-icon-cache ]; then
+    for d in /var/appimage-dir/usr/share/icons/hicolor /var/appimage-dir/usr/share/icons/Adwaita; do
+        [ -d "$d" ] && /usr/bin/gtk-update-icon-cache -f -q "$d" || true
+    done
+fi
 
 ARCH=x86_64 LD_LIBRARY_PATH="/usr/glibc-compat/lib64:/usr/glibc-compat/lib" /appimagetool-x86_64.AppImage /var/appimage-dir Asbru-CM.AppImage

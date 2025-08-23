@@ -1112,7 +1112,23 @@ sub _applyTreeTheme {
     
     # Get current theme information
     my %theme_info = get_cached_theme_info();
+    # Optional override via environment for debugging: ASBRU_FORCE_DARK=0/1
+    if (defined $ENV{ASBRU_FORCE_DARK}) {
+        $force_theme = $ENV{ASBRU_FORCE_DARK} ? 1 : 0;
+    }
+
     my $is_dark = $force_theme // $theme_info{is_dark} // prefers_dark_theme();
+
+    # On KDE, avoid false dark positives unless the theme name explicitly contains "dark".
+    # Be extra conservative inside AppImage where GTK settings can mismatch KDE color scheme.
+    if ($theme_info{desktop_environment} && $theme_info{desktop_environment} eq 'kde') {
+        my $name = $theme_info{name} // '';
+        if ($ENV{ASBRU_IS_APPIMAGE}) {
+            $is_dark = 0 if $name !~ /dark/i; # require explicit dark
+        } else {
+            if ($is_dark && $name !~ /dark/i) { $is_dark = 0; }
+        }
+    }
     
     if ($ENV{ASBRU_DEBUG}) {
         print STDERR "PACCompat: Applying tree theme (dark: $is_dark)\n";

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_tab.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path d="M2 4h5l2 2h5v7H2z" fill="#e9edf5" stroke="#cfd5e3"/>
+  <rect x="3" y="8" width="5" height="1" fill="#cfd5e3"/>
+  <rect x="3" y="10" width="8" height="1" fill="#cfd5e3"/>
 </svg>

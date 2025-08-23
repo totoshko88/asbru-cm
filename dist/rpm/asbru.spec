@@ -1,6 +1,6 @@
-%define _bashcompletiondir %(pkg-config --variable=completionsdir bash-completion)
+%{!?_bashcompletiondir:%global _bashcompletiondir %(pkg-config --variable=completionsdir bash-completion 2>/dev/null || echo %{_datadir}/bash-completion/completions)}
 %{!?_version:%global _version 7.1.0}
-%{!?_release:%global _release 1}
+%{!?_release:%global _release 2}
 
 Name:       asbru-cm
 Version:    %{_version}
@@ -53,7 +53,11 @@ Requires:   perl-Crypt-CBC
 Requires:   perl-Crypt-Rijndael
 Requires:   perl-IO-Tty
 Requires:   perl-IO-Stty
+%if 0%{?suse_version}
+Requires:   libwnck-3-0
+%else
 Requires:   libwnck3
+%endif
 Requires:   nmap-ncat
 %if 0%{?el7}
 Requires: telnet
@@ -136,8 +140,7 @@ for ext in png pl glade svg; do
     cp -a "$f" %{buildroot}/%{_datadir}/%{name}/res/
   done
 done
-cp -a res/themes %{buildroot}/%{_datadir}/%{name}/res/
-cp -ar res/themes/ %{buildroot}/%{_datadir}/%{name}/res/
+cp -ar res/themes %{buildroot}/%{_datadir}/%{name}/res/
 cp -a lib/* %{buildroot}/%{_datadir}/%{name}/lib/
 cp -a utils/*.pl %{buildroot}/%{_datadir}/%{name}/utils/
 

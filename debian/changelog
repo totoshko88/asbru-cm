@@ -1,3 +1,18 @@
+asbru-cm (7.1.0+icon-clean1) unstable; urgency=medium
+
+  * Themes: Vectorized wrapper SVGs to remove embedded PNG dependencies
+    (chain, prompt, protected/unprotected, script, tab, cluster_auto,
+    cluster_manager2, buttonbar_show/hide, drag_terminal32x32) across
+    default, system, asbru-dark, and asbru-color themes.
+  * Cleanup: Removed the corresponding PNG assets and verified no SVGs
+    embed <image ...> PNGs; no code or Glade references remain to the
+    removed filenames.
+  * Consistency: Preserved theme-first icon resolution and Adwaita/system
+    fallbacks via PACIcons; maintained 24/48 size policy.
+  * Tests: Adjusted icon tests to enforce SVG-only policy (dropped cadaver.png).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 23 Aug 2025 10:32:00 +0000
+
 asbru-cm (7.1.0) unstable; urgency=medium
 
   * Tests: Full protocol coverage via linuxserver/* images (SSH, Webtop, RDP)

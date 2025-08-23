@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_script.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <rect x="3" y="2" width="10" height="12" rx="1" ry="1" fill="#f5f7fb" stroke="#cfd5e3"/>
+  <rect x="5" y="4" width="6" height="1" fill="#cfd5e3"/>
+  <rect x="5" y="6" width="6" height="1" fill="#cfd5e3"/>
+  <path d="M6 9 L5 10 L6 11" stroke="#2c7be5" stroke-width="1" fill="none" stroke-linecap="round"/>
+  <path d="M10 9 L11 10 L10 11" stroke="#2c7be5" stroke-width="1" fill="none" stroke-linecap="round"/>
 </svg>

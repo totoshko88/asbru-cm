@@ -189,6 +189,19 @@ sub _initGUI {
     _($self, 'rbCfgStartTreeFavs')->set_image(Gtk3::Image->new_from_icon_name('starred', 'button'));
     _($self, 'rbCfgStartTreeHist')->set_image(Gtk3::Image->new_from_icon_name('document-open-recent', 'button'));
     _($self, 'rbCfgStartTreeCluster')->set_image(Gtk3::Image->new_from_icon_name('applications-system', 'button'));
+    # Ensure icon theme is ready (AppImage can delay theme init)
+    eval {
+        my $settings = Gtk3::Settings::get_default();
+        if ($settings) {
+            my $theme = Gtk3::IconTheme::get_default();
+            my $tn = eval { $theme->get_theme_name() } // '';
+            if (!defined($tn) || $tn eq '') {
+                $settings->set_property('gtk-icon-theme-name', 'Adwaita');
+            }
+            eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
+        }
+    };
+
     # Set tab icons
     _($self, 'imgTermOpts')->set_from_icon_name('utilities-terminal', 'button');
     
@@ -237,12 +250,21 @@ sub _initGUI {
                                     # Fallback to a reasonable theme icon if file missing
                                     $child->set_from_icon_name('preferences-system', 'dialog');
                                 }
-                            } elsif ($label_text =~ /Terminal Options/) {
-                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('utilities-terminal', 'dialog'));
-                            } elsif ($label_text =~ /Local Shell Options/) {
-                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('application-x-shellscript', 'dialog'));
-                            } elsif ($label_text =~ /Network Settings/) {
-                                $child->set_from_pixbuf(PACIcons::load_icon_from_theme('network-wired', 'dialog'));
+                                      } elsif ($label_text =~ /Terminal Options/) {
+                                        my $pix = PACIcons::load_icon_from_theme('utilities-terminal', 'dialog')
+                                            // PACIcons::load_icon_from_theme('terminal-options', 'dialog')
+                                            // PACIcons::get_fallback_icon('dialog');
+                                        $pix ? $child->set_from_pixbuf($pix) : $child->set_from_icon_name('preferences-desktop', 'dialog');
+                                      } elsif ($label_text =~ /Local Shell Options/) {
+                                        my $pix = PACIcons::load_icon_from_theme('application-x-shellscript', 'dialog')
+                                            // PACIcons::load_icon_from_theme('local-shell-options', 'dialog')
+                                            // PACIcons::get_fallback_icon('dialog');
+                                        $pix ? $child->set_from_pixbuf($pix) : $child->set_from_icon_name('text-x-script', 'dialog');
+                                      } elsif ($label_text =~ /Network Settings/) {
+                                        my $pix = PACIcons::load_icon_from_theme('network-wired', 'dialog')
+                                            // PACIcons::load_icon_from_theme('network-settings', 'dialog')
+                                            // PACIcons::get_fallback_icon('dialog');
+                                        $pix ? $child->set_from_pixbuf($pix) : $child->set_from_icon_name('preferences-system-network', 'dialog');
                             } elsif ($label_text =~ /Global Variables/) {
                                 $child->set_from_pixbuf(PACIcons::load_icon_from_theme('folder-documents', 'dialog'));
                             } elsif ($label_text =~ /Local Commands/) {

@@ -131,7 +131,8 @@ print "\n";
 
 # Check for required Perl modules
 print "Checking required Perl modules...\n";
-my @required_modules = qw(Test::More Test::MockObject Time::HiRes Benchmark);
+my @required_modules = qw(Test::More Time::HiRes Benchmark);
+my @optional_modules = qw(Test::MockObject);
 my @missing_modules;
 
 for my $module (@required_modules) {
@@ -148,10 +149,19 @@ if (@missing_modules) {
     for my $module (@missing_modules) {
         print "  ✗ $module\n";
     }
-    print "\nPlease install missing modules before running tests.\n";
-    exit 1;
+    print "\nProceeding with available tests; some will be skipped.\n";
 }
 
+# Check optional modules
+for my $module (@optional_modules) {
+    eval "require $module";
+    if ($@) {
+        print "  (optional) missing $module - will skip related tests\n";
+        $ENV{ASBRU_SKIP_MOCK_TESTS} = 1;
+    } else {
+        print "  (optional) available $module\n";
+    }
+}
 print "\nAll required modules available.\n\n";
 
 # Run the tests

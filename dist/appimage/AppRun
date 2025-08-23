@@ -1,17 +1,23 @@
 #!/bin/sh
 
-getCompressedEnv() {
-    echo "LD_LIBRARY_PATH='${LD_LIBRARY_PATH}' PERL5LIB='${PERL5LIB}' GI_TYPELIB_PATH='${GI_TYPELIB_PATH}' XDG_DATA_DIRS='${XDG_DATA_DIRS}' XDG_CONFIG_DIRS='${XDG_CONFIG_DIRS}' GTK_PATH='${GTK_PATH}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GTK_DATA_PREFIX='${GTK_DATA_PREFIX}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GDK_PIXBUF_MODULE_FILE='${GDK_PIXBUF_MODULE_FILE}' GTK_IM_MODULE='${GTK_IM_MODULE}' GTK_IM_MODULE_FILE='${GTK_IM_MODULE_FILE}' PANGO_LIBDIR='${PANGO_LIBDIR}'"
-}
+# Re-exec with bundled busybox sh to avoid host bash+readline warnings
+# Only do this if busybox is actually runnable on this host (suppress errors otherwise)
+if [ -z "${ASBRU_APPRUN_REEXEC:-}" ]; then
+    export ASBRU_APPRUN_REEXEC=1
+    if [ -x "${APPDIR}/usr/bin/busybox" ]; then
+        if "${APPDIR}/usr/bin/busybox" --help >/dev/null 2>&1; then
+            exec "${APPDIR}/usr/bin/busybox" sh "$0" "$@"
+        fi
+    fi
+fi
 
-export ASBRU_ENV_FOR_EXTERNAL="$(getCompressedEnv)"
+getCompressedEnv() {
+    echo "LD_LIBRARY_PATH='${LD_LIBRARY_PATH}' PERL5LIB='${PERL5LIB}' GI_TYPELIB_PATH='${GI_TYPELIB_PATH}' XDG_DATA_DIRS='${XDG_DATA_DIRS}' XDG_CONFIG_DIRS='${XDG_CONFIG_DIRS}' GTK_PATH='${GTK_PATH}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GTK_DATA_PREFIX='${GTK_DATA_PREFIX}' GDK_PIXBUF_MODULE_FILE='${GDK_PIXBUF_MODULE_FILE}' GTK_IM_MODULE='${GTK_IM_MODULE}' GTK_IM_MODULE_FILE='${GTK_IM_MODULE_FILE}' PANGO_LIBDIR='${PANGO_LIBDIR}'"
+}
 
 export ASBRU_IS_APPIMAGE="1"
 
-###############################################
-# Display backend: prefer Xwayland on Wayland #
-###############################################
-# If running under Wayland, force GTK to use the X11 backend so embedding works via Xwayland.
+# Display backend: prefer Xwayland on Wayland
 if [ -n "${WAYLAND_DISPLAY}" ] || [ "${XDG_SESSION_TYPE}" = "wayland" ]; then
     if [ "${GDK_BACKEND}" != "x11" ] && [ -z "${ASBRU_NO_XWAYLAND}" ]; then
         export GDK_BACKEND="x11"
@@ -19,53 +25,44 @@ if [ -n "${WAYLAND_DISPLAY}" ] || [ "${XDG_SESSION_TYPE}" = "wayland" ]; then
     fi
 fi
 
-###############################################
-# Sanitize Perl environment                   #
-###############################################
-# Avoid leaking host Perl paths which can cause XS API mismatches (e.g. Cwd.c).
+# Sanitize Perl environment
 unset PERL5LIB PERLLIB PERL5OPT PERL_MM_OPT PERL_MB_OPT PERL_LOCAL_LIB_ROOT
 
-# Keep runtime search paths minimal and self-contained, but include Perl CORE for libperl.so.
-# Ensure our own libraries (e.g., libcairo, gobject, pango) resolve from inside the AppImage to avoid
-# mixing host glibc libs with our musl-built stack, which causes loader errors.
-# Note: We still avoid leaking these paths to external commands; only the app runtime uses them.
 APP_USR_LIBS="${APPDIR}/usr/lib:${APPDIR}/usr/lib64:${APPDIR}/usr/lib/x86_64-linux-gnu"
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib/perl5/core_perl/CORE:${APPDIR}/lib:${APPDIR}/usr/local/lib:${APP_USR_LIBS}"
 
-# Ensure Perl core modules resolve inside the AppImage by prepending our core_perl paths.
-# Then add our app, site, and vendor libs. Keep our paths before any host paths Perl may append.
 export PERL5LIB="${APPDIR}/usr/lib/perl5/core_perl:${APPDIR}/usr/share/perl5/core_perl:${APPDIR}/opt/asbru-cm/lib:${APPDIR}/opt/asbru-cm/lib/ex:${APPDIR}/opt/asbru-cm/lib/edit:${APPDIR}/usr/local/lib/perl5/site_perl:${APPDIR}/usr/local/share/perl5/site_perl:${APPDIR}/usr/lib/perl5/vendor_perl:${APPDIR}/usr/share/perl5/vendor_perl"
 
 export GI_TYPELIB_PATH="${APPDIR}/usr/lib/girepository-1.0"
-
 export XDG_DATA_DIRS="${APPDIR}/usr/local/share/:${APPDIR}/usr/share/"
 export XDG_CONFIG_DIRS="${APPDIR}/etc/xdg"
-
 export GTK_PATH="${APPDIR}/usr/lib/gtk-3.0"
 export GTK_EXE_PREFIX="${APPDIR}/usr"
 export GTK_DATA_PREFIX="${APPDIR}/usr"
-# Avoid noisy host GTK module load failures (colorreload-gtk-module, window-decorations-gtk-module) when not present
 export GTK_MODULES=""
-
 export GDK_PIXBUF_MODULEDIR="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
 export GDK_PIXBUF_MODULE_FILE="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-
 export GTK_IM_MODULE="${APPDIR}/usr/lib/gtk-3.0/3.0.0/immodules"
 export GTK_IM_MODULE_FILE="${APPDIR}/usr/lib/gtk-3.0/3.0.0/immodules.cache"
-
 export PANGO_LIBDIR="${APPDIR}/usr/lib"
 
+# Internal env (for the app itself)
 export ASBRU_ENV_FOR_INTERNAL="$(getCompressedEnv)"
+# External env (for helper commands executed via shell): keep minimal safe vars only
+# Include TERM and SHELL to ensure interactive shells initialize correctly
+export ASBRU_ENV_FOR_EXTERNAL="env -i PATH='${PATH}' LANG='${LANG}' LC_ALL='${LC_ALL}' HOME='${HOME}' TERM='${TERM:-xterm-256color}' SHELL='${SHELL:-/bin/sh}' XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR}' DISPLAY='${DISPLAY}' WAYLAND_DISPLAY='${WAYLAND_DISPLAY}' XDG_SESSION_TYPE='${XDG_SESSION_TYPE}'"
 
+# Default to light tree styling in AppImage (can override with ASBRU_FORCE_DARK=1)
+export ASBRU_FORCE_DARK="${ASBRU_FORCE_DARK:-0}"
+
+# Set working directory to the AppImage root so relative loader paths (./usr/lib/...) resolve
 cd "${APPDIR}" || exit 1
 
-# Optional: tiny diagnostics in DEBUG to validate cairo resolves from AppImage
-if [ "${ASBRU_LOG_LEVEL}" = "DEBUG" ]; then
-    echo "[AppRun] LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >&2
-    if command -v ldd >/dev/null 2>&1; then
-        echo "[AppRun] libcairo in AppImage:" >&2
-        ldd "${APPDIR}/usr/lib/libcairo.so.2" 2>&1 | sed 's/^/[AppRun] /' >&2 || true
-    fi
+# Prefer invoking the in-image dynamic loader directly to avoid PT_INTERP issues
+if [ -x "${APPDIR}/usr/glibc-compat/lib/ld-linux-x86-64.so.2" ]; then
+    exec "./usr/glibc-compat/lib/ld-linux-x86-64.so.2" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+elif [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ]; then
+    exec "./lib/ld-musl-x86_64.so.1" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+else
+    exec "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
 fi
-
-exec "${APPDIR}/usr/bin/perl" "${APPDIR}/opt/asbru-cm/asbru-cm" $@

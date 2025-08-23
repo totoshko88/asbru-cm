@@ -21,7 +21,7 @@ RUN apk --no-cache add \
     # Fonts
     ttf-dejavu \
     # Icons
-    adwaita-icon-theme \
+    adwaita-icon-theme hicolor-icon-theme \
     # Virtual
     --virtual common-packages-step
 
@@ -115,6 +115,8 @@ COPY --from=merged-buildlibs /etc/xdg/. /var/appimage-dir/etc/xdg/
 
 # Copy Bins
 COPY --from=merged-buildlibs /usr/bin/. /var/appimage-dir/usr/bin
+# Include busybox for a minimal shell inside the AppImage
+COPY --from=merged-buildlibs /bin/busybox /var/appimage-dir/usr/bin/busybox
 
 # Copy tree checkout
 COPY --from=checkout /opt/asbru-cm/. /var/appimage-dir/opt/asbru-cm/

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image width="16" height="16" xlink:href="asbru_buttonbar_show.png"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path d="M1 8c2-3 4.5-4.5 7-4.5s5 1.5 7 4.5c-2 3-4.5 4.5-7 4.5S3 11 1 8z" fill="#cfd5e3"/>
+  <circle cx="8" cy="8" r="2.5" fill="#2c7be5"/>
+  <circle cx="9" cy="7" r="1" fill="#fff"/>
 </svg>

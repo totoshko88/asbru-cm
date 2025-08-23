@@ -169,6 +169,10 @@ sub new {
 
     my $self = {};
 
+    # Expose resources directory for modules that need it (e.g., PACConfig theme scanning)
+    # This is critical inside AppImage where relative 'res' may not resolve.
+    $self->{_RES_DIR} = $RES_DIR;
+
     print STDERR "INFO: Config directory is '$CFG_DIR'\n";
 
     $SIG{'TERM'} = $SIG{'STOP'} = $SIG{'QUIT'} = $SIG{'INT'} = sub {
@@ -422,8 +426,22 @@ sub new {
     # Environment override still wins for quick testing
     if ($ENV{ASBRU_ICON_THEME}) {
         if ((!defined $$self{_CURRENT_SYSTEM_ICON_THEME}) || $$self{_CURRENT_SYSTEM_ICON_THEME} ne $ENV{ASBRU_ICON_THEME}) {
-            eval { Gtk3::IconTheme::get_default()->set_custom_theme($ENV{ASBRU_ICON_THEME}); print STDERR "INFO: Icon theme override: $ENV{ASBRU_ICON_THEME} (ASBRU_ICON_THEME)\n"; 1 } or do { print STDERR "WARN: Failed to apply icon theme '$ENV{ASBRU_ICON_THEME}': $@\n" if $@; };
-            $$self{_CURRENT_SYSTEM_ICON_THEME} = $ENV{ASBRU_ICON_THEME} if !$@;
+            my $ok = 0;
+            eval {
+                my $settings = Gtk3::Settings::get_default();
+                if ($settings) {
+                    $settings->set_property('gtk-icon-theme-name', $ENV{ASBRU_ICON_THEME});
+                    $ok = 1;
+                }
+                1;
+            } or do { };
+            if ($ok) {
+                eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
+                print STDERR "INFO: Icon theme override: $ENV{ASBRU_ICON_THEME} (ASBRU_ICON_THEME)\n";
+                $$self{_CURRENT_SYSTEM_ICON_THEME} = $ENV{ASBRU_ICON_THEME};
+            } else {
+                print STDERR "WARN: Failed to apply icon theme '$ENV{ASBRU_ICON_THEME}' via settings\n" if $ENV{ASBRU_DEBUG};
+            }
         }
     }
     if ($ENV{ASBRU_LARGE_ICONS}) {
@@ -514,7 +532,8 @@ sub start {
             if ($COSMIC) {
                 print "INFO: Using Cosmic tray integration (initializing)\n";
             } else {
-                print "INFO: Using " . ($UNITY ? 'Unity' : 'Gnome') . " tray icon\n";
+                my $label = $UNITY ? 'Unity AppIndicator' : 'legacy StatusIcon';
+                print "INFO: Using $label tray integration\n";
             }
         }
     $DESKTOP_LOGGED = 1;
@@ -586,12 +605,23 @@ sub start {
                     if (defined $$self{_LAST_SYSTEM_ICON_THEME_APPLY} && ($now - $$self{_LAST_SYSTEM_ICON_THEME_APPLY}) < 1) { $skip = 1; }
                 }
                 if (!$skip) {
-                    eval { Gtk3::IconTheme::get_default()->set_custom_theme($sys_theme); 1 } or do { print STDERR "WARN: Deferred set_custom_theme($sys_theme) failed: $@\n"; };
-                    if (!$@) {
+                    my $applied = 0;
+                    eval {
+                        my $settings = Gtk3::Settings::get_default();
+                        if ($settings) {
+                            $settings->set_property('gtk-icon-theme-name', $sys_theme);
+                            $applied = 1;
+                        }
+                        1;
+                    } or do { };
+                    if ($applied) {
                         $$self{_CURRENT_SYSTEM_ICON_THEME} = $sys_theme;
                         $$self{_LAST_SYSTEM_ICON_THEME_APPLY} = $now;
+                        eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
                         print STDERR "INFO: Applied deferred system icon theme '$sys_theme'\n" if $ENV{ASBRU_DEBUG};
                         eval { $self->_refresh_all_icons(); };
+                    } else {
+                        print STDERR "WARN: Deferred icon theme apply failed via settings for '$sys_theme'\n" if $ENV{ASBRU_DEBUG};
                     }
                 }
                 return 0;
@@ -1378,10 +1408,10 @@ sub _initGUI {
         };
     }
     if ($COSMIC) {
-        my $maybe = eval { PACTrayCosmic->new($self) };
-        if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
-        # Some objects might overload boolean false; accept any blessed ref
-        if ($maybe && ref($maybe) || (ref($maybe) && Scalar::Util::blessed($maybe))) {
+    my $maybe = eval { PACTrayCosmic->new($self) };
+    if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
+    # Some objects might overload boolean false; accept any blessed ref
+    if ((defined $maybe && ref($maybe)) || (ref($maybe) && Scalar::Util::blessed($maybe))) {
             $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
         } elsif (ref($maybe)) { # ref but evaluated false somehow
             $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
@@ -3201,7 +3231,7 @@ sub _treeConnections_menu_lite {
     # Quick Edit variables
     my @var_submenu;
     my $i = 0;
-    foreach my $var (map{ ($_->{hide} ? '<hidden>' : $_->{txt}) // '' } @{ $$self{_CFG}{'environments'}{$sel[0]}{'variables'} }) {
+    foreach my $var (map { ($_->{hide} ? '<hidden>' : $_->{txt}) // '' } @{ $$self{_CFG}{'environments'}{$sel[0]}{'variables'} }) {
         my $j = $i;
         push(@var_submenu, {
             label => '<V:' . $j . '> = ' . $var,
@@ -3218,7 +3248,6 @@ sub _treeConnections_menu_lite {
                 $$self{_CFG}{'environments'}{$sel[0]}{'variables'}[$j]{txt} = $new_var;
             }
         });
-
         ++$i;
     }
     if (scalar(@sel) == 1) {
@@ -4770,10 +4799,19 @@ sub _apply_system_icon_theme {
         return 1; # throttle duplicate rapid apply
     }
     eval { require PACIcons; PACIcons::clear_cache(); };
-    eval { Gtk3::IconTheme::get_default()->set_custom_theme($theme); 1 } or do {
-        print STDERR "WARN: Failed to apply system icon theme '$theme': $@\n" if $@;
+    my $ok = 0;
+    eval {
+        my $settings = Gtk3::Settings->get_default();
+        if ($settings) {
+            $settings->set_property('gtk-icon-theme-name', $theme);
+            $ok = 1;
+        }
+        1;
+    } or do { };
+    unless ($ok) {
+        print STDERR "WARN: Failed to apply system icon theme '$theme' via settings\n" if $ENV{ASBRU_DEBUG};
         return 0;
-    };
+    }
     $$self{_CURRENT_SYSTEM_ICON_THEME} = $theme; $$self{_SYSTEM_THEME_SET}=1;
     $$self{_LAST_SYSTEM_ICON_THEME_APPLY} = $now;
     eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
