@@ -334,7 +334,8 @@ sub _setupCallbacks {
         _($self, 'hboxWidthHeight')->set_sensitive(_($self, 'cbCfgNewInWindow')->get_active());
     });
     _($self, 'btnCfgOpenSessionLogs')->signal_connect('clicked' => sub {
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-open " . (_($self, 'btnCfgSaveSessionLogs')->get_current_folder()));
+        my $folder = _($self, 'btnCfgSaveSessionLogs')->get_current_folder();
+        if ($folder && -e $folder) { PACUtils::open_path($folder); }
     });
     _($self, 'btnCloseConfig')->signal_connect('clicked' => sub {
         $self->_closeConfiguration();
@@ -362,6 +363,18 @@ sub _setupCallbacks {
     _($self, 'cbCfgAutoSave')->signal_connect('toggled' => sub {
         _updateSaveOnExit($self);
     });
+
+    # UI emojis live toggle: persist and refresh UI strings that use emoji helpers
+    if (my $w = eval { _($self, 'cbCfgUIEmojis') }) {
+        $w->signal_connect('toggled' => sub {
+            return if $self->{_updating_gui_preferences};
+            my $on = $w->get_active() ? 1 : 0;
+            $$self{_CFG}{'defaults'}{'ui emojis'} = $on;
+            eval { $PACMain::FUNCS{_MAIN}->_setCFGChanged(1); $PACMain::FUNCS{_MAIN}->_saveConfiguration($PACMain::FUNCS{_MAIN}->{_CFG},0); };
+            # Refresh Welcome/About texts to apply emoji mode immediately
+            eval { $PACMain::FUNCS{_MAIN}->_updateGUIWithUUID('__PAC__ROOT__'); };
+        });
+    }
 
     #DevNote: option currently disabled
     #_($self, 'btnCheckVersion')->signal_connect('clicked' => sub {
@@ -930,6 +943,8 @@ sub _updateGUIPreferences {
     _($self, 'entryCfgSudoPassword')->set_visibility(_($self, 'cbCfgShowSudoPassword')->get_active());
     _($self, 'entryCfgSelectByWordChars')->set_text($$cfg{'defaults'}{'word characters'});
     _($self, 'cbCfgShowTrayIcon')->set_active($$cfg{'defaults'}{'show tray icon'});
+    # UI emojis preference
+    _($self, 'cbCfgUIEmojis')->set_active($$cfg{'defaults'}{'ui emojis'} // 1);
     _($self, 'cbCfgAutoStart')->set_active(-f "$ENV{'HOME'}/.config/autostart/asbru_start.desktop");
     #DevNote: option currently disabled
     #_($self, 'cbCfgCheckVersions')->set_active($$cfg{'defaults'}{'check versions at start'});
@@ -1415,6 +1430,7 @@ sub _saveConfiguration {
     }
     $$self{_CFG}{'defaults'}{'show global commands box'} = _($self, 'cbCfgShowGlobalComm')->get_active();
     $$self{_CFG}{'defaults'}{'show tray icon'} = _($self, 'cbCfgShowTrayIcon')->get_active();
+    $$self{_CFG}{'defaults'}{'ui emojis'} = _($self, 'cbCfgUIEmojis')->get_active();
     $$self{_CFG}{'defaults'}{'unsplit disconnected terminals'} = _($self, 'cbCfgUnsplitDisconnected')->get_active();
     $$self{_CFG}{'defaults'}{'confirm chains'} = _($self, 'cbCfgConfirmChains')->get_active();
     $$self{_CFG}{'defaults'}{'skip first chain expect'} = _($self, 'cbCfgSkip1stChainExpect')->get_active();

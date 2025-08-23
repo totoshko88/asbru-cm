@@ -50,14 +50,168 @@ use YAML::XS;
 use OSSP::uuid;
 use Encode;
 use DynaLoader; # Required for PACTerminal and PACShell modules
+use File::Path qw(remove_tree);
+use Cwd qw(getcwd);
+use IPC::Open3;
+use Symbol 'gensym';
 
 # GTK
 use Gtk3 '-init';
-use Gtk3::Gdk;
-use Wnck; # for the windows list
+
+# Try to load Gtk3::Gdk; if unavailable, set up via introspection as a fallback
+our $GDK_AVAILABLE = 0;
+BEGIN {
+    eval {
+        require Gtk3::Gdk; Gtk3::Gdk->import();
+        $GDK_AVAILABLE = 1;
+        1;
+    } or do {
+        eval {
+            require Glib::Object::Introspection;
+            Glib::Object::Introspection->setup(
+                basename => 'Gdk',    version => '3.0', package => 'Gtk3::Gdk'
+            );
+            Glib::Object::Introspection->setup(
+                basename => 'GdkPixbuf', version => '2.0', package => 'Gtk3::Gdk'
+            );
+            $GDK_AVAILABLE = 1;
+            1;
+        } or do {
+            warn "WARN: Gtk3::Gdk not available; image features limited\n" if $ENV{ASBRU_DEBUG};
+        };
+    };
+}
+
+# Wnck (window navigator) optional binding for X11 window enumeration
+our $WNCK_AVAILABLE = 0;
+BEGIN {
+    eval {
+        require Wnck; Wnck->import();
+        $WNCK_AVAILABLE = 1;
+        1;
+    } or do {
+        # Try bundled introspection shim
+        my $shim = "$RealBin/lib/ex/Wnck.pm";
+        if (-f $shim) {
+            eval { require $shim; $WNCK_AVAILABLE = 1; 1 } or do {
+                warn "WARN: Failed to load Wnck shim: $@\n" if $ENV{ASBRU_DEBUG};
+            };
+        } else {
+            warn "WARN: Wnck not available; window enumeration disabled\n" if $ENV{ASBRU_DEBUG};
+        }
+    };
+}
 
 # Module's functions/variables to export
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
+###################################################################
+# Safe execution helpers (no-shell)
+
+my %_WHICH_CACHE;
+
+sub which_cached {
+    my $bin = shift // return undef;
+    return $_WHICH_CACHE{$bin} if exists $_WHICH_CACHE{$bin};
+
+    # Prefer File::Which if available, otherwise search PATH
+    my $found;
+    eval {
+        require File::Which;
+        $found = File::Which::which($bin);
+        1;
+    } or do {
+        foreach my $dir (split(/:/, $ENV{PATH} // '')) {
+            my $p = "$dir/$bin";
+            if (-x $p) { $found = $p; last; }
+        }
+    };
+    $_WHICH_CACHE{$bin} = $found // '';
+    return $_WHICH_CACHE{$bin};
+}
+
+sub run_cmd {
+    # List-form execution with captured stdout/stderr and exit code; supports optional stdin => string
+    my %opt = @_ == 1 && ref($_[0]) eq 'HASH' ? %{$_[0]} : @_;
+    my $argv  = $opt{argv} // [];
+    my $cwd   = $opt{cwd};
+    my $envp  = $opt{env} // {};
+    my $stdin = defined $opt{stdin} ? $opt{stdin} : undef;
+    my ($out, $err) = ('','');
+    my $pid;
+
+    my $old_cwd;
+    if ($cwd) { $old_cwd = Cwd::getcwd(); chdir $cwd; }
+    my %env_backup;
+    if ($envp && %$envp) {
+        foreach my $k (keys %$envp) { $env_backup{$k} = $ENV{$k}; $ENV{$k} = $envp->{$k}; }
+    }
+
+    my $err_fh = gensym;
+    my $ran = 0;
+    eval {
+        $pid = open3(my $w, my $r, $err_fh, @$argv);
+        if (defined $stdin) {
+            binmode($w, ':raw');
+            print {$w} $stdin;
+        }
+        close $w;
+        local $/; $out = <$r> // '';
+        close $r;
+        $err = do { local $/; <$err_fh> } // '';
+        close $err_fh;
+        waitpid($pid, 0);
+        $ran = 1;
+        1;
+    } or do {
+        $err ||= "Failed to execute: $@";
+    };
+
+    if ($cwd) { chdir $old_cwd if defined $old_cwd; }
+    if ($envp && %$envp) {
+        foreach my $k (keys %env_backup) { defined $env_backup{$k} ? ($ENV{$k} = $env_backup{$k}) : delete $ENV{$k}; }
+    }
+
+    my $code = $ran ? ($? >> 8) : 127;
+    return ($out, $err, $code);
+}
+
+sub _external_env_hash {
+    # Convert ASBRU_ENV_FOR_EXTERNAL string (KEY='VAL' ...) to hash, best-effort
+    my $s = $ENV{ASBRU_ENV_FOR_EXTERNAL} // '';
+    my %h;
+    while ($s =~ /(\w+)=\'([^\']*)\'/g) { $h{$1} = $2; }
+    return \%h;
+}
+
+sub open_url {
+    my $url = shift // return 0;
+    return 0 unless $url =~ m{^https?://[\w\-\./%#\?=&:]+$}i;
+    my $xdg = which_cached('xdg-open') || '/usr/bin/xdg-open';
+    my $env = _external_env_hash();
+    my (undef, $err, $code) = run_cmd({ argv => [$xdg, $url], env => $env });
+    return $code == 0;
+}
+
+sub open_path {
+    my $path = shift // return 0;
+    return 0 unless -e $path;
+    my $xdg = which_cached('xdg-open') || '/usr/bin/xdg-open';
+    my $env = _external_env_hash();
+    my (undef, $err, $code) = run_cmd({ argv => [$xdg, $path], env => $env });
+    return $code == 0;
+}
+
+sub remove_tmp_dirs {
+    my $base = shift // return 0;
+    my @dirs = @_ ? @_ : ('sockets','tmp');
+    foreach my $d (@dirs) {
+        my $p = "$base/$d";
+        next unless -d $p;
+        eval { remove_tree($p, { error => \my $err, keep_root => 1 }); 1 } or do { warn "Failed to clean $p: $@" if $ENV{ASBRU_DEBUG}; };
+    }
+    return 1;
+}
+
 require Exporter;
 @ISA        = qw(Exporter);
 @EXPORT     = qw(
@@ -128,7 +282,7 @@ our $APPNAME = 'Ásbrú Connection Manager';
 our $APPVERSION = '7.0.2';
 our $DEBUG_LEVEL = 1;
 our $ARCH = '';
-my $ARCH_TMP = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/uname -m 2>&1`;
+my ($ARCH_TMP, $_ae, $_ac) = run_cmd({ argv => ['/bin/uname','-m'], env => _external_env_hash() });
 if ($ARCH_TMP =~ /x86_64/gio) {
     $ARCH = 64;
 } elsif ($ARCH_TMP =~ /ppc64/gio) {
@@ -282,7 +436,7 @@ sub __text {
 
 sub _splash {
     my $show = shift;
-    my $txt = shift // "🚀 <b>Starting $APPNAME (v$APPVERSION)...</b> ✨";
+    my $txt = shift // (emoji('🚀 ') . "<b>Starting $APPNAME (v$APPVERSION)...</b>" . emoji(' ✨'));
     my $partial = shift // 0;
     my $total = shift // 1;
 
@@ -307,7 +461,7 @@ sub _splash {
     }
 
     $WINDOWSPLASH{_LBL}->set_show_text(1);
-    $WINDOWSPLASH{_LBL}->set_text($txt);
+    $WINDOWSPLASH{_LBL}->set_text(_maybe_strip_emojis($txt));
     $WINDOWSPLASH{_LBL}->set_fraction($partial / $total);
 
     if ($show) {
@@ -322,6 +476,39 @@ sub _splash {
     }
 
     return 1;
+}
+
+# Emoji preference helpers
+sub emojis_enabled {
+    # Priority: runtime config defaults > env override > default on
+    my $cfg_root;
+    if (exists $PACMain::FUNCS{_MAIN} && ref($PACMain::FUNCS{_MAIN}) eq 'HASH') {
+        $cfg_root = $PACMain::FUNCS{_MAIN}{_CFG};
+    }
+    if (ref($cfg_root) eq 'HASH') {
+        my $defs = $cfg_root->{defaults};
+        if (ref($defs) eq 'HASH' && exists $defs->{'ui emojis'}) {
+            return $defs->{'ui emojis'} ? 1 : 0;
+        }
+    }
+    if (exists $ENV{ASBRU_EMOJI_MODE}) {
+        return $ENV{ASBRU_EMOJI_MODE} =~ /^(1|true|on|yes)$/i ? 1 : 0;
+    }
+    return 1;
+}
+
+sub emoji {
+    my ($s) = @_;
+    return emojis_enabled() ? ($s // '') : '';
+}
+
+sub _maybe_strip_emojis {
+    my ($t) = @_;
+    return $t if emojis_enabled();
+    # Strip emojis robustly: remove Extended Pictographic, VS16, and ZWJ
+    $t =~ s/\p{Extended_Pictographic}//g;
+    $t =~ s/[\x{FE0F}\x{200D}]//g; # variation selector-16 and zero-width joiner
+    return $t;
 }
 
 sub _screenshot {
@@ -385,7 +572,7 @@ sub _getMethods {
         $THEME_DIR = $theme_dir;
     }
 
-    my $rdesktop = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which rdesktop 1>/dev/null 2>&1") eq 0);
+    my $rdesktop = PACUtils::which_cached('rdesktop') ? 1 : 0;
     $methods{'RDP (rdesktop)'} = {
         'installed' => sub {return $rdesktop ? 1 : "No 'rdesktop' binary found.\nTo use this option, please, install :'rdesktop'";},
         'checkCFG' => sub {
@@ -456,7 +643,7 @@ sub _getMethods {
         'escape' => ["\cc"]
     };
 
-    my $xfreerdp = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which xfreerdp 1>/dev/null 2>&1") eq 0);
+    my $xfreerdp = PACUtils::which_cached('xfreerdp') ? 1 : 0;
     $methods{'RDP (xfreerdp)'} = {
         'installed' => sub {return $xfreerdp ? 1 : "No 'xfreerdp' binary found.\nTo use this option, please, install:\n'freerdp2-x11'";},
         'checkCFG' => sub {
@@ -527,8 +714,9 @@ sub _getMethods {
         'escape' => ["\cc"]
     };
 
-    my $xtightvncviewer = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which vncviewer 1>/dev/null 2>&1") eq 0);
-    my $tigervnc = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | /bin/grep -q TigerVNC") eq 0);
+    my $xtightvncviewer = PACUtils::which_cached('vncviewer') ? 1 : 0;
+    my ($vnc_help) = run_cmd({ argv => ['vncviewer', '--help'], env => _external_env_hash() });
+    my $tigervnc = ($vnc_help // '') =~ /TigerVNC/i ? 1 : 0;
     $methods{'VNC'} = {
         'installed' => sub {return $xtightvncviewer || $tigervnc ? 1 : "No 'vncviewer' binary found.\nTo use this option, please, install any of:\n'xtightvncviewer' or 'tigervnc'\n'tigervnc' is preferred, since it allows embedding its window into Ásbrú Connection Manager.";},
         'checkCFG' => sub {
@@ -595,7 +783,7 @@ sub _getMethods {
         'escape' => ["\cc"]
     };
 
-    my $cu = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which cu 1>/dev/null 2>&1") eq 0);
+    my $cu = PACUtils::which_cached('cu') ? 1 : 0;
     $methods{'Serial (cu)'} = {
         'installed' => sub {return $cu ? 1 : "No 'cu' binary found.\nTo use this option, please, install 'cu'.";},
         'checkCFG' => sub {
@@ -645,7 +833,7 @@ sub _getMethods {
         'escape' => ['~.']
     };
 
-    my $remote_tty = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which remote-tty 1>/dev/null 2>&1") eq 0);
+    my $remote_tty = PACUtils::which_cached('remote-tty') ? 1 : 0;
     $methods{'Serial (remote-tty)'} = {
         'installed' => sub {return $remote_tty ? 1 : "No 'remote-tty' binary found.\nTo use this option, please, install 'remote-tty'.";},
         'checkCFG' => sub {
@@ -711,7 +899,7 @@ sub _getMethods {
         'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.png", 16, 16, 0)
     };
 
-    my $c3270 = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which c3270 1>/dev/null 2>&1") eq 0);
+    my $c3270 = PACUtils::which_cached('c3270') ? 1 : 0;
     $methods{'IBM 3270/5250'} = {
         'installed' => sub {return $c3270 ? 1 : "No 'c3270' binary found.\nTo use this option, please, install 'c3270' or 'x3270-text'.";},
         'checkCFG' => sub {
@@ -763,7 +951,7 @@ sub _getMethods {
         'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.png", 16, 16, 0)
     };
 
-    my $autossh = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which autossh 1>/dev/null 2>&1") eq 0);
+    my $autossh = PACUtils::which_cached('autossh') ? 1 : 0;
     $methods{'SSH'} = {
         'installed' => sub {return 1;},
         'checkCFG' => sub {
@@ -826,7 +1014,7 @@ sub _getMethods {
         'escape' => ['~.']
     };
 
-    my $mosh = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which mosh 1>/dev/null 2>&1") eq 0);
+    my $mosh = PACUtils::which_cached('mosh') ? 1 : 0;
     $methods{'MOSH'} = {
         'installed' => sub {return $mosh ? 1 : "No 'mosh' binary found.\nTo use this option, please, install 'mosh'.";},
         'checkCFG' => sub {
@@ -891,7 +1079,7 @@ sub _getMethods {
         'escape' => ["\c^x."]
     };
 
-    my $cadaver = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which cadaver 1>/dev/null 2>&1") eq 0);
+    my $cadaver = PACUtils::which_cached('cadaver') ? 1 : 0;
     $methods{'WebDAV'} = {
         'installed' => sub {return $cadaver ? 1 : "No 'cadaver' binary found.\nTo use this option, please, install 'cadaver'.";},
         'checkCFG' => sub {
@@ -956,7 +1144,7 @@ sub _getMethods {
         'escape' => ["\cc", "quit\n"]
     };
 
-    my $telnet = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which telnet 1>/dev/null 2>&1") eq 0);
+    my $telnet = PACUtils::which_cached('telnet') ? 1 : 0;
     $methods{'Telnet'} = {
         'installed' => sub {return $telnet ? 1 : "No 'telnet' binary found.\nTo use this option, please, install 'telnet' or 'telnet-ssl'.";},
         'checkCFG' => sub {
@@ -3003,7 +3191,7 @@ sub _subst {
         # Replace '<CMD:.+>' with the result of executing 'cmd'
         while ($string =~ /<CMD:(.+?)>/go) {
             my $var = $1;
-            my $output = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $var`;
+            my ($output, $e, $c) = run_cmd({ argv => ['/bin/sh','-lc',$var], env => _external_env_hash() });
             chomp $output;
             if ($output =~ /\R/go) {
                 $string =~ s/<CMD:\Q$var\E>/echo "$output"/g;
@@ -3427,6 +3615,11 @@ sub _purgeUnusedOrMissingScreenshots {
 sub _getXWindowsList {
     my %list;
 
+    # If Wnck is unavailable (or Wayland session), return empty lists gracefully
+    if (!$WNCK_AVAILABLE || ($PACCompat::DISPLAY_SERVER && $PACCompat::DISPLAY_SERVER ne 'x11')) {
+        return { 'by_xid' => {}, 'by_name' => {} };
+    }
+
     eval {
         my $s = Wnck::Screen::get_default() or die "Failed to get Wnck screen";
         $s->force_update();
@@ -3742,8 +3935,9 @@ sub _makeDesktopFile {
     my $cfg = shift;
 
     if (! $$cfg{'defaults'}{'show favourites in unity'}) {
-        unlink "$ENV{HOME}/.local/share/applications/asbru.desktop";
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-desktop-menu forceupdate &");
+    unlink "$ENV{HOME}/.local/share/applications/asbru.desktop";
+    my $xdg = which_cached('xdg-desktop-menu') || '/usr/bin/xdg-desktop-menu';
+    run_cmd({ argv => [$xdg, 'forceupdate'], env => _external_env_hash() });
         return 1;
     }
 
@@ -3788,7 +3982,8 @@ sub _makeDesktopFile {
     open F, ">$ENV{HOME}/.local/share/applications/asbru.desktop" or return 0;
     print F "$d\n$dal\n$da\n";
     close F;
-    system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-desktop-menu forceupdate &");
+    my $xdg = which_cached('xdg-desktop-menu') || '/usr/bin/xdg-desktop-menu';
+    run_cmd({ argv => [$xdg, 'forceupdate'], env => _external_env_hash() });
 
     return 1;
 }

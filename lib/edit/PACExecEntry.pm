@@ -34,6 +34,7 @@ use strict;
 use warnings;
 
 use FindBin qw ($RealBin $Bin $Script);
+use Text::ParseWords qw(shellwords);
 
 # GTK
 use Gtk3 '-init';
@@ -370,7 +371,22 @@ sub _buildExec {
             }
         };
 
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} " . _subst($cmd, $PACMain::FUNCS{_MAIN}{_CFG}) . ' &');
+        my $cmd_str = _subst($cmd, $PACMain::FUNCS{_MAIN}{_CFG});
+        my @argv = eval { shellwords($cmd_str) };
+        if (!@argv) {
+            warn "PACExecEntry: could not parse command: $cmd_str\n";
+            return 1;
+        }
+        my $pid = fork();
+        if (!defined $pid) {
+            warn "PACExecEntry: fork failed for $cmd_str\n";
+            return 1;
+        }
+        if ($pid == 0) {
+            # Child: run command with sanitized environment in background
+            eval { PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() }); };
+            exit 0;
+        }
 
         return 1;
     }) if ($$self{'where'} eq 'local');

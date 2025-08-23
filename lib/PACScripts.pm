@@ -363,10 +363,11 @@ sub show {
         my $tmpfile = $CFG_DIR . '/tmp/' . $name . '.check';
         $self->_saveFile($sel[0], $tmpfile);
 
-        my @lines = `'$^X' -cw $tmpfile 2>&1`;
-        my $err = $?;
-        my $result = pop(@lines); chomp $result;
-        $result =~ s/^\Q$tmpfile\E\s+(.+)$/$1/g;
+    my ($out_s, $err_s, $exit_s) = PACUtils::run_cmd({ argv => [$^X, '-cw', $tmpfile] });
+    my @lines = split(/\n/, ($err_s // ''));
+    my $err = $exit_s;
+    my $result = @lines ? pop(@lines) : ($out_s // ''); chomp $result;
+    $result =~ s/^\Q$tmpfile\E\s+(.+)$/$1/g;
 
         $$self{_WINDOWSCRIPTS}{gui}{status}->set_markup('<span foreground="' . ($err ? 'red' : '#00D206') . '">' . "<b>" . __("$name: $result") . "</b>" . '</span>');
         $$self{_WINDOWSCRIPTS}{gui}{status}->set_tooltip_text(' * ' . localtime(time) . " :\n" . ($err ? join('', @lines) : 'syntax ok') );

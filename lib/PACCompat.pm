@@ -888,8 +888,9 @@ sub _detectSystemTheme {
         $is_dark = 1 if $gnome_theme =~ /dark/i;
         
         # Check gsettings if available
-        if (system('which gsettings >/dev/null 2>&1') == 0) {
-            my $color_scheme = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null`;
+        my $gsettings_bin = PACUtils::which_cached('gsettings');
+        if ($gsettings_bin) {
+            my ($color_scheme) = PACUtils::run_cmd({ argv => [$gsettings_bin, 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
             chomp $color_scheme if $color_scheme;
             $is_dark = 1 if $color_scheme && $color_scheme =~ /dark/i;
         }

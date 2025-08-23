@@ -8,7 +8,7 @@ use strict;
 use warnings;
 
 use Carp;
-use File::Which qw(which);
+use PACUtils qw();
 
 # Export functions
 use Exporter 'import';
@@ -56,21 +56,21 @@ sub is_keyring_available {
     
     if ($keyring_type eq KEYRING_GNOME || $keyring_type eq KEYRING_SECRET_SERVICE) {
         # Check for secret-tool (part of libsecret)
-        return 1 if which('secret-tool');
+    return 1 if PACUtils::which_cached('secret-tool');
         
         # Check for gnome-keyring-daemon
-        return 1 if which('gnome-keyring-daemon') && _is_gnome_keyring_running();
+    return 1 if PACUtils::which_cached('gnome-keyring-daemon') && _is_gnome_keyring_running();
     }
     
     if ($keyring_type eq KEYRING_KDE) {
         # Check for kwalletcli or kwallet-query
-        return 1 if which('kwalletcli');
-        return 1 if which('kwallet-query');
+    return 1 if PACUtils::which_cached('kwalletcli');
+    return 1 if PACUtils::which_cached('kwallet-query');
     }
     
     if ($keyring_type eq KEYRING_KEYCTL) {
         # Check for keyctl (Linux kernel keyring)
-        return 1 if which('keyctl');
+    return 1 if PACUtils::which_cached('keyctl');
     }
     
     return 0;
@@ -217,14 +217,14 @@ sub delete_password {
 
 sub _is_gnome_keyring_running {
     # Check if gnome-keyring-daemon is running
-    my $output = `pgrep -f gnome-keyring-daemon 2>/dev/null`;
-    return $output ? 1 : 0;
+    my ($out, undef, $code) = PACUtils::run_cmd({ argv => ['pgrep','-f','gnome-keyring-daemon'] });
+    return ($code == 0 && defined $out && $out ne '') ? 1 : 0;
 }
 
 sub _store_secret_service {
     my ($service, $username, $password) = @_;
     
-    return 0 unless which('secret-tool');
+    return 0 unless PACUtils::which_cached('secret-tool');
     
     # Use secret-tool to store the password
     my $label = "Ásbrú Connection Manager - $service ($username)";
@@ -237,15 +237,9 @@ sub _store_secret_service {
         print $fh $password;
         close $fh;
         
-        my $cmd = sprintf(
-            'secret-tool store --label="%s" service "%s" username "%s" < "%s"',
-            $label, $service, $username, $temp_file
-        );
-        
-        my $result = system($cmd);
-        unlink $temp_file;
-        
-        return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['secret-tool','store',"--label=$label",'service',$service,'username',$username], stdin => $password });
+    unlink $temp_file;
+    return $code == 0 ? 1 : 0;
     };
     
     unlink $temp_file if -f $temp_file;
@@ -255,43 +249,30 @@ sub _store_secret_service {
 sub _retrieve_secret_service {
     my ($service, $username) = @_;
     
-    return undef unless which('secret-tool');
-    
-    my $cmd = sprintf(
-        'secret-tool lookup service "%s" username "%s" 2>/dev/null',
-        $service, $username
-    );
-    
-    my $password = `$cmd`;
+    return undef unless PACUtils::which_cached('secret-tool');
+    my ($password, $err, $code) = PACUtils::run_cmd({ argv => ['secret-tool','lookup','service',$service,'username',$username] });
     chomp $password if defined $password;
-    
-    return length($password) > 0 ? $password : undef;
+    return ($code == 0 && defined $password && length($password) > 0) ? $password : undef;
 }
 
 sub _delete_secret_service {
     my ($service, $username) = @_;
     
-    return 0 unless which('secret-tool');
-    
-    my $cmd = sprintf(
-        'secret-tool clear service "%s" username "%s" 2>/dev/null',
-        $service, $username
-    );
-    
-    my $result = system($cmd);
-    return $result == 0 ? 1 : 0;
+    return 0 unless PACUtils::which_cached('secret-tool');
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['secret-tool','clear','service',$service,'username',$username] });
+    return $code == 0 ? 1 : 0;
 }
 
 sub _store_kde_wallet {
     my ($service, $username, $password) = @_;
     
     # Try kwalletcli first
-    if (which('kwalletcli')) {
+    if (PACUtils::which_cached('kwalletcli')) {
         return _store_kwalletcli($service, $username, $password);
     }
     
     # Try kwallet-query as fallback
-    if (which('kwallet-query')) {
+    if (PACUtils::which_cached('kwallet-query')) {
         return _store_kwallet_query($service, $username, $password);
     }
     
@@ -302,12 +283,12 @@ sub _retrieve_kde_wallet {
     my ($service, $username) = @_;
     
     # Try kwalletcli first
-    if (which('kwalletcli')) {
+    if (PACUtils::which_cached('kwalletcli')) {
         return _retrieve_kwalletcli($service, $username);
     }
     
     # Try kwallet-query as fallback
-    if (which('kwallet-query')) {
+    if (PACUtils::which_cached('kwallet-query')) {
         return _retrieve_kwallet_query($service, $username);
     }
     
@@ -318,12 +299,12 @@ sub _delete_kde_wallet {
     my ($service, $username) = @_;
     
     # Try kwalletcli first
-    if (which('kwalletcli')) {
+    if (PACUtils::which_cached('kwalletcli')) {
         return _delete_kwalletcli($service, $username);
     }
     
     # Try kwallet-query as fallback
-    if (which('kwallet-query')) {
+    if (PACUtils::which_cached('kwallet-query')) {
         return _delete_kwallet_query($service, $username);
     }
     
@@ -343,11 +324,10 @@ sub _store_kwalletcli {
         print $fh $password;
         close $fh;
         
-        my $cmd = sprintf('kwalletcli -e "%s" -f Passwords < "%s"', $key, $temp_file);
-        my $result = system($cmd);
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['kwalletcli','-e',$key,'-f','Passwords'], stdin => $password });
         
-        unlink $temp_file;
-        return $result == 0 ? 1 : 0;
+    unlink $temp_file;
+    return $code == 0 ? 1 : 0;
     };
     
     unlink $temp_file if -f $temp_file;
@@ -358,22 +338,17 @@ sub _retrieve_kwalletcli {
     my ($service, $username) = @_;
     
     my $key = "asbru-$service-$username";
-    my $cmd = sprintf('kwalletcli -e "%s" -f Passwords 2>/dev/null', $key);
-    
-    my $password = `$cmd`;
+    my ($password, $err, $code) = PACUtils::run_cmd({ argv => ['kwalletcli','-e',$key,'-f','Passwords'] });
     chomp $password if defined $password;
-    
-    return length($password) > 0 ? $password : undef;
+    return ($code == 0 && defined $password && length($password) > 0) ? $password : undef;
 }
 
 sub _delete_kwalletcli {
     my ($service, $username) = @_;
     
     my $key = "asbru-$service-$username";
-    my $cmd = sprintf('kwalletcli -d "%s" -f Passwords 2>/dev/null', $key);
-    
-    my $result = system($cmd);
-    return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['kwalletcli','-d',$key,'-f','Passwords'] });
+    return $code == 0 ? 1 : 0;
 }
 
 sub _store_kwallet_query {
@@ -389,11 +364,9 @@ sub _store_kwallet_query {
         print $fh $password;
         close $fh;
         
-        my $cmd = sprintf('kwallet-query -w "%s" -f Passwords kdewallet < "%s"', $key, $temp_file);
-        my $result = system($cmd);
-        
-        unlink $temp_file;
-        return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['kwallet-query','-w',$key,'-f','Passwords','kdewallet'], stdin => $password });
+    unlink $temp_file;
+    return $code == 0 ? 1 : 0;
     };
     
     unlink $temp_file if -f $temp_file;
@@ -404,65 +377,54 @@ sub _retrieve_kwallet_query {
     my ($service, $username) = @_;
     
     my $key = "asbru-$service-$username";
-    my $cmd = sprintf('kwallet-query -r "%s" -f Passwords kdewallet 2>/dev/null', $key);
-    
-    my $password = `$cmd`;
+    my ($password, $err, $code) = PACUtils::run_cmd({ argv => ['kwallet-query','-r',$key,'-f','Passwords','kdewallet'] });
     chomp $password if defined $password;
-    
-    return length($password) > 0 ? $password : undef;
+    return ($code == 0 && defined $password && length($password) > 0) ? $password : undef;
 }
 
 sub _delete_kwallet_query {
     my ($service, $username) = @_;
     
     my $key = "asbru-$service-$username";
-    my $cmd = sprintf('kwallet-query -d "%s" -f Passwords kdewallet 2>/dev/null', $key);
-    
-    my $result = system($cmd);
-    return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['kwallet-query','-d',$key,'-f','Passwords','kdewallet'] });
+    return $code == 0 ? 1 : 0;
 }
 
 sub _store_keyctl {
     my ($service, $username, $password) = @_;
     
-    return 0 unless which('keyctl');
+    return 0 unless PACUtils::which_cached('keyctl');
     
     my $key_desc = "asbru:$service:$username";
     
     # Add key to user keyring
-    my $cmd = sprintf('echo "%s" | keyctl padd user "%s" @u', $password, $key_desc);
-    my $result = system($cmd);
-    
-    return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['keyctl','padd','user',$key_desc,'@u'], stdin => $password });
+    return $code == 0 ? 1 : 0;
 }
 
 sub _retrieve_keyctl {
     my ($service, $username) = @_;
     
-    return undef unless which('keyctl');
+    return undef unless PACUtils::which_cached('keyctl');
     
     my $key_desc = "asbru:$service:$username";
     
     # Try to read the key
-    my $cmd = sprintf('keyctl print "%s" 2>/dev/null', $key_desc);
-    my $password = `$cmd`;
+    my ($password, $err, $code) = PACUtils::run_cmd({ argv => ['keyctl','print',$key_desc] });
     chomp $password if defined $password;
-    
-    return length($password) > 0 ? $password : undef;
+    return ($code == 0 && defined $password && length($password) > 0) ? $password : undef;
 }
 
 sub _delete_keyctl {
     my ($service, $username) = @_;
     
-    return 0 unless which('keyctl');
+    return 0 unless PACUtils::which_cached('keyctl');
     
     my $key_desc = "asbru:$service:$username";
     
     # Revoke the key
-    my $cmd = sprintf('keyctl revoke "%s" 2>/dev/null', $key_desc);
-    my $result = system($cmd);
-    
-    return $result == 0 ? 1 : 0;
+    my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['keyctl','revoke',$key_desc] });
+    return $code == 0 ? 1 : 0;
 }
 
 1;

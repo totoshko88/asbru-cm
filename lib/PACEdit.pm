@@ -355,7 +355,7 @@ sub _setupCallbacks {
             $folder = "$CFG_DIR/session_logs";
             _($self, 'btnEditSaveSessionLogs')->get_current_folder($folder);
         }
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-open $folder");
+    PACUtils::open_path($folder) if $folder && -e $folder;
     });
 
     # Capture 'Get Command line' button clicked
@@ -369,8 +369,8 @@ sub _setupCallbacks {
                 $kpxc->getMasterPassword($$self{_WINDOWEDIT});
             }
         }
-        my $cmd = `'$^X' "$RealBin/lib/asbru_conn" "$CFG_DIR/asbru.nfreeze" "$$self{_UUID}" 0 1`;
-        _wMessage($$self{_WINDOWEDIT}, $cmd, 1, 1, 'w-info');
+    my ($cmd, $cerr, $ccode) = PACUtils::run_cmd({ argv => [$^X, "$RealBin/lib/asbru_conn", "$CFG_DIR/asbru.nfreeze", "$$self{_UUID}", '0', '1'], env => PACUtils::_external_env_hash() });
+    _wMessage($$self{_WINDOWEDIT}, $cmd // $cerr, 1, 1, 'w-info');
     });
 
     # Capture "Save session logs" checkbox
@@ -813,7 +813,7 @@ sub _updateGUIPreferences {
     # Show Jump options in network settings (only for SSH method)
     if ($$self{_CFG}{'environments'}{$uuid}{'method'} =~ /SSH|SFTP/i) {
         # Control SSH capabilities
-        my $ssh = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ssh 2>&1`;
+    my ($ssh, $e, $c) = PACUtils::run_cmd({ argv => ['ssh','-V'] });
         $ssh =~ s/\n//g;
         $ssh =~ s/[ \t][ \t]+/ /g;
         if ($ssh =~ /-J /) {

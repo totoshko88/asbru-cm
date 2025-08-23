@@ -192,7 +192,7 @@ sub new {
     $_NO_SPLASH ||= $$self{_APP}->get_is_remote;
 
     # Show splash-screen while loading
-    PACUtils::_splash(1, "🚀 Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION) ✨", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('🚀 ') . "Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION)" . PACUtils::emoji(' ✨'), ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->{_START_TS} = time;
     $self->{_PROFILE} = [];
     push @{$self->{_PROFILE}}, sprintf('[%0.3f] start:new()', 0.0);
@@ -232,6 +232,7 @@ sub new {
     # Initialize UI appearance defaults
     my $d = $$self{_CFG}{defaults} ||= {};
     $d->{'use_native_connection_icons'} //= 1;  # Use method-specific icons by default
+    $d->{'ui emojis'} //= 1;                    # Enable UI emojis by default (toggleable)
 
     if ($$self{_CFG}{'defaults'}{'theme'}) {
         my $cfg_theme = $$self{_CFG}{'defaults'}{'theme'} // 'default';
@@ -339,36 +340,14 @@ sub new {
         if (grep { /--start-shell/; } @{ $$self{_OPTS} }) {
             _sendAppMessage($$self{_APP}, 'start-shell');
             $getout = 1;
-        } elsif (grep { /--quick-conn/; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'quick-conn');
+        } elsif (grep { /--quick-conn/ } @{ $$self{_OPTS} }) {
+            # TODO: quick-connect message routing for remote instance
             $getout = 1;
-        } elsif (grep { /--start-uuid=(.+)/ and $uuid = $1; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'start-uuid', $uuid);
-            $getout = 1;
-        } elsif (grep { /--edit-uuid=(.+)/ and $uuid = $1; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'edit-uuid', $uuid);
-            $getout = 1;
-        } else {
-            $getout = 0;
         }
 
-        if (! $getout) {
-            if ($$self{_CFG}{'defaults'}{'allow more instances'}) {
-                print "INFO: Starting '$0' in READ ONLY mode!\n";
-                $$self{_READONLY} = 1;
-            } elsif (! $$self{_CFG}{'defaults'}{'allow more instances'}) {
-                print "INFO: No more instances allowed!\n";
-            eval {
-                if ($self->{_TRAY} && $self->{_TRAY}->can('get_integration_mode')) {
-                    my $mode = $self->{_TRAY}->get_integration_mode();
-                    print "INFO: Tray integration mode active: $mode\n";
-                }
-            };
-                return 0;
-            }
-        } else {
-            Gtk3::Gdk::notify_startup_complete();
-            return 0;
+        # If we handled a remote instance action, exit early
+        if ($getout) {
+            return 1;
         }
     }
 
@@ -521,13 +500,13 @@ sub start {
     }
 
     # Build the Tree with the connections list
-    PACUtils::_splash(1, "🔗 Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('🔗 ') . "Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->_loadTreeConfiguration('__PAC__ROOT__');
 
     # Enable tray menu
     $FUNCS{_TRAY}->set_tray_menu();
 
-    PACUtils::_splash(1, "✨ Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('✨ ') . "Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
 
     $STARTED = 1; # Mark successful initialization
 
@@ -2945,61 +2924,68 @@ sub _getSystemThemeTextColor {
     # Method 1: Check KDE theme settings
     if ($ENV{XDG_CURRENT_DESKTOP} =~ /kde/i) {
         # For KDE, check if the current theme contains "dark" or if it's a known dark theme
-        my $kde_theme = `kreadconfig6 --group "General" --key "ColorScheme" 2>/dev/null` || 
-                       `kreadconfig5 --group "General" --key "ColorScheme" 2>/dev/null` || '';
+        my ($kde_theme, $e1, $c1) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'General', '--key', 'ColorScheme'] });
+        if ($c1 != 0 || $kde_theme eq '') { ($kde_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'General', '--key', 'ColorScheme'] }); }
         chomp $kde_theme;
         $is_dark = 1 if $kde_theme =~ /dark|opensusedark|breeze.*dark/i;
-        
+
         # Also check the window decoration theme
-        my $kde_window_theme = `kreadconfig6 --group "org.kde.kdecoration2" --key "theme" 2>/dev/null` || 
-                              `kreadconfig5 --group "org.kde.kdecoration2" --key "theme" 2>/dev/null` || '';
+        my ($kde_window_theme, $e2, $c2) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'org.kde.kdecoration2', '--key', 'theme'] });
+        if ($c2 != 0 || $kde_window_theme eq '') { ($kde_window_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'org.kde.kdecoration2', '--key', 'theme'] }); }
         $is_dark = 1 if $kde_window_theme =~ /dark/i;
-        
+
         # Fallback: check if system prefers dark mode globally
-        my $kde_global_theme = `kreadconfig6 --group "KDE" --key "LookAndFeelPackage" 2>/dev/null` || 
-                              `kreadconfig5 --group "KDE" --key "LookAndFeelPackage" 2>/dev/null` || '';
+        my ($kde_global_theme, $e3, $c3) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'KDE', '--key', 'LookAndFeelPackage'] });
+        if ($c3 != 0 || $kde_global_theme eq '') { ($kde_global_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'KDE', '--key', 'LookAndFeelPackage'] }); }
         $is_dark = 1 if $kde_global_theme =~ /dark/i;
-        
+
         print STDERR "DEBUG: KDE theme detection - kde_theme: '$kde_theme', window: '$kde_window_theme', global: '$kde_global_theme', is_dark: $is_dark\n" if $ENV{ASBRU_DEBUG};
     }
     
     # Method 2: Check COSMIC theme settings (original code)
     if (!$is_dark && $ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
         # For COSMIC, check if the system prefers dark mode
-        my $cosmic_dark = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null` || '';
+        my ($cosmic_dark) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
         $is_dark = 1 if $cosmic_dark =~ /prefer-dark/;
-        
+
         # Also check for dark window theme
-        my $window_theme = `gsettings get org.gnome.desktop.wm.preferences theme 2>/dev/null` || '';
+        my ($window_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.wm.preferences', 'theme'] });
         $is_dark = 1 if $window_theme =~ /dark/i;
-        
-        # COSMIC specific: check for dark appearance 
-        my $cosmic_appearance = `dconf read /org/cosmic/desktop/appearance 2>/dev/null` || '';
+
+        # COSMIC specific: check for dark appearance
+        my ($cosmic_appearance) = PACUtils::run_cmd({ argv => ['dconf', 'read', '/org/cosmic/desktop/appearance'] });
         $is_dark = 1 if $cosmic_appearance =~ /dark/i;
     }
     
     # Method 3: Check GTK theme name
     if (!$is_dark) {
-        my $gtk_theme = $ENV{GTK_THEME} || `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
-        $is_dark = 1 if $gtk_theme =~ /dark/i;
+        my $gtk_theme = $ENV{GTK_THEME};
+        if (!defined $gtk_theme || $gtk_theme eq '') {
+            ($gtk_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+        }
+        $is_dark = 1 if ($gtk_theme // '') =~ /dark/i;
     }
     
     # Method 4: Heuristic based on known dark themes
     if (!$is_dark) {
-        my $all_theme_info = `echo "GTK: $ENV{GTK_THEME}" && gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+        my $gtk_env = $ENV{GTK_THEME} // '';
+        my ($gtk_sys) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+        my $all_theme_info = "GTK: $gtk_env\n$gtk_sys";
         $is_dark = 1 if $all_theme_info =~ /breeze.*dark|adwaita.*dark|arc.*dark|numix.*dark/i;
     }
     
     # Method 5: For openSUSE with Breeze theme, assume dark if no explicit light theme
     if (!$is_dark && -f '/etc/os-release') {
-        my $os_info = `cat /etc/os-release 2>/dev/null` || '';
+        my ($os_info) = PACUtils::run_cmd({ argv => ['/bin/cat', '/etc/os-release'] });
         if ($os_info =~ /opensuse/i) {
-            my $current_theme = `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
+            my ($current_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
             # If it's Breeze and not explicitly light, assume it follows system dark preference
             if ($current_theme =~ /breeze/i && $current_theme !~ /light/i) {
                 # Check if system has dark preference through various methods
-                $is_dark = 1 if -f "$ENV{HOME}/.config/kdeglobals" && 
-                               `grep -i "colorscheme.*dark" "$ENV{HOME}/.config/kdeglobals" 2>/dev/null`;
+                if (-f "$ENV{HOME}/.config/kdeglobals") {
+                    my ($grep_out, undef, $grep_code) = PACUtils::run_cmd({ argv => ['/bin/grep', '-i', 'colorscheme.*dark', "$ENV{HOME}/.config/kdeglobals"] });
+                    $is_dark = 1 if $grep_code == 0 && $grep_out ne '';
+                }
             }
         }
     }
@@ -3683,16 +3669,42 @@ sub _treeConnections_menu {
 sub _showAboutWindow {
     my $self = shift;
 
-    Gtk3::show_about_dialog(
-        $$self{_GUI}{main},(
-        "program_name" => '',  # name is shown in the logo
-        "version" => "🚀 v$APPVERSION",
-        "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
-        # Modernized fork attribution (2025)
-        "copyright" => "🌟 Copyright © 2025 Anton Isaiev\n📡 Copyright © 2017-2022 Ásbrú Connection Manager team\n⚡ Copyright © 2010-2016 David Torrejón Vaquerizas",
-        "website" => 'https://github.com/totoshko88/asbru-cm',
-    "license" => "\n🚀 Ásbrú Connection Manager (Modernized Fork)\n\n👨‍💻 Copyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\n🌐 Copyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\n⚡ Copyright © 2010-2016 David Torrejón Vaquerizas\n\n📜 This program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\n🔒 This program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\n📖 You should have received a copy of the GNU General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n✨ Modern SSH/Telnet connection manager optimized for PopOS 24.04 & Wayland\n🔗 GitHub: https://github.com/totoshko88/asbru-cm\n🌟 Features: KeePassXC integration, session recording, modern UI themes"
-    ));
+        my $version_txt = PACUtils::emoji('🚀 ') . "v$APPVERSION";
+        my $copyright = PACUtils::_maybe_strip_emojis(
+                "🌟 Copyright © 2025 Anton Isaiev\n"
+            . "📡 Copyright © 2017-2022 Ásbrú Connection Manager team\n"
+            . "⚡ Copyright © 2010-2016 David Torrejón Vaquerizas"
+        );
+        my $license_txt = PACUtils::_maybe_strip_emojis(
+                "\n🚀 Ásbrú Connection Manager (Modernized Fork)\n\n"
+            . "👨‍💻 Copyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\n"
+            . "🌐 Copyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\n"
+            . "⚡ Copyright © 2010-2016 David Torrejón Vaquerizas\n\n"
+            . "📜 This program is free software: you can redistribute it and/or modify\n"
+            . "it under the terms of the GNU General Public License as published by\n"
+            . "the Free Software Foundation, either version 3 of the License, or\n"
+            . "(at your option) any later version.\n\n"
+            . "🔒 This program is distributed in the hope that it will be useful,\n"
+            . "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+            . "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+            . "GNU General Public License for more details.\n\n"
+            . "📖 You should have received a copy of the GNU General Public License\n"
+            . "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n"
+            . "✨ Modern SSH/Telnet connection manager optimized for PopOS 24.04 & Wayland\n"
+            . "🔗 GitHub: https://github.com/totoshko88/asbru-cm\n"
+            . "🌟 Features: KeePassXC integration, session recording, modern UI themes"
+        );
+
+        Gtk3::show_about_dialog(
+                $$self{_GUI}{main},(
+                "program_name" => '',  # name is shown in the logo
+                "version" => $version_txt,
+                "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
+                # Modernized fork attribution (2025)
+                "copyright" => $copyright,
+                "website" => 'https://github.com/totoshko88/asbru-cm',
+                "license" => $license_txt,
+        ));
 
     return 1;
 }
@@ -3961,7 +3973,8 @@ sub _quitProgram {
         $$self{_CONFIG}->_exporter('yaml', $CFG_FILE);        # Export as YAML file
         $$self{_CONFIG}->_exporter('perl', $CFG_FILE_DUMPER); # Export as Perl data
     };
-    chdir(${CFG_DIR}) and system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} rm -rf sockets/* tmp/*");  # Delete temporal files
+    eval { chdir(${CFG_DIR}); 1 } or warn "WARN: could not chdir to ${CFG_DIR}: $@";
+    eval { PACUtils::remove_tmp_dirs(${CFG_DIR}, 'sockets', 'tmp'); 1 } or warn "WARN: cleanup failed: $@";  # Delete temporal files safely
 
     # And finish every GUI
     Gtk3->main_quit();
@@ -4419,26 +4432,26 @@ sub _updateGUIWithUUID {
 
     my $is_root = $uuid eq '__PAC__ROOT__';
 
-    if ($is_root) {
-        $$self{_GUI}{descBuffer}->set_text(qq"
-🌟 Welcome to $APPNAME v$APPVERSION! 🌟
+     if ($is_root) {
+          my $welcome = sprintf(qq|
+🌟 Welcome to %s v%s! 🌟
 
 🚀 Modern SSH/Telnet Connection Manager
-   Optimized for PopOS 24.04 & Wayland environments
+    Optimized for PopOS 24.04 & Wayland environments
 
 ┌─────────────────────────────────────────────────────────────┐
 │ 🔗 Quick Start Guide                                       │
 └─────────────────────────────────────────────────────────────┘
 
 📁 Create Connection Groups:
-   1️⃣ Click on 'My Connections' or existing group
-   2️⃣ Use the leftmost toolbar icon 📋 or right-click
-   3️⃣ Follow the setup wizard ✨
+    1️⃣ Click on 'My Connections' or existing group
+    2️⃣ Use the leftmost toolbar icon 📋 or right-click
+    3️⃣ Follow the setup wizard ✨
 
 🖥️  Add New Connections:
-   1️⃣ Select target group (or root)
-   2️⃣ Click the connection icon ⚡ in toolbar
-   3️⃣ Configure your connection settings 🔧
+    1️⃣ Select target group (or root)
+    2️⃣ Click the connection icon ⚡ in toolbar
+    3️⃣ Configure your connection settings 🔧
 
 ┌─────────────────────────────────────────────────────────────┐
 │ 🌐 Resources & Support                                     │
@@ -4461,7 +4474,8 @@ sub _updateGUIWithUUID {
 ⚡ Fast connection clustering and automation
 
 Start exploring by expanding 'My Connections' in the tree! 🎯
-");
+|, $APPNAME, $APPVERSION);
+          $$self{_GUI}{descBuffer}->set_text(PACUtils::_maybe_strip_emojis($welcome));
     } else {
         if (!$$self{_CFG}{'environments'}{$uuid}{'description'}) {
             $$self{_CFG}{'environments'}{$uuid}{'description'} = 'Insert your comments for this connection here ...';
@@ -5912,14 +5926,17 @@ sub _checkDependencies {
             'description' => 'FreeRDP client for RDP connections',
             'install_hint' => 'freerdp2-wayland or freerdp-x11',
             'critical' => 0,
-            'version_cmd' => 'xfreerdp --version 2>&1 | head -1',
+            'version_argv' => ['xfreerdp','--version'],
+            'version_line' => 'first',
             'alternatives' => ['rdesktop']
         },
         'rdesktop' => {
             'description' => 'Alternative RDP client',
             'install_hint' => 'rdesktop',
             'critical' => 0,
-            'version_cmd' => 'rdesktop 2>&1 | grep "Version" | head -1',
+            # Prefer -v if supported; fall back to plain rdesktop output parsing
+            'version_argv' => ['rdesktop','-v'],
+            'version_line' => 'first',
             'alternatives' => ['xfreerdp']
         },
         
@@ -5928,7 +5945,8 @@ sub _checkDependencies {
             'description' => 'VNC viewer client',
             'install_hint' => 'tigervnc-viewer or xtightvncviewer',
             'critical' => 0,
-            'version_cmd' => 'vncviewer --version 2>&1 | head -2 | tail -1',
+            'version_argv' => ['vncviewer','--version'],
+            'version_line' => 'second',
             'alternatives' => ['vinagre']
         },
         'vinagre' => {
@@ -5941,7 +5959,8 @@ sub _checkDependencies {
             'description' => 'Multi-protocol remote desktop client',
             'install_hint' => 'remmina',
             'critical' => 0,
-            'version_cmd' => 'remmina --version 2>&1 | tail -1',
+            'version_argv' => ['remmina','--version'],
+            'version_line' => 'last',
             'alternatives' => ['vinagre']
         },
         
@@ -5950,19 +5969,22 @@ sub _checkDependencies {
             'description' => 'SSH client for secure connections',
             'install_hint' => 'openssh-client',
             'critical' => 1,
-            'version_cmd' => 'ssh -V 2>&1 | head -1'
+            'version_argv' => ['ssh','-V'],
+            'version_line' => 'first'
         },
         'mosh' => {
             'description' => 'Mobile shell for unstable connections',
             'install_hint' => 'mosh',
             'critical' => 0,
-            'version_cmd' => 'mosh --version 2>&1 | head -1'
+            'version_argv' => ['mosh','--version'],
+            'version_line' => 'first'
         },
         'sshpass' => {
             'description' => 'SSH password authentication helper',
             'install_hint' => 'sshpass',
             'critical' => 0,
-            'version_cmd' => 'sshpass -V 2>&1 | head -1'
+            'version_argv' => ['sshpass','-V'],
+            'version_line' => 'first'
         },
         
         # Legacy protocols
@@ -5987,21 +6009,24 @@ sub _checkDependencies {
             'description' => 'Serial connection utility',
             'install_hint' => 'cu or uucp',
             'critical' => 0,
-            'version_cmd' => 'cu --version 2>&1 | head -1 || echo "cu (version unknown)"',
+            'version_argv' => ['cu','--version'],
+            'version_line' => 'first',
             'alternatives' => ['screen', 'minicom']
         },
         'screen' => {
             'description' => 'Terminal multiplexer (can handle serial)',
             'install_hint' => 'screen',
             'critical' => 0,
-            'version_cmd' => 'screen -v 2>&1 | head -1',
+            'version_argv' => ['screen','-v'],
+            'version_line' => 'first',
             'alternatives' => ['cu', 'minicom']
         },
         'minicom' => {
             'description' => 'Serial communication program',
             'install_hint' => 'minicom',
             'critical' => 0,
-            'version_cmd' => 'minicom --version 2>&1 | head -1',
+            'version_argv' => ['minicom','--version'],
+            'version_line' => 'first',
             'alternatives' => ['cu', 'screen']
         },
         
@@ -6010,13 +6035,15 @@ sub _checkDependencies {
             'description' => 'Automation tool for interactive applications',
             'install_hint' => 'expect',
             'critical' => 0,
-            'version_cmd' => 'expect -v 2>&1 | head -1'
+            'version_argv' => ['expect','-v'],
+            'version_line' => 'first'
         },
         'socat' => {
             'description' => 'Multipurpose relay tool',
             'install_hint' => 'socat',
             'critical' => 0,
-            'version_cmd' => 'socat -V 2>&1 | head -1'
+            'version_argv' => ['socat','-V'],
+            'version_line' => 'first'
         },
         
         # KeePass integration tools
@@ -6024,7 +6051,8 @@ sub _checkDependencies {
             'description' => 'KeePassXC command line interface',
             'install_hint' => 'keepassxc',
             'critical' => 0,
-            'version_cmd' => 'keepassxc-cli --version 2>&1 | head -1'
+            'version_argv' => ['keepassxc-cli','--version'],
+            'version_line' => 'first'
         },
         
         # IBM Mainframe connection tools
@@ -6041,26 +6069,41 @@ sub _checkDependencies {
     
     # Check tool availability and get versions
     foreach my $tool (sort keys %tools) {
-        my $available = system("which $tool >/dev/null 2>&1") == 0;
+        my $available = PACUtils::which_cached($tool) ? 1 : 0;
         
         if ($available) {
             $available_tools{$tool} = 1;
             my $version_info = "";
             
-            if ($tools{$tool}{'version_cmd'}) {
-                my $version_output = `$tools{$tool}{'version_cmd'} 2>/dev/null`;
-                chomp($version_output);
-                $version_info = $version_output ? " [$version_output]" : "";
+            if ($tools{$tool}{'version_argv'}) {
+                my ($out, $err, $code) = PACUtils::run_cmd({ argv => $tools{$tool}{'version_argv'} });
+                my $txt = '';
+                $txt .= $out if defined $out;
+                $txt .= $err if defined $err;
+                my @lines = grep { defined($_) && $_ ne '' } map { s/[\r\n]+$//r } split(/\n/, $txt // '');
+                if (!@lines && $tool eq 'rdesktop') {
+                    # Fallback: try plain rdesktop for version banner
+                    ($out, $err, $code) = PACUtils::run_cmd({ argv => ['rdesktop'] });
+                    $txt = ($out // '') . ($err // '');
+                    @lines = grep { $_ ne '' } map { s/[\r\n]+$//r } split(/\n/, $txt);
+                }
+                my $pick = $lines[0] // '';
+                if (($tools{$tool}{'version_line'} // '') eq 'last') {
+                    $pick = $lines[-1] // $pick;
+                } elsif (($tools{$tool}{'version_line'} // '') eq 'second') {
+                    $pick = $lines[1] // $pick;
+                }
+                $version_info = $pick ? " [$pick]" : "";
             }
             
-            print STDERR "✅ $tool: Available$version_info ($tools{$tool}{'description'})\n";
+            print STDERR PACUtils::emoji('✅ ') . "$tool: Available$version_info ($tools{$tool}{'description'})\n";
         } else {
             if ($tools{$tool}{'critical'}) {
-                print STDERR "❌ $tool: Missing (CRITICAL) - $tools{$tool}{'description'}\n";
+                print STDERR PACUtils::emoji('❌ ') . "$tool: Missing (CRITICAL) - $tools{$tool}{'description'}\n";
                 print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
                 $missing_critical++;
             } else {
-                print STDERR "⚠️  $tool: Missing (optional) - $tools{$tool}{'description'}\n";
+                print STDERR PACUtils::emoji('⚠️ ') . "$tool: Missing (optional) - $tools{$tool}{'description'}\n";
                 print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
                 $missing_optional++;
             }
@@ -6081,9 +6124,9 @@ sub _checkDependencies {
         my @missing_in_category = grep { !$available_tools{$_} } @{$categories{$category}};
         
         if (@available_in_category) {
-            print STDERR "✅ $category connections: " . join(', ', @available_in_category) . " available\n";
+            print STDERR PACUtils::emoji('✅ ') . "$category connections: " . join(', ', @available_in_category) . " available\n";
         } else {
-            print STDERR "❌ $category connections: No tools available. Consider installing: " . 
+            print STDERR PACUtils::emoji('❌ ') . "$category connections: No tools available. Consider installing: " . 
                          join(' or ', @missing_in_category) . "\n";
         }
     }
@@ -6113,7 +6156,7 @@ sub _checkDependencies {
 sub _detectDistribution {
     # Try to detect the Linux distribution
     if (-f '/etc/os-release') {
-        my $os_release = `cat /etc/os-release 2>/dev/null`;
+        my ($os_release) = PACUtils::run_cmd({ argv => ['/bin/cat','/etc/os-release'] });
         if ($os_release =~ /^ID=(.+)$/m) {
             my $id = $1;
             $id =~ s/["']//g;

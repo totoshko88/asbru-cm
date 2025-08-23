@@ -40,6 +40,7 @@ use warnings;
 # PAC modules
 use PACCosmic;
 use PACCompat;
+use PACUtils;
 
 # END: Import Modules
 ###################################################################
@@ -257,10 +258,10 @@ sub _checkAlternativeWorkspaceDetection {
     my $self = shift;
     
     # Check for wmctrl (X11 workspace detection)
-    my $wmctrl_available = system('which wmctrl >/dev/null 2>&1') == 0;
+    my $wmctrl_available = PACUtils::which_cached('wmctrl') ? 1 : 0;
     
     # Check for swaymsg (Wayland/Sway workspace detection)
-    my $swaymsg_available = system('which swaymsg >/dev/null 2>&1') == 0;
+    my $swaymsg_available = PACUtils::which_cached('swaymsg') ? 1 : 0;
     
     # Check for other workspace detection methods
     # Note: Cosmic might use different tools in the future
@@ -299,7 +300,7 @@ sub _detectWorkspaceViaWmctrl {
     my $self = shift;
     
     # Use wmctrl for X11 workspace detection
-    my $wmctrl_output = `wmctrl -d 2>/dev/null`;
+    my ($wmctrl_output) = PACUtils::run_cmd({ argv => ['wmctrl', '-d'] });
     return undef unless $wmctrl_output;
     
     # Parse wmctrl output to find current workspace
@@ -316,7 +317,7 @@ sub _detectWorkspaceViaSway {
     my $self = shift;
     
     # Use swaymsg for Wayland/Sway workspace detection
-    my $sway_output = `swaymsg -t get_workspaces 2>/dev/null`;
+    my ($sway_output) = PACUtils::run_cmd({ argv => ['swaymsg', '-t', 'get_workspaces'] });
     return undef unless $sway_output;
     
     # Parse JSON output to find focused workspace
@@ -387,8 +388,10 @@ sub _switchWorkspaceViaWmctrl {
     # Extract workspace number from workspace identifier
     if ($workspace =~ /workspace_(\d+)/) {
         my $workspace_num = $1;
-        my $result = system("wmctrl -s $workspace_num 2>/dev/null");
-        return $result == 0;
+        # Only attempt if wmctrl is available
+        return 0 unless PACUtils::which_cached('wmctrl');
+        my (undef, undef, $exit) = PACUtils::run_cmd({ argv => ['wmctrl','-s',"$workspace_num"] });
+        return ($exit // 1) == 0;
     }
     
     return 0;
@@ -397,9 +400,10 @@ sub _switchWorkspaceViaWmctrl {
 sub _switchWorkspaceViaSway {
     my $self = shift;
     my $workspace = shift;
-    
-    my $result = system("swaymsg workspace '$workspace' 2>/dev/null");
-    return $result == 0;
+    # Only attempt if swaymsg is available
+    return 0 unless PACUtils::which_cached('swaymsg');
+    my (undef, undef, $exit) = PACUtils::run_cmd({ argv => ['swaymsg','workspace',"$workspace"] });
+    return ($exit // 1) == 0;
 }
 
 sub _suggestCosmicWindowCategory {

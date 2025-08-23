@@ -87,8 +87,9 @@ $METHODS{'RDP (rdesktop)'} = "PACMethod_rdesktop"->new($CONTAINER);
 eval {require "$RealBin/lib/method/PACMethod_xfreerdp.pm";}; die $@ if $@;
 $METHODS{'RDP (xfreerdp)'} = "PACMethod_xfreerdp"->new($CONTAINER);
 
-my $tigervnc = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | /bin/grep TigerVNC`;
-my $realvnc = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | /bin/grep RealVNC`;
+my ($vhelp, $vherr, $vhcode) = PACUtils::run_cmd({ argv => ['vncviewer','--help'], env => PACUtils::_external_env_hash() });
+my $tigervnc = ($vhelp =~ /TigerVNC/i) ? $vhelp : '';
+my $realvnc = ($vhelp =~ /RealVNC/i) ? $vhelp : '';
 
 if ($tigervnc) {
     # Use TigerVNC

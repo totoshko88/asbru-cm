@@ -1788,7 +1788,8 @@ sub _watchConnectionData {
             }
 
         } elsif ($data =~ /^EXPLORER:(.+)/go) {
-            system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} xdg-open '$1' &");
+            my $p = $1; $p =~ s/\s+$//;
+            PACUtils::open_path($p);
         } elsif ($data =~ /^PIPE_WAIT\[(.+?)\]\[(.+)\]/go) {
             my $time = $1;
             my $prompt = $2;
@@ -3685,7 +3686,10 @@ sub _execute {
         $tmp{cmd} = $cmd;
         nstore_fd(\%tmp, $$self{_SOCKET_CLIENT}) or die "ERROR:$!";
     } elsif ($where eq 'local') {
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd &");
+        # Execute locally without shell; split naïvely (commands are user-provided)
+        # For complex commands, users should call a shell explicitly.
+        my @argv = split(/\s+/, $cmd);
+        PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
     }
 
     return 1;
@@ -3704,7 +3708,17 @@ sub _pipeExecOutput {
         open(F, ">:utf8", $$self{_TMPPIPE});
         print F $out;
         close F;
-        $out = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cat $$self{_TMPPIPE} | $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd 2>&1`;
+        # Replace unsafe pipe with two-step processing
+        my @argv = split(/\s+/, $cmd);
+        my ($stdout, $stderr, $code) = PACUtils::run_cmd({ argv => ['cat', $$self{_TMPPIPE}], env => PACUtils::_external_env_hash() });
+        if ($code == 0) {
+            # Write to temp and process with command (simulate pipe)
+            open(my $tf, '>:utf8', $$self{_TMPPIPE}); print $tf $stdout; close $tf;
+            (my $o2, my $e2, my $c2) = PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
+            $out = $o2 . ($e2 // '');
+        } else {
+            $out = $stdout . ($stderr // '');
+        }
     }
     $$self{_EXEC}{OUT} = $out;
     $PACMain::FUNCS{_PIPE}->show();
@@ -3798,7 +3812,8 @@ sub _wPrePostExec {
             Gtk3::main_iteration while Gtk3::events_pending;
 
             # Launch the local command
-            system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd");
+            my @argv = split(/\s+/, $cmd);
+            PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
         }
 
         # Change mouse cursor (to normal)

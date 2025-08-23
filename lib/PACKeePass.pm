@@ -867,10 +867,7 @@ sub _buildKeePassGUI {
     # Help button click handler with URL safety
     $w{help}->signal_connect('clicked' => sub {
         my $url = 'https://docs.asbru-cm.net/Manual/Preferences/KeePassXC/';
-        # Validate URL to prevent shell injection
-        if ($url =~ /^https?:\/\/[\w\-\.\/]+$/) {
-            system("xdg-open", $url);
-        }
+        PACUtils::open_url($url);
     });
 
     return 1;
@@ -960,8 +957,11 @@ sub _setCapabilities {
         print "DEBUG:KEEPASS: $CLI $$self{kpxc_cli}\n";
     }
     # Safely get version with timeout protection
-    my $version_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -v 2>/dev/null";
-    $$self{kpxc_version} = `$version_cmd`;
+    my @vargv = ($CLI);
+    push @vargv, $$self{kpxc_cli} if $$self{kpxc_cli};
+    push @vargv, '-v';
+    my ($vout, $verr, $vcode) = PACUtils::run_cmd({ argv => \@vargv, env => PACUtils::_external_env_hash() });
+    $$self{kpxc_version} = $vout;
     $$self{kpxc_version} =~ s/\n//g;
     if ($$self{kpxc_version} !~ /[0-9]+\.[0-9]+\.[0-9]+/) {
         # Invalid version number, user did not select a valid KeePassXC file
@@ -979,7 +979,8 @@ sub _setCapabilities {
             # Test if we have a system wide installation
             $$self{kpxc_cli} = '';
             $CLI = 'keepassxc-cli';
-            $$self{kpxc_version} = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI -v 2>/dev/null`;
+            (my $o2, my $e2, my $c2) = PACUtils::run_cmd({ argv => ['keepassxc-cli', '-v'], env => PACUtils::_external_env_hash() });
+            $$self{kpxc_version} = $o2;
             $$self{kpxc_version} =~ s/\n//g;
             if (!$$self{kpxc_version}) {
                 # We do not have keepassxc-cli available, the user defined is not working
@@ -989,7 +990,11 @@ sub _setCapabilities {
             }
         }
     }
-    $c = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -h show 2>&1`;
+    my @hargv = ($CLI);
+    push @hargv, $$self{kpxc_cli} if $$self{kpxc_cli};
+    push @hargv, ('-h', 'show');
+    (my $ho, my $he, my $hc) = PACUtils::run_cmd({ argv => \@hargv, env => PACUtils::_external_env_hash() });
+    $c = $ho . $he;
     if ($c =~ /--key-file/) {
         $$self{kpxc_keyfile} = '--key-file';
     }

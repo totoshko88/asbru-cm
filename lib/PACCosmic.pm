@@ -165,13 +165,13 @@ sub _detect_cosmic_version {
     # Try various methods to detect Cosmic version
     
     # Method 1: Check for cosmic-session binary and get version
-    my $cosmic_session_version = `cosmic-session --version 2>/dev/null`;
+    my ($cosmic_session_version) = PACUtils::run_cmd({ argv => ['cosmic-session', '--version'] });
     if ($cosmic_session_version && $cosmic_session_version =~ /(\d+\.\d+(?:\.\d+)?)/) {
         return $1;
     }
     
     # Method 2: Check for cosmic-panel binary and get version
-    my $cosmic_panel_version = `cosmic-panel --version 2>/dev/null`;
+    my ($cosmic_panel_version) = PACUtils::run_cmd({ argv => ['cosmic-panel', '--version'] });
     if ($cosmic_panel_version && $cosmic_panel_version =~ /(\d+\.\d+(?:\.\d+)?)/) {
         return $1;
     }
@@ -194,7 +194,7 @@ sub _detect_theme_variant {
     # This would require access to Cosmic's configuration system
     
     # Method 3: Check system color scheme preference
-    my $color_scheme = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null`;
+    my ($color_scheme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
     if ($color_scheme && $color_scheme =~ /prefer-dark/) {
         return 'dark';
     }
