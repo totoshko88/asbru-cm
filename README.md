@@ -1,6 +1,6 @@
 # Ásbrú Connection Manager - Modernized Fork
 
-[<img src="https://www.asbru-cm.net/assets/img/asbru-logo-200.png" align="right" width="200px" height="200px" />](https://asbru-cm.net)
+[<img src="https://github.com/totoshko88/asbru-cm/blob/master/res/asbru-logo-256.png?raw=true" align="right" width="200px" height="200px" />](https://github.com/totoshko88/asbru-cm/tree/master)
 
 ## A free and open-source connection manager - Modernized for PopOS 24.04 and Wayland
 
@@ -12,7 +12,7 @@
 
 The original Ásbrú Connection Manager project has compatibility issues with modern Linux distributions. This fork addresses these problems and represents a real-world modernization success story.
 
-> 📖 **Case Study**: Read about this modernization project in the AWS Builder Library: [The Ásbrú and KiroDev Case Study](https://builder.aws.com/content/31O9whqNkNVmcFCTX7Uce1q5vTu/the-asbru-and-kirodev-case-study) - Learn how legacy open-source projects can be revitalized for modern environments.
+<!-- External case-study link removed until officially published/verified -->
 
 ### 🔧 **Critical Fixes Applied**
 
@@ -24,6 +24,11 @@ The original Ásbrú Connection Manager project has compatibility issues with mo
 - ✅ **Tray Integration**: StatusNotifierItem (SNI) support for modern desktop environments
 
 ### 🆕 **Modern Features**
+
+- Global Proxy: leaving it empty now uses system proxy env (ALL_PROXY/HTTPS_PROXY/HTTP_PROXY/NO_PROXY)
+- Safer spawn/runtime: CORE-first Perl loader, sanitized env, robust quoting
+- AppImage polish: MUSL loader preference, rebuilt GTK caches, icon/desktop metadata validated
+- Tests: category runner stabilized; protocols + performance PASS; GUI skipped if Gtk4 missing
 
 
 ## Tested on this system
@@ -38,22 +43,39 @@ This fork has been validated on the maintainer's workstation:
 
 Connection tests and UI smoke checks were executed; protocol mocks are skipped if Test::MockObject is missing.
 
-## This fork
-
-Modernization-focused fork; additionally tested on:
-- openSUSE Tumbleweed 20250727, kernel 6.15.8-1-default, KDE (Wayland)
-- Perl 5.42.0, rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
-
-See `RELEASE_NOTES_7.1.0.md` for 7.1.0 highlights.
+See `RELEASE_NOTES_7.1.0.md` for 7.1.0 highlights and full change log.
 
 ## 📦 Quick Installation
 
-### From Debian Package (Recommended)
+### AppImage (recommended)
 ```bash
-wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.1.0_all.deb
-sudo dpkg -i asbru-cm_7.1.0_all.deb
-sudo apt -f install  # Resolve dependencies if needed
+wget https://github.com/totoshko88/asbru-cm/releases/latest/download/Asbru-CM.AppImage
+chmod +x Asbru-CM.AppImage
+./Asbru-CM.AppImage
 ```
+
+### RPM (openSUSE / RPM-based)
+```bash
+wget https://github.com/totoshko88/asbru-cm/releases/download/v7.1.0/asbru-cm-7.1.0-2.noarch.rpm
+sudo zypper install ./asbru-cm-7.1.0-2.noarch.rpm   # or: sudo dnf install ./asbru-cm-7.1.0-2.noarch.rpm
+```
+
+### DEB (Debian/Ubuntu)
+1) Download the .deb from the Releases page:
+  https://github.com/totoshko88/asbru-cm/releases
+
+2) Install it with apt (auto-resolves dependencies):
+```bash
+sudo apt install ./asbru-cm_<version>_all.deb
+```
+
+Alternative (dpkg + fix deps):
+```bash
+sudo dpkg -i asbru-cm_<version>_all.deb || sudo apt -f install
+```
+
+For other distros, grab assets from the latest Release page:
+https://github.com/totoshko88/asbru-cm/releases
 
 ### From Source
 ```bash
