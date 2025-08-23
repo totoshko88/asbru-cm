@@ -145,7 +145,7 @@ sub _buildPrePostGUI {
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
+    $w{help}->set_image(Gtk3::Image->new_from_icon_name('help-browser', 'button'));
     $w{hbox}->pack_start($w{help}, 0, 1, 0);
 
     # Build a separator
@@ -224,7 +224,7 @@ sub _buildPrePost {
 
     # Build delete button
     $w{btn} = Gtk3::Button->new();
-    $w{btn}->set_image(PACIcons::icon_image('delete_row','edit-delete'));
+    $w{btn}->set_image(Gtk3::Image->new_from_icon_name('edit-delete', 'button'));
     $w{btn}->set_always_show_image(1);
     $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 

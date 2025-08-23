@@ -39,6 +39,7 @@ use PACIcons; # Modern symbolic icon mapping
 
 use FindBin qw ($RealBin $Bin $Script);
 use lib "$RealBin/lib", "$RealBin/lib/ex";
+use File::Spec;
 use Storable qw (dclone nstore nstore_fd fd_retrieve);
 use POSIX qw (strftime);
 use File::Copy;
@@ -62,19 +63,9 @@ my $SOURCEVIEW = ! $@;
 use PACUtils;
 use PACCompat;  # AI-assisted modernization: GTK3/GTK4 compatibility layer
 
-# VteTerminal (terminal widget)
-my $HAVE_VTE = 1;
-# Check if VTE is already loaded (from ex/Vte.pm)
-if (defined $Vte::VTE_VERSION) {
-    # VTE already loaded successfully
-    $HAVE_VTE = 1;
-} else {
-    # Try to load VTE directly
-    eval { require Vte; Vte->import(); 1 } or do { 
-        warn "WARNING: VTE not available ($@). Terminal functionality reduced.\n"; 
-        $HAVE_VTE = 0; 
-    };
-}
+# VteTerminal (terminal widget) - AI-assisted modernization: Updated VTE binding
+use PACVte;  # Modern VTE compatibility layer
+my $HAVE_VTE = $PACVte::HAVE_VTE;
 
 # END: Import Modules
 ###################################################################
@@ -91,6 +82,48 @@ my $PAC_CONN = "$RealBin/lib/asbru_conn";
 
 my $SHELL_BIN = -x '/bin/sh' ? '/bin/sh' : '/bin/bash';
 my $SHELL_NAME = -x '/bin/sh' ? 'sh' : 'bash';
+
+# Resolve an absolute perl path for child spawns (AppImage-safe)
+my $PERL_BIN = $^X;
+my $LOADER_BIN = undef;
+my @LOADER_PREFIX = ();
+if ($ENV{ASBRU_IS_APPIMAGE}) {
+    # Prefer the bundled perl inside the AppImage
+    my $appdir = $ENV{APPDIR} // '';
+    if ($appdir && -x "$appdir/usr/bin/perl") {
+        $PERL_BIN = "$appdir/usr/bin/perl";
+    } elsif ($PERL_BIN !~ m{^/} && -x "$RealBin/../usr/bin/perl") {
+        # Fallback: resolve relative to RealBin when running from build tree
+        $PERL_BIN = File::Spec->rel2abs("$RealBin/../usr/bin/perl");
+    }
+    # Detect and use the bundled dynamic loader to avoid PT_INTERP issues
+    if ($appdir) {
+        # Prefer MUSL loader first to match Alpine-built perl/XS; fall back to glibc loader if needed
+        if (-x "$appdir/lib/ld-musl-x86_64.so.1") {
+            $LOADER_BIN = "$appdir/lib/ld-musl-x86_64.so.1";
+        } elsif (-x "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2") {
+            $LOADER_BIN = "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2";
+        }
+        if ($LOADER_BIN) {
+            # Use loader both as program and argv[0] to satisfy FILE_AND_ARGV_ZERO semantics
+            @LOADER_PREFIX = ($LOADER_BIN, $LOADER_BIN);
+        }
+    }
+
+    # Ensure libperl.so soname exists for dynamic loader resolution inside AppImage
+    if ($appdir && -d "$appdir/usr/lib/perl5/core_perl/CORE") {
+        my $core = "$appdir/usr/lib/perl5/core_perl/CORE";
+        if (! -e "$core/libperl.so") {
+            opendir(my $dh, $core);
+            my @cands = grep { /^libperl\.so\./ && -f "$core/$_" } readdir($dh);
+            closedir($dh);
+            if (@cands) {
+                my $target = $cands[0];
+                eval { symlink($target, "$core/libperl.so"); };
+            }
+        }
+    }
+}
 
 my $_C = 1;
 my $EXEC_STORM_TIME = 0.2;
@@ -561,30 +594,117 @@ sub start {
     my @args;
     my $spawn_env;
     my $subCwd = $method eq 'PACShell' ? $$self{_CFG}{'defaults'}{'shell directory'} : '.';
-    if ($$self{_CFG}{'defaults'}{'use login shell to connect'}) {
-        @args = [$SHELL_BIN, $SHELL_NAME, '-l', '-c', "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$^X' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)"];
+    my $use_login_shell = $$self{_CFG}{'defaults'}{'use login shell to connect'};
+    $use_login_shell = 0 if $ENV{ASBRU_IS_APPIMAGE};
+    # Special-case local shell: spawn the configured shell directly inside VTE for robustness
+    if (($method // '') eq 'PACShell') {
+        my $sh_bin = $$self{_CFG}{'defaults'}{'shell binary'} || $SHELL_BIN;
+        my $sh_opts = $$self{_CFG}{'defaults'}{'shell options'} || '';
+        my @opt_tokens = grep { length($_) } split(/\s+/, $sh_opts);
+        # Duplicate argv[0] to satisfy FILE_AND_ARGV_ZERO semantics
+        @args = [$sh_bin, $sh_bin, @opt_tokens];
+        # Use external minimal env and working dir
+        $spawn_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'} // '';
+        $spawn_env .= " ASBRU_SUB_CWD='$subCwd'";
+        # Ensure TERM/SHELL present
+        foreach my $pair (['TERM', ($ENV{TERM} // 'xterm-256color')], ['SHELL', ($ENV{SHELL} // $sh_bin)]) {
+            my ($k,$v) = @$pair; $spawn_env .= " $k='$v'" if index($spawn_env, "$k=") < 0;
+        }
+        my @arr_spawn_env = $self->_convertEnv($spawn_env);
+        if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
+            my $dbg_args = join(' ', @{$args[0]});
+            print STDERR "DIAG: about to spawn local shell uuid=$$self{_UUID} method=$method cwd=$subCwd args=[${dbg_args}] env='$spawn_env'\n";
+        }
+        my $ok = eval { $$self{_GUI}{_VTE}->spawn_sync([], $subCwd, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef); };
+        if (!$ok || $@) {
+            $$self{ERROR} = "ERROR: VTE could not start local shell '$sh_bin' with opts '$sh_opts' at: $@";
+            print STDERR "DIAG: spawn_sync failed (local shell) uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
+            $$self{CONNECTING} = 0;
+            return 0;
+        } else {
+            print STDERR "DIAG: spawn_sync ok (local shell) uuid=$$self{_UUID} method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+        }
+    }
+    elsif ($use_login_shell) {
+        # Use login shell but execute the in-bundle perl explicitly (via loader if available)
+        my $cmd = '';
+        if (@LOADER_PREFIX) {
+            my ($ld0, $ld_argv0) = @LOADER_PREFIX;
+            $cmd = "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$ld0' '$PERL_BIN' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)";
+        } else {
+            $cmd = "($ENV{'ASBRU_ENV_FOR_INTERNAL'} '$PERL_BIN' '$PAC_CONN' '$$self{_TMPCFG}' '$$self{_UUID}' '$isCluster'; exit)";
+        }
+        @args = [$SHELL_BIN, $SHELL_NAME, '-l', '-c', $cmd];
         $spawn_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'};
     } else {
-        @args = [$^X, $^X, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        # Direct exec of perl + asbru_conn (no shell). Use loader when available
+        if (@LOADER_PREFIX) {
+            @args = [@LOADER_PREFIX, $PERL_BIN, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        } else {
+            # Duplicate $PERL_BIN to satisfy FILE_AND_ARGV_ZERO semantics
+            @args = [$PERL_BIN, $PERL_BIN, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
+        }
         $spawn_env = "";
     }
     $spawn_env .= " ASBRU_SUB_CWD='$subCwd'";
-    my @arr_spawn_env = $self->_convertEnv($spawn_env);
-    if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
-        my $dbg_args = join(' ', @{$args[0]});
-        print STDERR "DIAG: about to spawn asbru_conn uuid=$$self{_UUID} method=$method tmpcfg=$$self{_TMPCFG} cluster=$isCluster args=[${dbg_args}] env='$spawn_env'\n";
+    # Ensure essential runtime env is present for AppImage children (always add/merge)
+    if ($ENV{ASBRU_IS_APPIMAGE}) {
+        # Build a robust child LD_LIBRARY_PATH which includes CORE and all bundled lib dirs, CORE first
+        my $appdir = $ENV{APPDIR} // '';
+        my $ld_existing = $ENV{LD_LIBRARY_PATH} // '';
+        my $ld_child = '';
+        if ($appdir) {
+            my @libdirs = (
+                "$appdir/usr/lib/perl5/core_perl/CORE",
+                "$appdir/lib",
+                "$appdir/usr/local/lib",
+                "$appdir/usr/lib",
+                "$appdir/usr/lib64",
+                "$appdir/usr/lib/x86_64-linux-gnu"
+            );
+            my @ordered = ();
+            foreach my $d (@libdirs) {
+                next unless length $d;
+                push @ordered, $d unless grep { $_ eq $d } @ordered;
+            }
+            $ld_child = join(':', @ordered);
+        }
+        # Append any existing LD_LIBRARY_PATH from parent at the end to preserve host hints
+        if ($ld_existing ne '') {
+            $ld_child = length($ld_child) ? "$ld_child:$ld_existing" : $ld_existing;
+        }
+        # Compose essential runtime env; avoid adding empty values
+        my @vars = qw(PERL5LIB GI_TYPELIB_PATH XDG_DATA_DIRS XDG_CONFIG_DIRS GTK_PATH GTK_EXE_PREFIX GTK_DATA_PREFIX GDK_PIXBUF_MODULE_FILE GTK_IM_MODULE GTK_IM_MODULE_FILE PANGO_LIBDIR APPDIR PATH LANG TERM SHELL DISPLAY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_RUNTIME_DIR);
+        foreach my $k (@vars) {
+            next unless defined $ENV{$k} && $ENV{$k} ne '';
+            my $v = $ENV{$k};
+            $spawn_env .= " $k='$v'";
+        }
+        # LC_ALL only if non-empty
+        if (defined $ENV{LC_ALL} && $ENV{LC_ALL} ne '') { $spawn_env .= " LC_ALL='$ENV{LC_ALL}'"; }
+        # Ensure LANG always has a sane default to avoid locale warnings
+        if (index($spawn_env, " LANG=") < 0) { $spawn_env .= " LANG='C.UTF-8'"; }
+    # Finally, set the merged LD_LIBRARY_PATH (CORE first)
+    if ($ld_child ne '') { $spawn_env .= " LD_LIBRARY_PATH='$ld_child'"; }
     }
-    my $spawnSyncResult = undef;
-    eval {
-        $spawnSyncResult = $$self{_GUI}{_VTE}->spawn_sync([], undef, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef);
-    };
-    if (!$spawnSyncResult || $@) {
-        $$self{ERROR} = "ERROR: VTE could not fork command '$PAC_CONN $$self{_TMPCFG} $$self{_UUID} $isCluster $subCwd'!! at: $@";
-        print STDERR "DIAG: spawn_sync failed uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
-        $$self{CONNECTING} = 0;
-        return 0;
-    } else {
-        print STDERR "DIAG: spawn_sync ok uuid=$$self{_UUID} pid? (implicit) method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+    my @arr_spawn_env = $self->_convertEnv($spawn_env);
+    if (($method // '') ne 'PACShell') {
+        if ($PACMain::FUNCS{_MAIN}{_VERBOSE}) {
+            my $dbg_args = join(' ', @{$args[0]});
+            print STDERR "DIAG: about to spawn asbru_conn uuid=$$self{_UUID} method=$method tmpcfg=$$self{_TMPCFG} cluster=$isCluster args=[${dbg_args}] env='$spawn_env'\n";
+        }
+        my $spawnSyncResult = undef;
+        eval {
+            $spawnSyncResult = $$self{_GUI}{_VTE}->spawn_sync([], undef, @args, \@arr_spawn_env, 'G_SPAWN_FILE_AND_ARGV_ZERO', undef, undef, undef);
+        };
+        if (!$spawnSyncResult || $@) {
+            $$self{ERROR} = "ERROR: VTE could not fork command '$PAC_CONN $$self{_TMPCFG} $$self{_UUID} $isCluster $subCwd'!! at: $@";
+            print STDERR "DIAG: spawn_sync failed uuid=$$self{_UUID} args=@args env=$spawn_env error=$@\n";
+            $$self{CONNECTING} = 0;
+            return 0;
+        } else {
+            print STDERR "DIAG: spawn_sync ok uuid=$$self{_UUID} pid? (implicit) method=$method\n" if $PACMain::FUNCS{_MAIN}{_VERBOSE};
+        }
     }
 
     # ... and save its data
@@ -609,6 +729,22 @@ sub start {
 
     $self->_startSendStringTimeout();
 
+    # If this is a Local shell (PACShell), mark as connected immediately to keep UI stable
+    if (($method // '') eq 'PACShell') {
+        # Stop pulsing and remove progress bar if present
+        $$self{_PULSE} = 0;
+        if (defined $$self{_GUI}{pb}) {
+            eval { $$self{_GUI}{pb}->hide(); };
+            eval { $$self{_GUI}{bottombox}->remove($$self{_GUI}{pb}); };
+            delete $$self{_GUI}{pb};
+        }
+        $$self{CONNECTED} = 1;
+        $$self{CONNECTING} = 0;
+        if ($$self{_GUI}{status}) {
+            $$self{_GUI}{status}->push(0, 'Connected');
+        }
+    }
+
     $$self{_CFG}{'environments'}{$$self{_UUID}}{'startup script'} and $PACMain::FUNCS{_SCRIPTS}->_execScript($$self{_CFG}{'environments'}{$$self{_UUID}}{'startup script name'}, $self->{_PARENTWINDOW}, $$self{_UUID_TMP});
     $$self{_GUI}{_VTE}->grab_focus();
     if ($PACMain::FUNCS{_MAIN}{_Vte}{has_bright}) {
@@ -622,8 +758,12 @@ sub _convertEnv {
     my $self = shift;
     my $env_string = shift;
     my @matches = ();
-    while ($env_string =~ /(?<envName>\w+)=(?<envValue>(?<quot>['"]?)[^']*?\k{quot})/g) {
-        push @matches, "$+{envName}=$+{envValue}";
+    while ($env_string =~ /(?<envName>\w+)=(?<envValue>(?<quot>['"])(.*?)\k{quot}|[^\s]+)/g) {
+        my $name = $+{envName};
+        my $val  = $+{envValue} // '';
+        # Strip surrounding quotes if present
+        if ($val =~ /^(['"])(.*)\1$/) { $val = $2; }
+        push @matches, "$name=$val";
     }
     return @matches;
 }
@@ -812,8 +952,16 @@ sub _startSendStringTimeout {
 sub _getLocalPort {
     my $LPORT = shift;
 
-    my $PING = Net::Ping->new('tcp');
-    $PING->service_check(0);
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+    # Guard service-name based checks; default to no service check if unavailable
+    eval {
+        $PING->tcp_service_check(1);
+        1;
+    } or do {
+    $PING->tcp_service_check(0);
+    $PING->port_number($default_ping_port);
+    };
 
     for (my $break = 0; $break < 100; ++$break) {
         $PING->port_number($LPORT);
@@ -844,7 +992,7 @@ sub _initGUI {
     # Note: set_shadow_type deprecated in GTK4, handled by compatibility layer
 
     # Build a Gnome VTE Terminal (AI-assisted modernization: VTE 3.91/2.91 compatible)
-    $$self{_GUI}{_VTE} = Vte::Terminal->new();
+    $$self{_GUI}{_VTE} = PACVte::new_terminal();
 
     # , add VTE to the scrolled window and...
     if (!$$self{'EMBED'}) {
@@ -948,7 +1096,9 @@ sub _initGUI {
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         # Create a checkbox to show/hide the button bar
         $$self{_GUI}{btnShowButtonBar} = Gtk3::Button->new();
-    $$self{_GUI}{btnShowButtonBar}->set_image(PACIcons::icon_image($$self{_CFG}{'defaults'}{'auto hide button bar'} ? 'buttonbar_show' : 'buttonbar_hide', 'view-list'));
+        # Clear icon cache for fresh button bar icons
+        PACIcons::clear_cache();
+        $$self{_GUI}{btnShowButtonBar}->set_image(PACIcons::icon_image($$self{_CFG}{'defaults'}{'auto hide button bar'} ? 'buttonbar_show' : 'buttonbar_hide', 'view-list'));
         $$self{_GUI}{btnShowButtonBar}->set('can-focus' => 0);
         $$self{_GUI}{btnShowButtonBar}->set_tooltip_text('Show/Hide button bar');
         $$self{_GUI}{bottombox}->pack_end($$self{_GUI}{btnShowButtonBar}, 0, 1, 4);
@@ -1008,6 +1158,21 @@ sub _initGUI {
         # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
         $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
         $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
+        
+        # Add connection method icon to tab if available
+        # Determine connection method for tab icon from environment config
+        my $connection_method = '';
+        if (ref($$self{_CFG}{'environments'}) eq 'HASH' && $$self{_UUID}) {
+            $connection_method = $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} // '';
+        }
+        if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+            my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+            if ($method_icon) {
+                my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+                $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+            }
+        }
+        
         $$self{_GUI}{_TABLBL}{_LABEL} = Gtk3::Label->new($$self{_TITLE});
         # First add to parent container
         $$self{_GUI}{_TABLBL}->pack_start($$self{_GUI}{_TABLBL}{_EBLBL}, 1, 1, 0);
@@ -1785,7 +1950,8 @@ sub _watchConnectionData {
             }
 
         } elsif ($data =~ /^EXPLORER:(.+)/go) {
-            system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} xdg-open '$1' &");
+            my $p = $1; $p =~ s/\s+$//;
+            PACUtils::open_path($p);
         } elsif ($data =~ /^PIPE_WAIT\[(.+?)\]\[(.+)\]/go) {
             my $time = $1;
             my $prompt = $2;
@@ -2953,6 +3119,19 @@ sub _winToTab {
     # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
+    # Add connection method icon to tab if available
+    my $connection_method = '';
+    if (ref($$self{_CFG}{'environments'}) eq 'HASH' && $$self{_UUID}) {
+        $connection_method = $$self{_CFG}{'environments'}{$$self{_UUID}}{'method'} // '';
+    }
+    if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+        my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+        if ($method_icon) {
+            my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+            $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+        }
+    }
+
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
     # Safe pack with validation
     if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
@@ -3325,6 +3504,16 @@ sub _split {
     # Append this GUI to a new TAB (with an associated label && event_box->image(close) button)
     $$self{_GUI}{_TABLBL} = Gtk3::HBox->new(0, 0);
 
+    # Add connection method icon to tab if available
+    my $connection_method = $$self{_CFG}{'method'} // '';
+    if ($connection_method && $PACMain::FUNCS{_MAIN}) {
+        my $method_icon = $PACMain::FUNCS{_MAIN}->_getConnectionTypeIcon($connection_method);
+        if ($method_icon) {
+            my $tab_icon = Gtk3::Image->new_from_pixbuf($method_icon);
+            $$self{_GUI}{_TABLBL}->pack_start($tab_icon, 0, 0, 2);
+        }
+    }
+
     $$self{_GUI}{_TABLBL}{_EBLBL} = Gtk3::EventBox->new();
     # Safe pack with validation
     if ($$self{_GUI}{_TABLBL}{_EBLBL}->get_parent()) {
@@ -3662,7 +3851,10 @@ sub _execute {
         $tmp{cmd} = $cmd;
         nstore_fd(\%tmp, $$self{_SOCKET_CLIENT}) or die "ERROR:$!";
     } elsif ($where eq 'local') {
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd &");
+        # Execute locally without shell; split naïvely (commands are user-provided)
+        # For complex commands, users should call a shell explicitly.
+        my @argv = split(/\s+/, $cmd);
+        PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
     }
 
     return 1;
@@ -3681,7 +3873,17 @@ sub _pipeExecOutput {
         open(F, ">:utf8", $$self{_TMPPIPE});
         print F $out;
         close F;
-        $out = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cat $$self{_TMPPIPE} | $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd 2>&1`;
+        # Replace unsafe pipe with two-step processing
+        my @argv = split(/\s+/, $cmd);
+        my ($stdout, $stderr, $code) = PACUtils::run_cmd({ argv => ['cat', $$self{_TMPPIPE}], env => PACUtils::_external_env_hash() });
+        if ($code == 0) {
+            # Write to temp and process with command (simulate pipe)
+            open(my $tf, '>:utf8', $$self{_TMPPIPE}); print $tf $stdout; close $tf;
+            (my $o2, my $e2, my $c2) = PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
+            $out = $o2 . ($e2 // '');
+        } else {
+            $out = $stdout . ($stderr // '');
+        }
     }
     $$self{_EXEC}{OUT} = $out;
     $PACMain::FUNCS{_PIPE}->show();
@@ -3775,7 +3977,8 @@ sub _wPrePostExec {
             Gtk3::main_iteration while Gtk3::events_pending;
 
             # Launch the local command
-            system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $cmd");
+            my @argv = split(/\s+/, $cmd);
+            PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
         }
 
         # Change mouse cursor (to normal)
@@ -4454,7 +4657,12 @@ sub _wFindInTerminal {
         }
     });
     $w{window}{gui}{btnfind}->set_can_default(1);
-    $w{window}{gui}{btnfind}->grab_default;
+    eval {
+        # Fix GTK critical error: ensure button can grab default before calling grab_default
+        if ($w{window}{gui}{btnfind}->get_can_default()) {
+            $w{window}{gui}{btnfind}->grab_default;
+        }
+    };
 
     # Create frame 2
     $w{window}{gui}{frame2} = Gtk3::Frame->new();

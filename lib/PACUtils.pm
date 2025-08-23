@@ -35,10 +35,12 @@ use strict;
 use warnings;
 
 use FindBin qw ($RealBin $Bin $Script);
+use File::Basename;
 use POSIX qw (strftime);
 use PACConfigData qw(clone_data serialize_data deserialize_data);
 use Storable qw (freeze thaw dclone);
 use PACCryptoCompat;
+use PACCompat;
 use Socket qw(:all);
 use PACNetworking qw(ping_host resolve_hostname is_ipv4 is_ipv6);
 use Sys::Hostname;
@@ -48,14 +50,180 @@ use YAML::XS;
 use OSSP::uuid;
 use Encode;
 use DynaLoader; # Required for PACTerminal and PACShell modules
+use File::Path qw(remove_tree);
+use Cwd qw(getcwd);
+use IPC::Open3;
+use Symbol 'gensym';
 
 # GTK
 use Gtk3 '-init';
-use Gtk3::Gdk;
-use Wnck; # for the windows list
+
+# Try to load Gtk3::Gdk; if unavailable, set up via introspection as a fallback
+our $GDK_AVAILABLE = 0;
+BEGIN {
+    eval {
+        require Gtk3::Gdk; Gtk3::Gdk->import();
+        $GDK_AVAILABLE = 1;
+        1;
+    } or do {
+        eval {
+            require Glib::Object::Introspection;
+            Glib::Object::Introspection->setup(
+                basename => 'Gdk',    version => '3.0', package => 'Gtk3::Gdk'
+            );
+            Glib::Object::Introspection->setup(
+                basename => 'GdkPixbuf', version => '2.0', package => 'Gtk3::Gdk'
+            );
+            $GDK_AVAILABLE = 1;
+            1;
+        } or do {
+            warn "WARN: Gtk3::Gdk not available; image features limited\n" if $ENV{ASBRU_DEBUG};
+        };
+    };
+}
+
+# Wnck (window navigator) optional binding for X11 window enumeration
+our $WNCK_AVAILABLE = 0;
+BEGIN {
+    eval {
+        require Wnck; Wnck->import();
+        $WNCK_AVAILABLE = 1;
+        1;
+    } or do {
+        # Try bundled introspection shim
+        my $shim = "$RealBin/lib/ex/Wnck.pm";
+        if (-f $shim) {
+            eval { require $shim; $WNCK_AVAILABLE = 1; 1 } or do {
+                warn "WARN: Failed to load Wnck shim: $@\n" if $ENV{ASBRU_DEBUG};
+            };
+        } else {
+            warn "WARN: Wnck not available; window enumeration disabled\n" if $ENV{ASBRU_DEBUG};
+        }
+    };
+}
 
 # Module's functions/variables to export
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
+###################################################################
+# Safe execution helpers (no-shell)
+
+my %_WHICH_CACHE;
+
+sub which_cached {
+    my $bin = shift // return undef;
+    return $_WHICH_CACHE{$bin} if exists $_WHICH_CACHE{$bin};
+
+    # Prefer File::Which if available, otherwise search PATH
+    my $found;
+    eval {
+        require File::Which;
+        $found = File::Which::which($bin);
+        1;
+    } or do {
+        foreach my $dir (split(/:/, $ENV{PATH} // '')) {
+            my $p = "$dir/$bin";
+            if (-x $p) { $found = $p; last; }
+        }
+    };
+    $_WHICH_CACHE{$bin} = $found // '';
+    return $_WHICH_CACHE{$bin};
+}
+
+sub run_cmd {
+    # List-form execution with captured stdout/stderr and exit code; supports optional stdin => string
+    my %opt = @_ == 1 && ref($_[0]) eq 'HASH' ? %{$_[0]} : @_;
+    my $argv  = $opt{argv} // [];
+    my $cwd   = $opt{cwd};
+    # Use a sanitized environment by default for external commands so we don't leak
+    # AppImage LD_LIBRARY_PATH (prevents libreadline "no version information" spam from host shells)
+    my $envp  = exists $opt{env} ? $opt{env} : _external_env_hash();
+    my $stdin = defined $opt{stdin} ? $opt{stdin} : undef;
+    my ($out, $err) = ('','');
+    my $pid;
+
+    my $old_cwd;
+    if ($cwd) { $old_cwd = Cwd::getcwd(); chdir $cwd; }
+    my %env_backup;
+    if ($envp && %$envp) {
+        # Start from current env, but scrub noisy libs unless explicitly provided
+        foreach my $k (keys %$envp) { $env_backup{$k} = $ENV{$k}; $ENV{$k} = $envp->{$k}; }
+    }
+    # Ensure host shell and helpers don't inherit our AppImage library paths by default
+    delete $ENV{LD_LIBRARY_PATH} unless ($opt{preserve_app_env});
+    if (!exists $envp->{GTK_PATH}) { delete $ENV{GTK_PATH}; }
+    if (!exists $envp->{GDK_PIXBUF_MODULE_FILE}) { delete $ENV{GDK_PIXBUF_MODULE_FILE}; }
+    if (!exists $envp->{GTK_IM_MODULE}) { delete $ENV{GTK_IM_MODULE}; }
+    if (!exists $envp->{GTK_IM_MODULE_FILE}) { delete $ENV{GTK_IM_MODULE_FILE}; }
+    if (!exists $envp->{PANGO_LIBDIR}) { delete $ENV{PANGO_LIBDIR}; }
+    # Force a sane host PATH unless the caller supplied one
+    if (!exists $envp->{PATH}) { $ENV{PATH} = '/usr/bin:/bin'; }
+
+    my $err_fh = gensym;
+    my $ran = 0;
+    eval {
+        $pid = open3(my $w, my $r, $err_fh, @$argv);
+        if (defined $stdin) {
+            binmode($w, ':raw');
+            print {$w} $stdin;
+        }
+        close $w;
+        local $/; $out = <$r> // '';
+        close $r;
+        $err = do { local $/; <$err_fh> } // '';
+        close $err_fh;
+        waitpid($pid, 0);
+        $ran = 1;
+        1;
+    } or do {
+        $err ||= "Failed to execute: $@";
+    };
+
+    if ($cwd) { chdir $old_cwd if defined $old_cwd; }
+    if ($envp && %$envp) {
+        foreach my $k (keys %env_backup) { defined $env_backup{$k} ? ($ENV{$k} = $env_backup{$k}) : delete $ENV{$k}; }
+    }
+
+    my $code = $ran ? ($? >> 8) : 127;
+    return ($out, $err, $code);
+}
+
+sub _external_env_hash {
+    # Convert ASBRU_ENV_FOR_EXTERNAL string (KEY='VAL' ...) to hash, best-effort
+    my $s = $ENV{ASBRU_ENV_FOR_EXTERNAL} // '';
+    my %h;
+    while ($s =~ /(\w+)=\'([^\']*)\'/g) { $h{$1} = $2; }
+    return \%h;
+}
+
+sub open_url {
+    my $url = shift // return 0;
+    return 0 unless $url =~ m{^https?://[\w\-\./%#\?=&:]+$}i;
+    my $xdg = which_cached('xdg-open') || '/usr/bin/xdg-open';
+    my $env = _external_env_hash();
+    my (undef, $err, $code) = run_cmd({ argv => [$xdg, $url], env => $env });
+    return $code == 0;
+}
+
+sub open_path {
+    my $path = shift // return 0;
+    return 0 unless -e $path;
+    my $xdg = which_cached('xdg-open') || '/usr/bin/xdg-open';
+    my $env = _external_env_hash();
+    my (undef, $err, $code) = run_cmd({ argv => [$xdg, $path], env => $env });
+    return $code == 0;
+}
+
+sub remove_tmp_dirs {
+    my $base = shift // return 0;
+    my @dirs = @_ ? @_ : ('sockets','tmp');
+    foreach my $d (@dirs) {
+        my $p = "$base/$d";
+        next unless -d $p;
+        eval { remove_tree($p, { error => \my $err, keep_root => 1 }); 1 } or do { warn "Failed to clean $p: $@" if $ENV{ASBRU_DEBUG}; };
+    }
+    return 1;
+}
+
 require Exporter;
 @ISA        = qw(Exporter);
 @EXPORT     = qw(
@@ -123,10 +291,10 @@ require Exporter;
 # Define GLOBAL CLASS variables
 
 our $APPNAME = 'Ásbrú Connection Manager';
-our $APPVERSION = '7.0.1';
+our $APPVERSION = '7.1.0';
 our $DEBUG_LEVEL = 1;
 our $ARCH = '';
-my $ARCH_TMP = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/uname -m 2>&1`;
+my ($ARCH_TMP, $_ae, $_ac) = run_cmd({ argv => ['/bin/uname','-m'], env => _external_env_hash() });
 if ($ARCH_TMP =~ /x86_64/gio) {
     $ARCH = 64;
 } elsif ($ARCH_TMP =~ /ppc64/gio) {
@@ -280,7 +448,7 @@ sub __text {
 
 sub _splash {
     my $show = shift;
-    my $txt = shift // "<b>Starting $APPNAME (v$APPVERSION)...</b>";
+    my $txt = shift // (emoji('🚀 ') . "<b>Starting $APPNAME (v$APPVERSION)...</b>" . emoji(' ✨'));
     my $partial = shift // 0;
     my $total = shift // 1;
 
@@ -305,7 +473,7 @@ sub _splash {
     }
 
     $WINDOWSPLASH{_LBL}->set_show_text(1);
-    $WINDOWSPLASH{_LBL}->set_text($txt);
+    $WINDOWSPLASH{_LBL}->set_text(_maybe_strip_emojis($txt));
     $WINDOWSPLASH{_LBL}->set_fraction($partial / $total);
 
     if ($show) {
@@ -322,6 +490,39 @@ sub _splash {
     return 1;
 }
 
+# Emoji preference helpers
+sub emojis_enabled {
+    # Priority: runtime config defaults > env override > default on
+    my $cfg_root;
+    if (exists $PACMain::FUNCS{_MAIN} && ref($PACMain::FUNCS{_MAIN}) eq 'HASH') {
+        $cfg_root = $PACMain::FUNCS{_MAIN}{_CFG};
+    }
+    if (ref($cfg_root) eq 'HASH') {
+        my $defs = $cfg_root->{defaults};
+        if (ref($defs) eq 'HASH' && exists $defs->{'ui emojis'}) {
+            return $defs->{'ui emojis'} ? 1 : 0;
+        }
+    }
+    if (exists $ENV{ASBRU_EMOJI_MODE}) {
+        return $ENV{ASBRU_EMOJI_MODE} =~ /^(1|true|on|yes)$/i ? 1 : 0;
+    }
+    return 1;
+}
+
+sub emoji {
+    my ($s) = @_;
+    return emojis_enabled() ? ($s // '') : '';
+}
+
+sub _maybe_strip_emojis {
+    my ($t) = @_;
+    return $t if emojis_enabled();
+    # Strip emojis robustly: remove Extended Pictographic, VS16, and ZWJ
+    $t =~ s/\p{Extended_Pictographic}//g;
+    $t =~ s/[\x{FE0F}\x{200D}]//g; # variation selector-16 and zero-width joiner
+    return $t;
+}
+
 sub _screenshot {
     my $widget = shift;
     my $file = shift;
@@ -333,17 +534,23 @@ sub _screenshot {
 
 # TODO: This should validate for file existence, eval generates errors an warnings in verbose mode
 sub _scale {
-    my $file = shift;
-    my $w = shift;
-    my $h = shift;
+    my $file  = shift;
+    my $w     = shift;
+    my $h     = shift;
     my $ratio = shift // '';
 
+    # Avoid invoking the pixbuf loader on missing files; this can raise GErrors via introspection
+    if (!ref($file)) {
+        if (!defined $file || !-r $file) {
+            print STDERR "WARN: Pixbuf source not readable: '" . ($file // 'undef') . "'\n";
+            return 0;
+        }
+    }
+
     my $gdkpixbuf;
-    eval {
-        $gdkpixbuf = ref($file) ? $file : Gtk3::Gdk::Pixbuf->new_from_file($file)
-    };
-    if ($@) {
-        print STDERR "WARN: Error while loading pixBuf from file '$file': $@";
+    eval { $gdkpixbuf = ref($file) ? $file : Gtk3::Gdk::Pixbuf->new_from_file($file); };
+    if ($@ || !$gdkpixbuf) {
+        print STDERR "WARN: Error while loading pixBuf from file '" . ($file // 'undef') . "': $@";
         return 0;
     }
 
@@ -362,13 +569,16 @@ sub _scale {
 sub _pixBufFromFile {
     my $file = shift;
 
-    my $gdkpixbuf;
-    eval {
-        $gdkpixbuf = Gtk3::Gdk::Pixbuf->new_from_file($file)
-    };
+    # Guard against unreadable/missing paths to prevent introspection errors during startup
+    if (!defined $file || !-r $file) {
+        print STDERR "WARN: Pixbuf file not readable: '" . ($file // 'undef') . "'\n";
+        return 0;
+    }
 
-    if ($@) {
-        print STDERR "WARN: Error while loading pixBuf from file '$file': $@";
+    my $gdkpixbuf;
+    eval { $gdkpixbuf = Gtk3::Gdk::Pixbuf->new_from_file($file); };
+    if ($@ || !$gdkpixbuf) {
+        print STDERR "WARN: Error while loading pixBuf from file '" . ($file // 'undef') . "': $@";
         return 0;
     }
     return $gdkpixbuf;
@@ -383,17 +593,13 @@ sub _getMethods {
         $THEME_DIR = $theme_dir;
     }
 
-    my $rdesktop = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which rdesktop 1>/dev/null 2>&1") eq 0);
+    my $rdesktop = PACUtils::which_cached('rdesktop') ? 1 : 0;
     $methods{'RDP (rdesktop)'} = {
         'installed' => sub {return $rdesktop ? 1 : "No 'rdesktop' binary found.\nTo use this option, please, install :'rdesktop'";},
         'checkCFG' => sub {
             my $cfg = shift;
 
             my @faults;
-
-            if (! _($self, 'entryIP')->get_chars(0, -1)) {
-                push(@faults, 'IP/Hostname');
-            }
             if (! _($self, 'entryPort')->get_chars(0, -1)) {
                 push(@faults, 'Port');
             }
@@ -450,11 +656,11 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
-    my $xfreerdp = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which xfreerdp 1>/dev/null 2>&1") eq 0);
+    my $xfreerdp = PACUtils::which_cached('xfreerdp') ? 1 : 0;
     $methods{'RDP (xfreerdp)'} = {
         'installed' => sub {return $xfreerdp ? 1 : "No 'xfreerdp' binary found.\nTo use this option, please, install:\n'freerdp2-x11'";},
         'checkCFG' => sub {
@@ -521,12 +727,13 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
-    my $xtightvncviewer = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which vncviewer 1>/dev/null 2>&1") eq 0);
-    my $tigervnc = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | /bin/grep -q TigerVNC") eq 0);
+    my $xtightvncviewer = PACUtils::which_cached('vncviewer') ? 1 : 0;
+    my ($vnc_help) = run_cmd({ argv => ['vncviewer', '--help'], env => _external_env_hash() });
+    my $tigervnc = ($vnc_help // '') =~ /TigerVNC/i ? 1 : 0;
     $methods{'VNC'} = {
         'installed' => sub {return $xtightvncviewer || $tigervnc ? 1 : "No 'vncviewer' binary found.\nTo use this option, please, install any of:\n'xtightvncviewer' or 'tigervnc'\n'tigervnc' is preferred, since it allows embedding its window into Ásbrú Connection Manager.";},
         'checkCFG' => sub {
@@ -589,11 +796,11 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_vncviewer.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_vncviewer.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
-    my $cu = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which cu 1>/dev/null 2>&1") eq 0);
+    my $cu = PACUtils::which_cached('cu') ? 1 : 0;
     $methods{'Serial (cu)'} = {
         'installed' => sub {return $cu ? 1 : "No 'cu' binary found.\nTo use this option, please, install 'cu'.";},
         'checkCFG' => sub {
@@ -639,11 +846,11 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.jpg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.svg", 16, 16, 0),
         'escape' => ['~.']
     };
 
-    my $remote_tty = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which remote-tty 1>/dev/null 2>&1") eq 0);
+    my $remote_tty = PACUtils::which_cached('remote-tty') ? 1 : 0;
     $methods{'Serial (remote-tty)'} = {
         'installed' => sub {return $remote_tty ? 1 : "No 'remote-tty' binary found.\nTo use this option, please, install 'remote-tty'.";},
         'checkCFG' => sub {
@@ -706,10 +913,10 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.jpg", 16, 16, 0)
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.svg", 16, 16, 0)
     };
 
-    my $c3270 = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which c3270 1>/dev/null 2>&1") eq 0);
+    my $c3270 = PACUtils::which_cached('c3270') ? 1 : 0;
     $methods{'IBM 3270/5250'} = {
         'installed' => sub {return $c3270 ? 1 : "No 'c3270' binary found.\nTo use this option, please, install 'c3270' or 'x3270-text'.";},
         'checkCFG' => sub {
@@ -758,10 +965,10 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.jpg", 16, 16, 0)
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.svg", 16, 16, 0)
     };
 
-    my $autossh = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which autossh 1>/dev/null 2>&1") eq 0);
+    my $autossh = PACUtils::which_cached('autossh') ? 1 : 0;
     $methods{'SSH'} = {
         'installed' => sub {return 1;},
         'checkCFG' => sub {
@@ -824,7 +1031,7 @@ sub _getMethods {
         'escape' => ['~.']
     };
 
-    my $mosh = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which mosh 1>/dev/null 2>&1") eq 0);
+    my $mosh = PACUtils::which_cached('mosh') ? 1 : 0;
     $methods{'MOSH'} = {
         'installed' => sub {return $mosh ? 1 : "No 'mosh' binary found.\nTo use this option, please, install 'mosh'.";},
         'checkCFG' => sub {
@@ -889,7 +1096,7 @@ sub _getMethods {
         'escape' => ["\c^x."]
     };
 
-    my $cadaver = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which cadaver 1>/dev/null 2>&1") eq 0);
+    my $cadaver = PACUtils::which_cached('cadaver') ? 1 : 0;
     $methods{'WebDAV'} = {
         'installed' => sub {return $cadaver ? 1 : "No 'cadaver' binary found.\nTo use this option, please, install 'cadaver'.";},
         'checkCFG' => sub {
@@ -950,11 +1157,11 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cadaver.png", 16, 16, 0),
+        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cadaver.svg", 16, 16, 0),
         'escape' => ["\cc", "quit\n"]
     };
 
-    my $telnet = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which telnet 1>/dev/null 2>&1") eq 0);
+    my $telnet = PACUtils::which_cached('telnet') ? 1 : 0;
     $methods{'Telnet'} = {
         'installed' => sub {return $telnet ? 1 : "No 'telnet' binary found.\nTo use this option, please, install 'telnet' or 'telnet-ssl'.";},
         'checkCFG' => sub {
@@ -1209,6 +1416,29 @@ sub _getMethods {
     return %methods;
 }
 
+# Helper function to create icons without PACIcons dependency
+sub _createIcon {
+    my ($logical_name, $fallback_stock) = @_;
+    
+    # Try to create from icon name first
+    my $image;
+    if ($logical_name) {
+        eval { $image = Gtk3::Image->new_from_icon_name($logical_name, 'button'); };
+    }
+    
+    # Fallback to stock icon if available
+    if (!$image && $fallback_stock) {
+        eval { $image = Gtk3::Image->new_from_stock($fallback_stock, 'button'); };
+    }
+    
+    # Final fallback to a generic icon
+    if (!$image) {
+        eval { $image = Gtk3::Image->new_from_icon_name('image-missing', 'button'); };
+    }
+    
+    return $image || Gtk3::Image->new();
+}
+
 sub _registerPACIcons {
     my $theme_dir = shift;
     if ($theme_dir) {
@@ -1224,38 +1454,38 @@ sub _registerPACIcons {
         'asbru-app-big' => "$RES_DIR/asbru-logo-64.png",
         'asbru-group-add' => "$THEME_DIR/asbru_group_add_16x16.svg",
         'asbru-node-add' => "$THEME_DIR/asbru_node_add_16x16.svg",
-        'asbru-node-del' => "$THEME_DIR/asbru_node_del_16x16.png",
-        'asbru-chain' => "$THEME_DIR/asbru_chain.png",
-        'asbru-cluster-auto' => "$THEME_DIR/asbru_cluster_auto.png",
-        'asbru-cluster-manager2' => "$THEME_DIR/asbru_cluster_manager2.png",
+    # No explicit asbru_node_del asset; use themed delete icon
+    'asbru-node-del' => "$THEME_DIR/gtk-delete.svg",
+    'asbru-chain' => "$THEME_DIR/asbru_chain.svg",
+    'asbru-cluster-auto' => "$THEME_DIR/asbru_cluster_auto.svg",
+    'asbru-cluster-manager2' => "$THEME_DIR/asbru_cluster_manager2.svg",
         'asbru-cluster-manager' => "$THEME_DIR/asbru_cluster_manager.svg",
         'asbru-cluster-manager-off' => "$THEME_DIR/asbru_cluster_manager_off.svg",
         'asbru-favourite-on' => "$THEME_DIR/asbru_favourite_on.svg",
         'asbru-favourite-off' => "$THEME_DIR/asbru_favourite_off.svg",
         'asbru-group-closed' => "$THEME_DIR/asbru_group_closed_16x16.svg",
-        'asbru-group-closed' => "$THEME_DIR/asbru_group_closed_16x16.svg",
         'asbru-group-open' => "$THEME_DIR/asbru_group_open_16x16.svg",
         'asbru-group' => "$THEME_DIR/asbru_group.svg",
         'asbru-history' => "$THEME_DIR/asbru_history.svg",
-        'asbru-keepass' => "$THEME_DIR/asbru_keepass.png",
-        'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.png",
+    'asbru-keepass' => "$THEME_DIR/asbru_keepass.svg",
+        'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.svg",
         'asbru-method-MOSH' => "$THEME_DIR/asbru_method_mosh.svg",
-        'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.jpg",
-        'asbru-method-Serial (cu)' => "$THEME_DIR/asbru_method_cu.jpg",
+        'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.svg",
+        'asbru-method-Serial (cu)' => "$THEME_DIR/asbru_method_cu.svg",
         'asbru-method-FTP' => "$THEME_DIR/asbru_method_ftp.svg",
         'asbru-method-Generic Command' => "$THEME_DIR/asbru_method_generic.svg",
         'asbru-method-RDP (Windows)' => "$THEME_DIR/asbru_method_rdesktop.svg",
         'asbru-method-RDP (rdesktop)' => "$THEME_DIR/asbru_method_rdesktop.svg",
         'asbru-method-RDP (xfreerdp)' => "$THEME_DIR/asbru_method_rdesktop.svg",
-        'asbru-method-Serial (remote-tty)' => "$THEME_DIR/asbru_method_remote-tty.jpg",
+        'asbru-method-Serial (remote-tty)' => "$THEME_DIR/asbru_method_remote-tty.svg",
         'asbru-method-SFTP' => "$THEME_DIR/asbru_method_sftp.svg",
         'asbru-method-SSH' => "$THEME_DIR/asbru_method_ssh.svg",
         'asbru-method-Telnet' => "$THEME_DIR/asbru_method_telnet.svg",
         'asbru-method-VNC' => "$THEME_DIR/asbru_method_vncviewer.svg",
         'asbru-quick-connect' => "$THEME_DIR/asbru_quick_connect.svg",
-        'asbru-script' => "$THEME_DIR/asbru_script.png",
+    'asbru-script' => "$THEME_DIR/asbru_script.svg",
         'asbru-shell' => "$THEME_DIR/asbru_shell.svg",
-        'asbru-tab' => "$THEME_DIR/asbru_tab.png",
+    'asbru-tab' => "$THEME_DIR/asbru_tab.svg",
         'asbru-terminal-ok-small' => "$RES_DIR/asbru_terminal16x16.png",
         'asbru-terminal-ok-big' => "$RES_DIR/asbru_terminal64x64.png",
         'asbru-terminal-ko-small' => "$RES_DIR/asbru_terminal_x16x16.png",
@@ -1264,28 +1494,21 @@ sub _registerPACIcons {
         'asbru-tray' => "$RES_DIR/asbru-logo-tray.png",
         'asbru-treelist' => "$THEME_DIR/asbru_treelist.svg",
         'asbru-wol' => "$THEME_DIR/asbru_wol.svg",
-        'asbru-prompt' => "$THEME_DIR/asbru_prompt.png",
-        'asbru-protected' => "$THEME_DIR/asbru_protected.png",
-        'asbru-unprotected' => "$THEME_DIR/asbru_unprotected.png",
-        'asbru-buttonbar-show' => "$THEME_DIR/asbru_buttonbar_show.png",
-        'asbru-buttonbar-hide' => "$THEME_DIR/asbru_buttonbar_hide.png",
+    'asbru-prompt' => "$THEME_DIR/asbru_prompt.svg",
+    'asbru-protected' => "$THEME_DIR/asbru_protected.svg",
+    'asbru-unprotected' => "$THEME_DIR/asbru_unprotected.svg",
+    'asbru-buttonbar-show' => "$THEME_DIR/asbru_buttonbar_show.svg",
+    'asbru-buttonbar-hide' => "$THEME_DIR/asbru_buttonbar_hide.svg",
     );
 
-    my $icon_factory = Gtk3::IconFactory->new();
-
-    foreach my $icon (keys %icons) {
-        my $icon_source = Gtk3::IconSource->new();
-        $icon_source->set_filename($icons{$icon});
-
-        my $icon_set = Gtk3::IconSet->new();
-        $icon_set->add_source($icon_source);
-
-        $icon_factory->add($icon, $icon_set);
+    # Use PACCompat for GTK3/GTK4 compatibility
+    my $registered_count = PACCompat::register_icons(\%icons);
+    
+    if ($ENV{ASBRU_DEBUG}) {
+        print STDERR "PACUtils: Registered $registered_count icons using GTK" . PACCompat::get_gtk_version() . "\n";
     }
 
-    $icon_factory->add_default();
-
-    return 1;
+    return $registered_count > 0 ? 1 : 0;
 }
 
 sub _sortTreeData {
@@ -1472,7 +1695,21 @@ sub _wEnterValue {
     if (!defined $default) {
         $default = '';
     } elsif (ref($default)) {
-        @list = @{$default};
+        # Load splash image safely with fallbacks
+        my $img_ok = 0;
+        if (defined $SPLASH_IMG && -r $SPLASH_IMG) {
+            eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new_from_file($SPLASH_IMG); $img_ok = 1; };
+            if ($@) {
+                print STDERR "WARN: Failed to load splash image '$SPLASH_IMG': $@";
+            }
+        }
+        if (!$img_ok) {
+            # Fallback to a stock/icon-name image; if that also fails, use an empty image
+            eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new_from_icon_name('dialog-information', 'dialog'); $img_ok = 1; };
+            if ($@ || !$img_ok) {
+                eval { $WINDOWSPLASH{_IMG} = Gtk3::Image->new(); $img_ok = 1; };
+            }
+        }
     } elsif ($default =~ /.+?\|.+?\|/) {
         @list = split /\|/,$default;
     }
@@ -1494,7 +1731,7 @@ sub _wEnterValue {
     }
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $parent, 'modal');
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
+    my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-entervalue');
@@ -1516,7 +1753,7 @@ sub _wEnterValue {
     $w{window}{gui}{vbox}->pack_start($w{window}{gui}{hbox}, 0, 0, 5);
 
     # Create image
-    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('info',$stock_icon);
+    $w{window}{gui}{img} = _createIcon('dialog-information-symbolic',$stock_icon);
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 5);
 
     # Create 1st label
@@ -1602,7 +1839,7 @@ sub _wAddRenameNode {
 
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME : Enter data", $PACMain::FUNCS{_MAIN}{_GUI}{main}, 'modal');
-    require PACIcons; my $btn_cancel2 = Gtk3::Button->new(); $btn_cancel2->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel2->set_always_show_image(1); $btn_cancel2->set_label('Cancel'); my $btn_ok2 = Gtk3::Button->new(); $btn_ok2->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok2->set_always_show_image(1); $btn_ok2->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel2,'cancel'); $w{window}{data}->add_action_widget($btn_ok2,'ok');
+    my $btn_cancel2 = Gtk3::Button->new(); $btn_cancel2->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel2->set_always_show_image(1); $btn_cancel2->set_label('Cancel'); my $btn_ok2 = Gtk3::Button->new(); $btn_ok2->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok2->set_always_show_image(1); $btn_ok2->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel2,'cancel'); $w{window}{data}->add_action_widget($btn_ok2,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_decorated(0);
     $w{window}{data}->get_style_context()->add_class('w-renamenode');
@@ -1617,7 +1854,7 @@ sub _wAddRenameNode {
     $w{window}{gui}{hbox}->set_border_width(5);
 
     # Create image
-    require PACIcons; $w{window}{gui}{img} = PACIcons::icon_image('edit','gtk-edit');
+    $w{window}{gui}{img} = _createIcon('document-edit-symbolic','gtk-edit');
     $w{window}{gui}{hbox}->pack_start($w{window}{gui}{img}, 0, 1, 0);
 
     # Create 1st label
@@ -1847,7 +2084,7 @@ sub _wMessage {
     }
 
     if ($modal) {
-        require PACIcons; my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
+        my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $windowConfirm->add_action_widget($btn_ok,'ok');
         $windowConfirm->show_all();
         my $close = $windowConfirm->run();
         $windowConfirm->destroy();
@@ -1893,7 +2130,7 @@ sub _wProgress {
         $WINDOWPROGRESS{sep} = Gtk3::HSeparator->new();
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{sep}, 0, 1, 5);
 
-    require PACIcons; $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new(); $WINDOWPROGRESS{btnCancel}->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $WINDOWPROGRESS{btnCancel}->set_always_show_image(1);
+    $WINDOWPROGRESS{btnCancel} = Gtk3::Button->new(); $WINDOWPROGRESS{btnCancel}->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $WINDOWPROGRESS{btnCancel}->set_always_show_image(1);
         $WINDOWPROGRESS{vbox}->pack_start($WINDOWPROGRESS{btnCancel}, 0, 1, 5);
 
         $WINDOWPROGRESS{_GUI}->signal_connect('delete_event' => sub {return 1;});
@@ -1951,7 +2188,7 @@ sub _wConfirm {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    require PACIcons; my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
+    my $btn_no = Gtk3::Button->new(); $btn_no->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
     $windowConfirm->set_default_response($default);
@@ -1981,7 +2218,7 @@ sub _wYesNoCancel {
     $windowConfirm->set_decorated(0);
     $windowConfirm->get_style_context()->add_class('w-confirm');
     $windowConfirm->set_markup($msg);
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_no = Gtk3::Button->new(); $btn_no->set_image(PACIcons::icon_image('no','gtk-no')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(PACIcons::icon_image('yes','gtk-yes')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_cancel,'cancel'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
+    my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_no = Gtk3::Button->new(); $btn_no->set_image(_createIcon('window-close-symbolic','gtk-no')); $btn_no->set_always_show_image(1); $btn_no->set_label('No'); my $btn_yes = Gtk3::Button->new(); $btn_yes->set_image(_createIcon('emblem-ok-symbolic','gtk-yes')); $btn_yes->set_always_show_image(1); $btn_yes->set_label('Yes'); $windowConfirm->add_action_widget($btn_cancel,'cancel'); $windowConfirm->add_action_widget($btn_no,'no'); $windowConfirm->add_action_widget($btn_yes,'yes');
     $windowConfirm->set_icon_name('asbru-app-big');
     $windowConfirm->set_title("Confirm action : $APPNAME");
 
@@ -2930,6 +3167,14 @@ sub _subst {
             my $val = $$CFG{'defaults'}{'global variables'}{$var}{'value'} // '';
             $string =~ s/<GV:$var>/$val/g;
             $ret = $string;
+        } elsif ($asbru_conn) {
+            # In asbru_conn path, attempt an env fallback, otherwise leave token intact
+            # so upstream preflight can detect and report a helpful error.
+            if (exists $ENV{$var}) {
+                my $val = $ENV{$var} // '';
+                $string =~ s/<GV:$var>/$val/g;
+                $ret = $string;
+            }
         }
     }
 
@@ -2986,7 +3231,7 @@ sub _subst {
         # Replace '<CMD:.+>' with the result of executing 'cmd'
         while ($string =~ /<CMD:(.+?)>/go) {
             my $var = $1;
-            my $output = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $var`;
+            my ($output, $e, $c) = run_cmd({ argv => ['/bin/sh','-lc',$var], env => _external_env_hash() });
             chomp $output;
             if ($output =~ /\R/go) {
                 $string =~ s/<CMD:\Q$var\E>/echo "$output"/g;
@@ -3072,7 +3317,7 @@ sub _wakeOnLan {
 
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("$APPNAME (v$APPVERSION) : Wake On LAN", undef, 'modal');
-    require PACIcons; my $btn_cancel3 = Gtk3::Button->new(); $btn_cancel3->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel3->set_always_show_image(1); $btn_cancel3->set_label('Cancel'); my $btn_ok3 = Gtk3::Button->new(); $btn_ok3->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok3->set_always_show_image(1); $btn_ok3->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel3,'cancel'); $w{window}{data}->add_action_widget($btn_ok3,'ok');
+    my $btn_cancel3 = Gtk3::Button->new(); $btn_cancel3->set_image(_createIcon('window-close-symbolic','gtk-cancel')); $btn_cancel3->set_always_show_image(1); $btn_cancel3->set_label('Cancel'); my $btn_ok3 = Gtk3::Button->new(); $btn_ok3->set_image(_createIcon('emblem-ok-symbolic','gtk-ok')); $btn_ok3->set_always_show_image(1); $btn_ok3->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel3,'cancel'); $w{window}{data}->add_action_widget($btn_ok3,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_position('center');
@@ -3114,7 +3359,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entrymac}->grab_focus();
 
     # Create MAC icon widget
-    require PACIcons; $w{window}{gui}{iconmac} = PACIcons::icon_image('failure','gtk-no');
+    $w{window}{gui}{iconmac} = _createIcon('dialog-error-symbolic','gtk-no');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconmac}, 2, 3, 0, 1);
 
     # Create HOST label
@@ -3130,7 +3375,7 @@ sub _wakeOnLan {
     $w{window}{gui}{entryip}->set_activates_default(0);
 
     # Create IP icon widget
-    require PACIcons; $w{window}{gui}{iconip} = PACIcons::icon_image('success','gtk-yes');
+    $w{window}{gui}{iconip} = _createIcon('emblem-ok-symbolic','gtk-yes');
     $w{window}{gui}{table}->attach_defaults($w{window}{gui}{iconip}, 2, 3, 1, 2);
 
     # Create PORT label
@@ -3171,7 +3416,7 @@ sub _wakeOnLan {
             if ($_[0]->get_label ne 'gtk-ok') {
                 return 1;
             }
-            require PACIcons; my $valid = $w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go; my $img = PACIcons::icon_image($valid ? 'success' : 'failure', $valid ? 'gtk-yes' : 'gtk-no'); $w{window}{gui}{iconmac}->set_from_pixbuf($img->get_pixbuf) if $img->get_storage_type eq 'pixbuf';
+            my $valid = $w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go; my $img = _createIcon($valid ? 'emblem-ok-symbolic' : 'dialog-error-symbolic', $valid ? 'gtk-yes' : 'gtk-no'); $w{window}{gui}{iconmac}->set_from_pixbuf($img->get_pixbuf) if $img->get_storage_type eq 'pixbuf';
             $_[0]->set_sensitive($w{window}{gui}{entrymac}->get_chars(0, -1) =~ /^[\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}[:-][\da-fA-F]{2}$/go ? 1 : 0);
         });
         return 0;
@@ -3184,9 +3429,18 @@ sub _wakeOnLan {
         while (Gtk3::events_pending) {
             Gtk3::main_iteration;
         }
-        my $PING = Net::Ping->new('tcp');
-        $PING->tcp_service_check(1);
-        $PING->port_number($ping_port);
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+        # Guard tcp_service_check in case 'echo' is not present in /etc/services
+        eval {
+            $PING->tcp_service_check(1);
+            1;
+        } or do {
+            $PING->tcp_service_check(0);
+            $PING->port_number($default_ping_port);
+        };
+        # If a specific ping port is provided, prefer it
+        $PING->port_number($ping_port) if defined $ping_port;
         my $up = $PING->ping($ip, '1');
         $mac = Net::ARP::arp_lookup('', $ip);
         if (! $mac || ($mac eq 'unknown') || ($mac eq '00:00:00:00:00:00')) {
@@ -3194,7 +3448,7 @@ sub _wakeOnLan {
             $mac = Net::ARP::arp_lookup('', $ip);
             $mac = $mac eq 'unknown' ? '00:00:00:00:00:00' : $mac;
         }
-    require PACIcons; my $img_ip = PACIcons::icon_image($up ? 'status_connected' : 'status_disconnected', $up ? 'gtk-connect' : 'gtk-disconnect'); $w{window}{gui}{iconip}->set_from_pixbuf($img_ip->get_pixbuf) if $img_ip->get_storage_type eq 'pixbuf';
+    my $img_ip = _createIcon($up ? 'network-transmit-receive-symbolic' : 'network-offline-symbolic', $up ? 'gtk-connect' : 'gtk-disconnect'); $w{window}{gui}{iconip}->set_from_pixbuf($img_ip->get_pixbuf) if $img_ip->get_storage_type eq 'pixbuf';
         $w{window}{gui}{entrymac}->set_text($mac);
         $w{window}{gui}{entrymac}->select_region(0, length($mac));
         $w{window}{gui}{lblstatus}->set_text("'$ip' TCP port $ping_port seems to be " . ($up ? 'REACHABLE' : 'UNREACHABLE'));
@@ -3409,6 +3663,11 @@ sub _purgeUnusedOrMissingScreenshots {
 
 sub _getXWindowsList {
     my %list;
+
+    # If Wnck is unavailable (or Wayland session), return empty lists gracefully
+    if (!$WNCK_AVAILABLE || ($PACCompat::DISPLAY_SERVER && $PACCompat::DISPLAY_SERVER ne 'x11')) {
+        return { 'by_xid' => {}, 'by_name' => {} };
+    }
 
     eval {
         my $s = Wnck::Screen::get_default() or die "Failed to get Wnck screen";
@@ -3725,8 +3984,9 @@ sub _makeDesktopFile {
     my $cfg = shift;
 
     if (! $$cfg{'defaults'}{'show favourites in unity'}) {
-        unlink "$ENV{HOME}/.local/share/applications/asbru.desktop";
-        system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-desktop-menu forceupdate &");
+    unlink "$ENV{HOME}/.local/share/applications/asbru.desktop";
+    my $xdg = which_cached('xdg-desktop-menu') || '/usr/bin/xdg-desktop-menu';
+    run_cmd({ argv => [$xdg, 'forceupdate'], env => _external_env_hash() });
         return 1;
     }
 
@@ -3771,7 +4031,8 @@ sub _makeDesktopFile {
     open F, ">$ENV{HOME}/.local/share/applications/asbru.desktop" or return 0;
     print F "$d\n$dal\n$da\n";
     close F;
-    system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} /usr/bin/xdg-desktop-menu forceupdate &");
+    my $xdg = which_cached('xdg-desktop-menu') || '/usr/bin/xdg-desktop-menu';
+    run_cmd({ argv => [$xdg, 'forceupdate'], env => _external_env_hash() });
 
     return 1;
 }

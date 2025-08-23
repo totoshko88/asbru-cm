@@ -25,17 +25,33 @@ The original Ásbrú Connection Manager project has compatibility issues with mo
 
 ### 🆕 **Modern Features**
 
-- **COSMIC Desktop Support**: Native integration with System76's COSMIC desktop environment
-- **Enhanced Theme Detection**: Automatic system theme detection with 5-second caching for performance
-- **Improved Error Handling**: Safe widget management preventing application freezes
-- **Better Debugging**: Enhanced debug output for easier troubleshooting
+
+## Tested on this system
+
+This fork has been validated on the maintainer's workstation:
+
+- OS: openSUSE Tumbleweed (20250727)
+- Kernel: 6.15.8-1-default x86_64
+- Desktop: KDE Plasma on Wayland (XDG_SESSION_TYPE=wayland)
+- Perl: 5.42.0
+- Tooling: rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
+
+Connection tests and UI smoke checks were executed; protocol mocks are skipped if Test::MockObject is missing.
+
+## This fork
+
+Modernization-focused fork; additionally tested on:
+- openSUSE Tumbleweed 20250727, kernel 6.15.8-1-default, KDE (Wayland)
+- Perl 5.42.0, rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
+
+See `RELEASE_NOTES_7.1.0.md` for 7.1.0 highlights.
 
 ## 📦 Quick Installation
 
 ### From Debian Package (Recommended)
 ```bash
-wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.0.1_all.deb
-sudo dpkg -i asbru-cm_7.0.1_all.deb
+wget https://github.com/totoshko88/asbru-cm/releases/latest/download/asbru-cm_7.1.0_all.deb
+sudo dpkg -i asbru-cm_7.1.0_all.deb
 sudo apt -f install  # Resolve dependencies if needed
 ```
 
@@ -78,6 +94,13 @@ ls dist/rpm/build/RPMS/noarch/*.rpm
 - **Tabbed Interface**: Organized workspace with tab management
 - **Proxy Support**: Connect through proxy servers
 - **Variables System**: Local and global variables for password management
+
+### ✅ Tested Protocol Coverage
+- SSH, Telnet, SFTP: containerized linuxserver/openssh-server and utility checks
+- GUI (VNC-like): linuxserver/webtop for end-to-end GUI readiness
+- RDP: linuxserver/rdesktop for connectivity; xfreerdp recommended for embedding
+
+Comprehensive protocol and app-level E2E tests run headlessly and validate connection success via stdout control markers.
 
 ## 🐛 Environment Variables
 
@@ -141,6 +164,12 @@ rdesktop -X 52442142 -g 740x443 -u 'user' -p 'password' server:3389
 ## 🔗 Original Project
 
 This fork is based on the excellent work of the original [Ásbrú Connection Manager](https://github.com/asbru-cm/asbru-cm) team. For the full project history, extensive documentation, and upstream development, please visit the original repository.
+
+## 🎨 Logo & Cultural Symbolism
+
+The Ásbrú name evokes the rainbow bridge motif in Norse tradition. In Slavic and Ukrainian culture, the rainbow bridge (Калинів міст / Kalyniv Mist) symbolizes connection and resilience. This project embraces that universal symbolism of bridges—linking systems and people across distances.
+
+Logo assets are used under the project's GPLv3 license with attribution to the original authors.
 
 ## 📄 License
 

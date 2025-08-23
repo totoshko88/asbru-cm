@@ -50,7 +50,7 @@ use Glib qw/TRUE FALSE/;
 my $APPNAME = $PACUtils::APPNAME;
 my $APPVERSION = $PACUtils::APPVERSION;
 my $APPICON = "$RealBin/res/asbru-logo-64.png";
-my $TRAYICON = "$RealBin/res/asbru-logo-tray.png";
+my $TRAYICON = "$RealBin/res/asbru_terminal64x64.png";
 my $GROUPICON_ROOT = _pixBufFromFile("$RealBin/res/themes/default/asbru_group.svg");
 my $CALLBACKS_INITIALIZED = 0;
 
@@ -141,8 +141,8 @@ sub _initGUI {
     my $embedded = $$self{_TRAY}->is_embedded();
     $$self{_MAIN}{_CFG}{'tmp'}{'tray available'} = $embedded ? 1 : 'warning';
 
-    # Cosmic shell (Pop!_OS) no legacy tray: provide small helper window substitute
-    if (!$embedded && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /COSMIC/i)) {
+    # Cosmic shell has no legacy tray: provide small helper window substitute when detected
+    if (!$embedded && !$ENV{ASBRU_DISABLE_COSMIC} && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /cosmic/i)) {
         print "INFO: Desktop environment detected: cosmic\n";
         print "INFO: Using Cosmic tray integration (initializing)\n";
         
@@ -241,7 +241,7 @@ sub _initGUI {
             });
             $helper->show_all();
             
-            # Position in the top-right corner for COSMIC
+            # Position in the top-right corner for Cosmic
             my $screen = eval { Gtk3::Gdk::Screen::get_default(); };
             Glib::Idle->add(sub {
                 my $w = 1600; # Cosmic default width for your screen  
@@ -250,7 +250,7 @@ sub _initGUI {
                     eval { $w = $screen->get_width; $h = $screen->get_height; 1 } or do { $w = 1600; $h = 900; };
                 }
                 
-                # Position in top-right corner for COSMIC desktop
+                # Position in top-right corner for Cosmic desktop
                 my $x = $w - 48;  # 48px from right edge 
                 my $y = 8;        # 8px from top edge (COSMIC has top panel)
                 
@@ -353,7 +353,11 @@ sub _trayMenu {
     push(@m, {label => 'Show Window', logical_icon => 'home_action', stockicon => 'gtk-home', code => sub {$$self{_MAIN}->_showConnectionsList();}});
     push(@m, {separator => 1});
     push(@m, {label => 'About', logical_icon => 'about_action', stockicon => 'gtk-about', code => sub {$$self{_MAIN}->_showAboutWindow();}});
-    push(@m, {label => 'Exit', logical_icon => 'quit_action', stockicon => 'gtk-quit', code => sub {$$self{_MAIN}->_quitProgram();}});
+    if ($ENV{ASBRU_DEBUG}) {
+        push(@m, {label => 'Exit', logical_icon => 'quit_action', stockicon => 'gtk-quit', code => sub { print STDERR "DEBUG: Tray Exit ignored under ASBRU_DEBUG\n"; }});
+    } else {
+        push(@m, {label => 'Exit', logical_icon => 'quit_action', stockicon => 'gtk-quit', code => sub {$$self{_MAIN}->_quitProgram();}});
+    }
 
     _wPopUpMenu(\@m, $event, 'below calling widget');
 

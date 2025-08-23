@@ -270,7 +270,7 @@ sub _detectThemeVariant {
     return 'dark' if $gtk_theme =~ /dark/i;
     
     # Method 2: Check gsettings for color scheme
-    my $color_scheme = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null`;
+    my ($color_scheme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
     chomp $color_scheme if $color_scheme;
     if ($color_scheme && $color_scheme =~ /prefer-dark/) {
         return 'dark';

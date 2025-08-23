@@ -132,13 +132,30 @@ sub update {
         $$self{frame}{fcbKeePassKeyFile}->set_filename($key);
         $$self{kpxc_keyfile_opt} = "--key-file '$key'";
     }
-    $$self{frame}{hboxkpmain}->set_sensitive($$self{cfg}{use_keepass});
+    
+    # Update sensitivity for modern interface elements
+    if ($$self{frame}{frameMain}) {
+        $$self{frame}{frameMain}->set_sensitive($$self{cfg}{use_keepass});
+    }
+    # Legacy compatibility
+    if ($$self{frame}{hboxkpmain}) {
+        $$self{frame}{hboxkpmain}->set_sensitive($$self{cfg}{use_keepass});
+    }
+    
     if (!$$self{cfg}{use_keepass}) {
         return 1;
     }
     $$self{frame}{entryKeePassPassword}->set_text($$self{cfg}{'password'});
     $$self{frame}{cbUseKeePass}->set_active($$self{cfg}{use_keepass});
-    $$self{frame}{hboxkpmain}->set_sensitive($$self{cfg}{use_keepass});
+    
+    # Update sensitivity again for modern interface
+    if ($$self{frame}{frameMain}) {
+        $$self{frame}{frameMain}->set_sensitive($$self{cfg}{use_keepass});
+    }
+    # Legacy compatibility
+    if ($$self{frame}{hboxkpmain}) {
+        $$self{frame}{hboxkpmain}->set_sensitive($$self{cfg}{use_keepass});
+    }
     if ($$self{cfg}{'password'}) {
         $KPXC_MP = $$self{cfg}{'password'};
         $ENV{'KPXC_MP'} = $$self{cfg}{'password'};
@@ -263,14 +280,21 @@ sub getFieldValue {
         if ($$cfg{password}) {
             $KPXC_MP = $$cfg{password};
         } else {
-            $self->getMasterPassword();
+            # Need to get parent window for password dialog
+            my $parent = $PACMain::FUNCS{_MAIN}{_WINDOWCONFIG} || undef;
+            $self->getMasterPassword($parent);
             if (!$KPXC_MP) {
                 # We could not get a valid password
                 return ('Bad key/master password',0);
             }
         }
     }
-    $pid = open3(*Writer, *Reader, *ErrReader, "$CLI $$self{kpxc_cli} show $$self{kpxc_show_protected} $$self{kpxc_keyfile_opt} '$$cfg{database}' '$uid'");
+    # Safely execute keepassxc-cli with proper error handling
+    my $cmd = "$CLI $$self{kpxc_cli} show $$self{kpxc_show_protected} $$self{kpxc_keyfile_opt} '$$cfg{database}' '$uid'";
+    $pid = open3(*Writer, *Reader, *ErrReader, $cmd);
+    if (!defined $pid) {
+        return ('Failed to execute keepassxc-cli', 0);
+    }
     print Writer "$KPXC_MP\n";
     close Writer;
     @out = <Reader>;
@@ -299,9 +323,15 @@ sub get_cfg {
 
     my %hash;
     $hash{use_keepass} = $$self{frame}{'cbUseKeePass'}->get_active();
-    $hash{database} = decode('utf8',$$self{frame}{'fcbKeePassFile'}->get_filename());
-    $hash{pathcli} = decode('utf8',$$self{frame}{'fcbCliFile'}->get_filename());
-    $hash{keyfile} = decode('utf8',$$self{frame}{'fcbKeePassKeyFile'}->get_filename());
+    
+    # Safe filename retrieval with null checking
+    my $db_file = $$self{frame}{'fcbKeePassFile'}->get_filename();
+    my $cli_file = $$self{frame}{'fcbCliFile'}->get_filename();
+    my $key_file = $$self{frame}{'fcbKeePassKeyFile'}->get_filename();
+    
+    $hash{database} = $db_file ? decode('utf8', $db_file) : '';
+    $hash{pathcli} = $cli_file ? decode('utf8', $cli_file) : '';
+    $hash{keyfile} = $key_file ? decode('utf8', $key_file) : '';
     if ((!defined $hash{database})||(-d $hash{database})||(!-e $hash{database})) {
         $hash{database} = '';
         $$self{disable_keepassxc} = 1;
@@ -339,12 +369,26 @@ sub listEntries {
             $KPXC_MP = $$self{cfg}{password};
             $ENV{'KPXC_MP'} = $$self{cfg}{password};
         } else {
-            getMasterPassword($self, $parent);
+            $self->getMasterPassword($parent);
         }
     }
     # Create the dialog window,
     $w{window}{data} = Gtk3::Dialog->new_with_buttons("KeePassXC Search", $parent, 'modal');
-    require PACIcons; my $btn_cancel = Gtk3::Button->new(); $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); $btn_cancel->set_always_show_image(1); $btn_cancel->set_label('Cancel'); my $btn_ok = Gtk3::Button->new(); $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); $btn_ok->set_always_show_image(1); $btn_ok->set_label('OK'); $w{window}{data}->add_action_widget($btn_cancel,'cancel'); $w{window}{data}->add_action_widget($btn_ok,'ok');
+    
+    # Create dialog buttons with proper formatting
+    require PACIcons; 
+    my $btn_cancel = Gtk3::Button->new(); 
+    $btn_cancel->set_image(PACIcons::icon_image('cancel','gtk-cancel')); 
+    $btn_cancel->set_always_show_image(1); 
+    $btn_cancel->set_label('Cancel'); 
+    
+    my $btn_ok = Gtk3::Button->new(); 
+    $btn_ok->set_image(PACIcons::icon_image('ok','gtk-ok')); 
+    $btn_ok->set_always_show_image(1); 
+    $btn_ok->set_label('OK'); 
+    
+    $w{window}{data}->add_action_widget($btn_cancel,'cancel'); 
+    $w{window}{data}->add_action_widget($btn_ok,'ok');
     # and setup some dialog properties.
     $w{window}{data}->set_default_response('ok');
     $w{window}{data}->set_icon_name('asbru-app-big');
@@ -398,7 +442,8 @@ sub listEntries {
                     next;
                 }
                 $el =~ s/\n//g;
-                $el = decode('UTF-8', $el);
+                # Use consistent UTF-8 encoding
+                $el = decode('utf8', $el);
                 push(@{$w{window}{gui}{treelist}{'data'}}, {value => [ $el ], children => []});
             }
         }
@@ -421,7 +466,10 @@ sub listEntries {
         my $selection = $w{window}{gui}{treelist}->get_selection();
         my $model = $w{window}{gui}{treelist}->get_model();
         my @paths = _getSelectedRows($selection);
-        $entry = $model->get_value($model->get_iter($paths[0]),0);
+        # Check if selection exists before accessing
+        if (@paths && $model) {
+            $entry = $model->get_value($model->get_iter($paths[0]),0);
+        }
     }
 
     $w{window}{data}->destroy();
@@ -576,106 +624,200 @@ sub _buildKeePassGUI {
     $$self{container} = $w{vbox};
     $$self{frame} = \%w;
 
+    # Header box with title checkbox and help button (consistent with main interface)
+    $w{hboxHeader} = Gtk3::HBox->new(0, 5);
+    $w{vbox}->pack_start($w{hboxHeader}, 0, 0, 0);
+
     # Option to activate KeePass use (or not)
     $w{cbUseKeePass} = Gtk3::CheckButton->new('Activate use of a KeePass database file');
-    $w{cbUseKeePass}->set_margin_top(10);
+    $w{cbUseKeePass}->set_margin_top(5);
     $w{cbUseKeePass}->set_margin_bottom(5);
     $w{cbUseKeePass}->set_halign('GTK_ALIGN_START');
+    $w{hboxHeader}->pack_start($w{cbUseKeePass}, 1, 1, 0);
 
-    # Build 'help' button
-    $w{help} = Gtk3::LinkButton->new('https://docs.asbru-cm.net/Manual/Preferences/KeePassXC/');
-    $w{help}->set_halign('GTK_ALIGN_END');
-    $w{help}->set_label('');
+    # Build modern 'help' button (consistent with main interface standard)
+    $w{help} = Gtk3::Button->new();
     $w{help}->set_tooltip_text('Open Online Help');
+    $w{help}->set_relief('none');
     $w{help}->set_always_show_image(1);
-    require PACIcons; $w{help}->set_image(PACIcons::icon_image('help','asbru-help'));
+    $w{help}->set_focus_on_click(0);
+    $w{help}->set_halign('GTK_ALIGN_END');
+    $w{help}->set_margin_left(0);
+    $w{help}->set_margin_right(0);
+    $w{help}->set_margin_top(0);
+    $w{help}->set_margin_bottom(0);
+    $w{help}->set_size_request(20, 20);
+    # Set minimal padding using CSS
+    my $css_provider = Gtk3::CssProvider->new();
+    $css_provider->load_from_data("button { padding: 0; min-width: 0; min-height: 0; }");
+    $w{help}->get_style_context()->add_provider($css_provider, 800);
+    require PACIcons; $w{help}->set_image(PACIcons::icon_image('help_link', 'help-browser'));
+    $w{hboxHeader}->pack_start($w{help}, 0, 0, 0);
 
-    # Hbox to arrange first
-    $w{hbox} = Gtk3::HBox->new(1,0);
-    $w{hbox}->pack_start($w{cbUseKeePass}, 0, 1, 0);
-    $w{hbox}->pack_start($w{help},0,1,0);
-    $w{vbox}->pack_start($w{hbox}, 0, 0, 0);
+    # Add modern description text with better formatting
+    $w{lblDescription} = Gtk3::Label->new();
+    $w{lblDescription}->set_markup('<i>Ásbrú is using the command line interface of <a href="https://keepassxc.org">KeePassXC</a> to read any KeePass database file and use any entry to automate connection inside Ásbrú.</i>');
+    $w{lblDescription}->set_line_wrap(1);
+    $w{lblDescription}->set_line_wrap_mode('PANGO_WRAP_WORD_CHAR');
+    $w{lblDescription}->set_xalign(0);
+    $w{lblDescription}->set_margin_top(5);
+    $w{lblDescription}->set_margin_bottom(15);
+    $w{lblDescription}->set_margin_left(10);
+    $w{lblDescription}->set_margin_right(10);
+    $w{vbox}->pack_start($w{lblDescription}, 0, 0, 0);
 
-    $w{hboxkpmain} = Gtk3::HBox->new(0, 4);
-    $w{vbox}->pack_start($w{hboxkpmain}, 0, 1, 3);
+    # Modern main configuration section with better spacing
+    $w{frameMain} = Gtk3::Frame->new();
+    $w{frameMain}->set_shadow_type('in');
+    $w{frameMain}->set_margin_left(5);
+    $w{frameMain}->set_margin_right(5);
+    $w{frameMain}->set_margin_bottom(10);
+    $w{vbox}->pack_start($w{frameMain}, 0, 1, 0);
 
-    $w{dblabel} = Gtk3::Label->new('Database file');
-    $w{dblabel}->set_size_request($width,-1);
-    $w{dblabel}->set_xalign(0);
-    $w{hboxkpmain}->pack_start($w{dblabel}, 0, 0, 0);
+    $w{vboxMain} = Gtk3::VBox->new(0, 8);
+    $w{vboxMain}->set_margin_left(10);
+    $w{vboxMain}->set_margin_right(10);
+    $w{vboxMain}->set_margin_top(10);
+    $w{vboxMain}->set_margin_bottom(10);
+    $w{frameMain}->add($w{vboxMain});
 
-    $w{fcbKeePassFile} = Gtk3::FileChooserButton->new('','GTK_FILE_CHOOSER_ACTION_OPEN');
+    # Database file selection row
+    $w{hboxDbFile} = Gtk3::HBox->new(0, 8);
+    $w{vboxMain}->pack_start($w{hboxDbFile}, 0, 0, 0);
+
+    $w{lblDbFile} = Gtk3::Label->new('Database file:');
+    $w{lblDbFile}->set_size_request($width, -1);
+    $w{lblDbFile}->set_xalign(0);
+    $w{lblDbFile}->set_markup('<b>Database file:</b>');
+    $w{hboxDbFile}->pack_start($w{lblDbFile}, 0, 0, 0);
+
+    $w{fcbKeePassFile} = Gtk3::FileChooserButton->new('Select KeePass database', 'GTK_FILE_CHOOSER_ACTION_OPEN');
     $w{fcbKeePassFile}->set_show_hidden(0);
-    $w{hboxkpmain}->pack_start($w{fcbKeePassFile}, 0, 0, 0);
+    $w{hboxDbFile}->pack_start($w{fcbKeePassFile}, 1, 1, 0);
 
-    $w{btnClearPassFile} = Gtk3::Button->new('Clear');
-    $w{hboxkpmain}->pack_start($w{btnClearPassFile}, 0, 1, 0);
+    $w{btnClearPassFile} = Gtk3::Button->new_with_label('Clear');
+    $w{btnClearPassFile}->set_tooltip_text('Clear database file selection');
+    $w{hboxDbFile}->pack_start($w{btnClearPassFile}, 0, 0, 5);
 
-    $w{hboxkpmain}->pack_start(Gtk3::Label->new('Master Password'), 0, 1, 0);
+    # Master password row
+    $w{hboxPassword} = Gtk3::HBox->new(0, 8);
+    $w{vboxMain}->pack_start($w{hboxPassword}, 0, 0, 0);
+
+    $w{lblPassword} = Gtk3::Label->new();
+    $w{lblPassword}->set_markup('<b>Master Password:</b>');
+    $w{lblPassword}->set_size_request($width, -1);
+    $w{lblPassword}->set_xalign(0);
+    $w{hboxPassword}->pack_start($w{lblPassword}, 0, 0, 0);
+
     $w{entryKeePassPassword} = Gtk3::Entry->new();
-    $w{hboxkpmain}->pack_start($w{entryKeePassPassword}, 1, 1, 5);
     $w{entryKeePassPassword}->set_visibility(0);
+    $w{entryKeePassPassword}->set_placeholder_text('Enter master password');
+    $w{hboxPassword}->pack_start($w{entryKeePassPassword}, 1, 1, 0);
 
-    # Key file selection
-    $w{hboxkpkeyfile} = Gtk3::HBox->new(0, 3);
-    $w{keylabel} = Gtk3::Label->new('Key file');
-    $w{vbox}->pack_start($w{hboxkpkeyfile}, 0, 1, 0);
-    $w{hboxkpkeyfile}->pack_start($w{keylabel}, 0, 0, 0);
-    $w{keylabel}->set_size_request($width,-1);
-    $w{keylabel}->set_xalign(0);
-    $w{fcbKeePassKeyFile} = Gtk3::FileChooserButton->new('','GTK_FILE_CHOOSER_ACTION_OPEN');
+    # Key file selection row
+    $w{hboxKeyFile} = Gtk3::HBox->new(0, 8);
+    $w{vboxMain}->pack_start($w{hboxKeyFile}, 0, 0, 0);
+
+    $w{lblKeyFile} = Gtk3::Label->new();
+    $w{lblKeyFile}->set_markup('<b>Key file:</b>');
+    $w{lblKeyFile}->set_size_request($width, -1);
+    $w{lblKeyFile}->set_xalign(0);
+    $w{hboxKeyFile}->pack_start($w{lblKeyFile}, 0, 0, 0);
+
+    $w{fcbKeePassKeyFile} = Gtk3::FileChooserButton->new('Select key file (optional)', 'GTK_FILE_CHOOSER_ACTION_OPEN');
     $w{fcbKeePassKeyFile}->set_show_hidden(0);
-    $w{hboxkpkeyfile}->pack_start($w{fcbKeePassKeyFile}, 0, 1, 0);
+    $w{hboxKeyFile}->pack_start($w{fcbKeePassKeyFile}, 1, 1, 0);
 
-    $w{btnClearkeyfile} = Gtk3::Button->new('Clear');
-    $w{hboxkpkeyfile}->pack_start($w{btnClearkeyfile}, 0, 1, 0);
+    $w{btnClearKeyFile} = Gtk3::Button->new_with_label('Clear');
+    $w{btnClearKeyFile}->set_tooltip_text('Clear key file selection');
+    $w{hboxKeyFile}->pack_start($w{btnClearKeyFile}, 0, 0, 5);
 
-    $w{btnClearkeyfile}->signal_connect('clicked' => sub {
+    # Update clear button functionality
+    $w{btnClearKeyFile}->signal_connect('clicked' => sub {
         $w{fcbKeePassKeyFile}->set_uri("file://$ENV{'HOME'}");
         $w{fcbKeePassKeyFile}->unselect_uri("file://$ENV{'HOME'}");
     });
+    
+    # Disable key file section if not supported
     if (!$$self{kpxc_keyfile}) {
-        $w{hboxkpkeyfile}->set_sensitive(0);
+        $w{hboxKeyFile}->set_sensitive(0);
     }
 
-    # CLI binary selection
-    $w{clilabel} = Gtk3::Label->new('keepassxc-cli binary');
-    $w{clilabel}->set_size_request($width,-1);
-    $w{clilabel}->set_xalign(0);
-    $w{clilabel}->set_tooltip_text("Specify the keepassxc-cli binary file to use.\nIf not specified, the system wide keepassxc-cli will be used.");
-    $w{fcbCliFile} = Gtk3::FileChooserButton->new('','GTK_FILE_CHOOSER_ACTION_OPEN');
-    $w{fcbCliFile}->set_show_hidden(0);
-    $w{btnClearclifile} = Gtk3::Button->new('Clear');
-    $w{hboxkpclifile} = Gtk3::HBox->new(0, 3);
-    $w{hboxkpclifile}->pack_start($w{clilabel}, 0, 0, 0);
-    $w{hboxkpclifile}->pack_start($w{fcbCliFile}, 0, 1, 0);
-    $w{hboxkpclifile}->pack_start($w{btnClearclifile}, 0, 1, 0);
-    $w{vbox}->pack_start($w{hboxkpclifile}, 0, 1, 2);
+    # CLI binary selection row
+    $w{hboxCliBinary} = Gtk3::HBox->new(0, 8);
+    $w{vboxMain}->pack_start($w{hboxCliBinary}, 0, 0, 0);
 
-    # Information about the selected keepassxc-cli
+    $w{lblCliBinary} = Gtk3::Label->new();
+    $w{lblCliBinary}->set_markup('<b>CLI Binary:</b>');
+    $w{lblCliBinary}->set_size_request($width, -1);
+    $w{lblCliBinary}->set_xalign(0);
+    $w{lblCliBinary}->set_tooltip_text("Specify the keepassxc-cli binary file to use.\nIf not specified, the system wide keepassxc-cli will be used.");
+    $w{hboxCliBinary}->pack_start($w{lblCliBinary}, 0, 0, 0);
+
+    $w{fcbCliFile} = Gtk3::FileChooserButton->new('Select keepassxc-cli binary (optional)', 'GTK_FILE_CHOOSER_ACTION_OPEN');
+    $w{fcbCliFile}->set_show_hidden(0);
+    $w{hboxCliBinary}->pack_start($w{fcbCliFile}, 1, 1, 0);
+
+    $w{btnClearCliBinary} = Gtk3::Button->new_with_label('Clear');
+    $w{btnClearCliBinary}->set_tooltip_text('Use system wide keepassxc-cli');
+    $w{hboxCliBinary}->pack_start($w{btnClearCliBinary}, 0, 0, 5);
+
+    # Add signal handler for CLI binary clear button
+    $w{btnClearCliBinary}->signal_connect('clicked' => sub {
+        $w{fcbCliFile}->set_uri("file://$ENV{'HOME'}");
+        $w{fcbCliFile}->unselect_uri("file://$ENV{'HOME'}");
+        _updateUsage($self);
+    });
+
+    # Information section with better formatting
+    $w{separatorInfo} = Gtk3::Separator->new('horizontal');
+    $w{separatorInfo}->set_margin_top(15);
+    $w{separatorInfo}->set_margin_bottom(10);
+    $w{vbox}->pack_start($w{separatorInfo}, 0, 0, 0);
+
+    $w{frameInfo} = Gtk3::Frame->new();
+    $w{frameInfo}->set_shadow_type('in');
+    $w{frameInfo}->set_margin_left(5);
+    $w{frameInfo}->set_margin_right(5);
+    $w{frameInfo}->set_margin_bottom(5);
+    $w{vbox}->pack_start($w{frameInfo}, 0, 1, 0);
+
+    $w{vboxInfo} = Gtk3::VBox->new(0, 5);
+    $w{vboxInfo}->set_margin_left(10);
+    $w{vboxInfo}->set_margin_right(10);
+    $w{vboxInfo}->set_margin_top(10);
+    $w{vboxInfo}->set_margin_bottom(10);
+    $w{frameInfo}->add($w{vboxInfo});
+
     $w{intro_usage} = Gtk3::Label->new();
-    $w{intro_usage}->set_markup("Information about <i>keepassxc-cli</i> currently in use:");
+    $w{intro_usage}->set_markup("<b>Information about <i>keepassxc-cli</i> currently in use:</b>");
     $w{intro_usage}->set_halign('start');
-    $w{intro_usage}->set_margin_top(24);
+    $w{vboxInfo}->pack_start($w{intro_usage}, 0, 0, 0);
+
     $w{usage} = Gtk3::Label->new();
     $w{usage}->set_halign('start');
-    $w{usage}->set_margin_top(4);
+    $w{usage}->set_margin_top(8);
     $w{usage}->set_margin_left(8);
-    $w{vbox}->pack_start($w{intro_usage}, 0, 1, 0);
-    $w{vbox}->pack_start($w{usage}, 0, 1, 0);
+    $w{usage}->set_line_wrap(1);
+    $w{usage}->set_line_wrap_mode('PANGO_WRAP_WORD_CHAR');
+    $w{vboxInfo}->pack_start($w{usage}, 0, 0, 0);
 
-    $w{hboxkpmain}->set_sensitive($$self{cfg}{use_keepass});
-    $w{hboxkpclifile}->set_sensitive($$self{cfg}{use_keepass});
-    if ($$self{kpxc_keyfile}) {
-        $w{hboxkpkeyfile}->set_sensitive($$self{cfg}{use_keepass});
-    }
+    # Update sensitivity based on KeePass activation
+    $w{frameMain}->set_sensitive($$self{cfg}{use_keepass});
+    $w{frameInfo}->set_sensitive($$self{cfg}{use_keepass});
 
     _updateUsage($self);
 
-    # Register callbacks
+    # Register callbacks with modern interface updates
     $w{cbUseKeePass}->signal_connect('toggled', sub {
-        if ($w{cbUseKeePass}->get_active()) {
-            $$self{cfg}{use_keepass} = 1;
+        my $active = $w{cbUseKeePass}->get_active();
+        $$self{cfg}{use_keepass} = $active;
+        
+        # Update interface sensitivity
+        $w{frameMain}->set_sensitive($active);
+        $w{frameInfo}->set_sensitive($active);
+        
+        if ($active) {
             $self->_setCapabilities();
         }
         $self->_updateUsage();
@@ -690,7 +832,8 @@ sub _buildKeePassGUI {
         }
     });
 
-    $w{btnClearclifile}->signal_connect('clicked' => sub {
+    # CLI binary clear button signal handler
+    $w{btnClearCliBinary}->signal_connect('clicked' => sub {
         $$self{cfg}{pathcli} = '';
         $CLI = 'keepassxc-cli';
         $w{fcbCliFile}->set_uri("file://$ENV{'HOME'}");
@@ -719,6 +862,12 @@ sub _buildKeePassGUI {
                 $fc->unselect_uri("file://$ENV{'HOME'}");
             }
         }
+    });
+
+    # Help button click handler with URL safety
+    $w{help}->signal_connect('clicked' => sub {
+        my $url = 'https://docs.asbru-cm.net/Manual/Preferences/KeePassXC/';
+        PACUtils::open_url($url);
     });
 
     return 1;
@@ -751,10 +900,26 @@ sub _updateUsage {
         $$w{cbUseKeePass}->set_active(0);
     }
     $$w{usage}->set_markup($capabilities);
-    $$w{hboxkpmain}->set_sensitive($$w{cbUseKeePass}->get_active());
-    $$w{hboxkpclifile}->set_sensitive($$w{cbUseKeePass}->get_active());
-    if ($$self{kpxc_keyfile} || $$w{cbUseKeePass}->get_active()==0 || $$self{disable_keepassxc}) {
-        $$w{hboxkpkeyfile}->set_sensitive($$w{cbUseKeePass}->get_active());
+    
+    # Update sensitivity for modern interface elements
+    if ($$w{frameMain}) {
+        $$w{frameMain}->set_sensitive($$w{cbUseKeePass}->get_active());
+    }
+    if ($$w{frameInfo}) {
+        $$w{frameInfo}->set_sensitive($$w{cbUseKeePass}->get_active());
+    }
+    
+    # Legacy compatibility for connections that don't use modern interface
+    if ($$w{hboxkpmain}) {
+        $$w{hboxkpmain}->set_sensitive($$w{cbUseKeePass}->get_active());
+    }
+    if ($$w{hboxkpclifile}) {
+        $$w{hboxkpclifile}->set_sensitive($$w{cbUseKeePass}->get_active());
+    }
+    if ($$w{hboxkpkeyfile}) {
+        if ($$self{kpxc_keyfile} || $$w{cbUseKeePass}->get_active()==0 || $$self{disable_keepassxc}) {
+            $$w{hboxkpkeyfile}->set_sensitive($$w{cbUseKeePass}->get_active());
+        }
     }
 }
 
@@ -791,7 +956,12 @@ sub _setCapabilities {
     if ($$self{_VERBOSE}) {
         print "DEBUG:KEEPASS: $CLI $$self{kpxc_cli}\n";
     }
-    $$self{kpxc_version} = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -v 2>/dev/null`;
+    # Safely get version with timeout protection
+    my @vargv = ($CLI);
+    push @vargv, $$self{kpxc_cli} if $$self{kpxc_cli};
+    push @vargv, '-v';
+    my ($vout, $verr, $vcode) = PACUtils::run_cmd({ argv => \@vargv, env => PACUtils::_external_env_hash() });
+    $$self{kpxc_version} = $vout;
     $$self{kpxc_version} =~ s/\n//g;
     if ($$self{kpxc_version} !~ /[0-9]+\.[0-9]+\.[0-9]+/) {
         # Invalid version number, user did not select a valid KeePassXC file
@@ -809,7 +979,8 @@ sub _setCapabilities {
             # Test if we have a system wide installation
             $$self{kpxc_cli} = '';
             $CLI = 'keepassxc-cli';
-            $$self{kpxc_version} = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI -v 2>/dev/null`;
+            (my $o2, my $e2, my $c2) = PACUtils::run_cmd({ argv => ['keepassxc-cli', '-v'], env => PACUtils::_external_env_hash() });
+            $$self{kpxc_version} = $o2;
             $$self{kpxc_version} =~ s/\n//g;
             if (!$$self{kpxc_version}) {
                 # We do not have keepassxc-cli available, the user defined is not working
@@ -819,7 +990,11 @@ sub _setCapabilities {
             }
         }
     }
-    $c = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $CLI $$self{kpxc_cli} -h show 2>&1`;
+    my @hargv = ($CLI);
+    push @hargv, $$self{kpxc_cli} if $$self{kpxc_cli};
+    push @hargv, ('-h', 'show');
+    (my $ho, my $he, my $hc) = PACUtils::run_cmd({ argv => \@hargv, env => PACUtils::_external_env_hash() });
+    $c = $ho . $he;
     if ($c =~ /--key-file/) {
         $$self{kpxc_keyfile} = '--key-file';
     }
@@ -842,7 +1017,14 @@ sub _hasCacheValue {
     } else {
         $cfg = $self->get_cfg();
     }
-    $ts = stat($$cfg{database})->mtime;
+    
+    # Safety check for database file existence
+    return 0 unless $cfg && $$cfg{database} && -f $$cfg{database};
+    
+    my $stat_obj = stat($$cfg{database});
+    return 0 unless $stat_obj;
+    
+    $ts = $stat_obj->mtime;
 
     # Check if the cache should be created or invalidated
     if (!%KPXC_CACHE || ($KPXC_CACHE_TIMESTAMP && $KPXC_CACHE_TIMESTAMP < $ts)) {
@@ -851,6 +1033,21 @@ sub _hasCacheValue {
     }
 
     return exists($KPXC_CACHE{$key});
+}
+
+# Clean up cache and memory when needed
+sub _clearCache {
+    my $self = shift;
+    
+    %KPXC_CACHE = ();
+    @KPXC_LIST = ();
+    $KPXC_CACHE_TIMESTAMP = 0;
+    
+    # Clear password from environment for security
+    if ($ENV{'KPXC_MP'}) {
+        delete $ENV{'KPXC_MP'};
+    }
+    $KPXC_MP = '';
 }
 
 # END: Private functions definitions

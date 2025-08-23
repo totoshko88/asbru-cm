@@ -1,18 +1,48 @@
 button {
+    border: 1px solid #dddddd;
     margin: 1px;
 }
 radiobutton, checkbutton {
+    border: 1px solid rgba(1,1,1,0);
     margin: 1px;
 }
+button:hover {
+    border: 1px solid #555555;
+    color: #000000;
+    background-color: #ffffff;
+}
+button:focus,
+entry:focus {
+    color: #000000;
+    background-color:#FFEBBB;
+}
 spinbutton {
+    color: #000000;
     font-size: 0.9em;
+    border: 1px solid #dddddd;
+    background-color: #dddddd;
+    border-radius: 0px;
+    padding: 0px;
+    margin: 0px;
+}
+spinbutton:hover {
+    border: 1px solid #555555;
+    background-color: #ffffff;
+}
+checkbutton:hover, radiobutton:hover {
+    border: 1px solid #555555;
 }
 .button-cp {
+    border: 1px solid rgba(1,1,1,0);
+    border-radius: 0px;
+    padding: 0px;
+    margin: 0px;
 }
 tooltip {
     font-size: 0.8em;
 }
 .dnd-icon {
+  border: 1px solid #000000;
 }
 
 .banner-fill {
@@ -24,16 +54,49 @@ tooltip {
   text-shadow: 0px 0px 8px rgba(17, 17, 17, 0.75);
   font-size: 2.5em;
 }
+messagedialog {
+  border: 1px solid #888888;
+}
+messagedialog > box {
+  margin: 2px;
+  margin-top: 16px;
+}
 .w-entervalue {
 }
 .w-renamenode {
 }
 .w-warning {
+    background-color: #3064ac;
+    color: #ffffff;
 }
 .w-error {
-}
-.w-confirm {
+    background-color: #3064ac;
+    color: #ffffff;
 }
 .w-info {
 }
+.w-confirm {
+}
 
+/* Connection tree styling */
+.asbru-connection-tree {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.asbru-connection-tree:selected {
+    background-color: #3584e4;
+    color: #ffffff;
+}
+
+
+/* Connection tree styling */
+.asbru-connection-tree {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.asbru-connection-tree:selected {
+    background-color: #3584e4;
+    color: #ffffff;
+}

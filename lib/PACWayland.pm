@@ -131,8 +131,9 @@ sub wayland_check_portal_availability {
     
     # Try to detect portal via D-Bus
     eval {
-        # Simple check for portal availability
-        if (system('busctl --user list | grep -q org.freedesktop.portal.Desktop 2>/dev/null') == 0) {
+        # Simple check for portal availability without shell
+        my ($out, $err, $code) = PACUtils::run_cmd({ argv => ['busctl', '--user', 'list'] });
+        if ($code == 0 && ($out // '') =~ /org\.freedesktop\.portal\.Desktop/) {
             $portal_running = 1;
         }
     };

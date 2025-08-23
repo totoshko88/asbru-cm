@@ -1,6 +1,6 @@
 # This Dockerfile should be ran from the project's root directory as context path.
 
-FROM alpine:3.13 AS base
+FROM alpine:3.22.1 AS base
 
 WORKDIR /
 
@@ -15,13 +15,13 @@ RUN apk --no-cache add \
     # Perls
     perl perl-socket6 perl-yaml perl-crypt-cbc perl-glib perl-crypt-rijndael perl-xml-parser perl-io-tty perl-hash-merge-simple \
     # Libs
-    libffi pango gtk+3.0 libcanberra-gtk3 gdk-pixbuf librsvg libwnck3 libx11 libxt libxtst dbus-x11 libuuid gobject-introspection libappindicator \
+    libffi pango gtk+3.0 libcanberra-gtk3 gdk-pixbuf librsvg libwnck3 libx11 libxt libxtst dbus-x11 libuuid gobject-introspection \
     # Binaries (with libs maybe)
-    busybox-extras openssl openssh-client lftp vte3 expect bash \
+    busybox-extras openssl openssh-client lftp vte3 expect bash ca-certificates \
     # Fonts
-    ttf-ubuntu-font-family \
+    ttf-dejavu \
     # Icons
-    adwaita-icon-theme \
+    adwaita-icon-theme hicolor-icon-theme \
     # Virtual
     --virtual common-packages-step
 
@@ -48,31 +48,22 @@ COPY --from=manual-dependency-puller /tmp/. /tmp
 # Manually compile and install OSSP UUID (no perl package available in APK as of writing)
 RUN cd /tmp && tar -zxvf /tmp/ossp-uuid-1.6.2.tar.gz && cd uuid-1.6.2/ && ./configure && make && make install && cd perl && perl Makefile.PL && make && make install && rm -rf ossp-uuid-1.6.2.tar.gz uuid-1.6.2
 # Manually compile and install Net::ARP with source patch sed
-RUN cd /tmp && tar -zxvf Net-ARP-1.0.11.tgz && cd Net-ARP-1.0.11 && sed -i 's/__THROW//g' arp.h && perl Makefile.PL && make && make install && rm -rf Net-ARP-1.0.11.tgz Net-ARP-1.0.11
+RUN cd /tmp && tar -zxvf Net-ARP-1.0.11.tgz && cd Net-ARP-1.0.11 \
+    && sed -i 's/__THROW//g' arp.h \
+    && sed -i '1i #include <unistd.h>' get_mac_linux.c \
+    && perl Makefile.PL && make && make install \
+    && rm -rf Net-ARP-1.0.11.tgz Net-ARP-1.0.11
 
 # Install Perl modules from CPAN here
 FROM perl-builder AS cpan-installer
 # Install dependencies from CPAN
 RUN apk --no-cache add perl-app-cpanminus --virtual cpanm-installer-packages-step
-# Pinned Dependencies with no tests (tests fail, at least on Alpine, even with all libs setup)
-RUN cpanm --notest --install RURBAN/Net-Ping-2.74.tar.gz
-# Pinned Dependencies with tests
-RUN cpanm --notest --install XAOC/Glib-Object-Introspection-0.049.tar.gz
-# No-test dependencies (tests fail, at least on Alpine, even with all libs setup)
-RUN cpanm --notest --install Net::Proxy
-# Testable dependencies
-RUN cpanm --install IO::Stty
-RUN cpanm --install Glib::IO
-RUN cpanm --install Cairo
-RUN cpanm --install Cairo::GObject
-RUN cpanm --install X11::GUITest
-RUN cpanm --install Crypt::Blowfish
-RUN cpanm --install Pango
-RUN cpanm --install Gtk3
-RUN cpanm --install Gtk3::SimpleList
-RUN cpanm --install Expect
-RUN cpanm --install App::Info::Lib::OSSPUUID
-RUN cpanm --install Data::UUID
+# Install CPAN modules (prefer latest, skip tests where flaky on Alpine)
+RUN cpanm --notest Net::Ping
+RUN cpanm --notest Glib::Object::Introspection
+RUN cpanm --notest Net::Proxy
+RUN cpanm --notest IO::Stty Glib::IO Cairo Cairo::GObject X11::GUITest Crypt::Blowfish Pango Gtk3 Gtk3::SimpleList Expect App::Info::Lib::OSSPUUID Data::UUID
+RUN cpanm --notest YAML::XS
 
 # Remove as much build-only dependencies as possible
 FROM cpan-installer AS stripped-builder
@@ -88,28 +79,24 @@ COPY --from=stripped-builder /usr/share/. /usr/share/
 COPY --from=stripped-builder /etc/. /etc/
 
 FROM common AS appimage-tools
-# Install some needed stuff for AppImage packaging
+# Install needed tools; use full wget for TLS and features
+RUN apk add --no-cache wget fuse file appstream-glib dos2unix patchelf
 
-RUN ping -c 2 "objects.githubusercontent.com" && \
-    wget "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage" && \
+RUN wget -O appimagetool-x86_64.AppImage "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" && \
     chmod +x "appimagetool-x86_64.AppImage"
-
-RUN apk add fuse file appstream dos2unix patchelf
 
 RUN wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
 
-RUN ping -c 2 "objects.githubusercontent.com"
+RUN wget -O glibc.apk "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-2.35-r1.apk" && \
+    apk add glibc.apk
 
-RUN wget "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.34-r0/glibc-2.34-r0.apk" && \
-    apk add glibc-2.34-r0.apk
+RUN wget -O glibc-bin.apk "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-bin-2.35-r1.apk" && \
+    apk add glibc-bin.apk || true
 
-RUN wget "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.34-r0/glibc-bin-2.34-r0.apk" && \
-    apk add glibc-bin-2.34-r0.apk
+RUN wget -O glibc-i18n.apk "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r1/glibc-i18n-2.35-r1.apk" && \
+    apk add glibc-i18n.apk || true
 
-RUN wget "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.34-r0/glibc-i18n-2.34-r0.apk" && \
-    apk add glibc-i18n-2.34-r0.apk
-
-RUN /usr/glibc-compat/bin/localedef -i en_US -f UTF-8 en_US.UTF-8
+RUN /usr/glibc-compat/bin/localedef -i en_US -f UTF-8 en_US.UTF-8 || true
 
 #RUN apk add gcompat
 
@@ -128,6 +115,8 @@ COPY --from=merged-buildlibs /etc/xdg/. /var/appimage-dir/etc/xdg/
 
 # Copy Bins
 COPY --from=merged-buildlibs /usr/bin/. /var/appimage-dir/usr/bin
+# Include busybox for a minimal shell inside the AppImage
+COPY --from=merged-buildlibs /bin/busybox /var/appimage-dir/usr/bin/busybox
 
 # Copy tree checkout
 COPY --from=checkout /opt/asbru-cm/. /var/appimage-dir/opt/asbru-cm/

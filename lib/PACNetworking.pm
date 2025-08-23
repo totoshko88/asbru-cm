@@ -98,22 +98,28 @@ Modern ping implementation with IPv6 support.
 
 sub ping_host {
     my ($host, $timeout, $protocol) = @_;
-    
+
     $timeout //= 5;
     $protocol //= 'tcp';
-    
-    # Create ping object with modern settings
-    my $ping = Net::Ping->new($protocol, $timeout);
-    
-    # Enable service checking for TCP pings
+
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    # Create ping object with explicit port to avoid croak on missing 'echo' service
+    my $ping = $protocol eq 'tcp'
+        ? Net::Ping->new({ proto => 'tcp', timeout => $timeout, port => $default_ping_port })
+        : Net::Ping->new($protocol, $timeout);
+
+    # Enable service checking for TCP pings; guard failures
     if ($protocol eq 'tcp') {
-        $ping->tcp_service_check(1);
+        eval { $ping->tcp_service_check(1); 1; } or do {
+            $ping->tcp_service_check(0);
+            $ping->port_number($default_ping_port);
+        };
     }
-    
+
     # Perform the ping
     my $result = $ping->ping($host);
     $ping->close();
-    
+
     return $result;
 }
 

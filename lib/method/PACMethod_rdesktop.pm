@@ -410,7 +410,7 @@ sub _buildGUI {
             $w{frameRedirDisk}->add($w{vbox_enesimo},);
 
                 # Build 'add' button
-                require PACIcons; $w{btnadd} = Gtk3::Button->new(); $w{btnadd}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnadd}->set_always_show_image(1);
+                $w{btnadd} = Gtk3::Button->new(); $w{btnadd}->set_image(Gtk3::Image->new_from_icon_name('list-add-symbolic', 'button')); $w{btnadd}->set_always_show_image(1);
                 $w{vbox_enesimo}->pack_start($w{btnadd}, 0, 1, 0);
 
                 # Build a scrolled window
@@ -475,7 +475,7 @@ sub _buildRedir {
         $w{hbox}->pack_start($w{fcForwardPath}, 1, 1, 0);
 
         # Build delete button
-    $w{btn} = Gtk3::Button->new(); $w{btn}->set_image(PACIcons::icon_image('delete_row','gtk-delete')); $w{btn}->set_always_show_image(1);
+    $w{btn} = Gtk3::Button->new(); $w{btn}->set_image(Gtk3::Image->new_from_icon_name('edit-delete-symbolic', 'button')); $w{btn}->set_always_show_image(1);
         $w{hbox}->pack_start($w{btn}, 0, 1, 0);
 
     # Add built control to main container

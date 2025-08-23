@@ -81,6 +81,10 @@ our @EXPORT_OK = qw(
     verify_gtk4_compatibility
     test_theme_compatibility
     simulate_user_interaction
+    create_mock_protocol_handler
+    simulate_network_delay
+    check_tool_availability
+    load_test_configuration
 );
 
 our $TEST_ENV_SETUP = 0;
@@ -321,6 +325,132 @@ sub create_mock_key_event {
     $event->mock('state', sub { return 0; });
     
     return $event;
+}
+
+sub create_mock_protocol_handler {
+    my ($protocol_type, %options) = @_;
+    
+    my $handler = $MOCK_OBJECT_AVAILABLE ? Test::MockObject->new() : SimpleMockObject->new();
+    
+    # Common protocol handler methods
+    $handler->mock('connect', sub {
+        my ($self, %params) = @_;
+        
+        # Simulate network delay if requested
+        simulate_network_delay() if $options{simulate_delay};
+        
+        # Simulate connection success/failure based on host
+        if ($params{host} && $params{host} ne 'unreachable.example.com') {
+            return { success => 1, pid => int(rand(30000)) + 1000 };
+        }
+        return { success => 0, error => 'Connection failed' };
+    });
+    
+    $handler->mock('disconnect', sub { return 1; });
+    $handler->mock('is_connected', sub { return 1; });
+    $handler->mock('get_status', sub { return 'connected'; });
+    
+    # Protocol-specific methods
+    if ($protocol_type eq 'ssh') {
+        $handler->mock('execute_command', sub {
+            my ($self, $command) = @_;
+            return {
+                command => $command,
+                exit_code => 0,
+                stdout => "Command output for: $command\n",
+                stderr => ''
+            };
+        });
+        
+        $handler->mock('upload_file', sub { return { success => 1, bytes_transferred => 1024 }; });
+        $handler->mock('download_file', sub { return { success => 1, bytes_transferred => 1024 }; });
+        
+    } elsif ($protocol_type eq 'rdp') {
+        $handler->mock('set_resolution', sub { return 1; });
+        $handler->mock('enable_clipboard', sub { return 1; });
+        $handler->mock('redirect_drive', sub { return 1; });
+        
+    } elsif ($protocol_type eq 'vnc') {
+        $handler->mock('set_quality', sub { return 1; });
+        $handler->mock('set_compression', sub { return 1; });
+        $handler->mock('send_key', sub { return 1; });
+        $handler->mock('send_mouse_event', sub { return 1; });
+        
+    } elsif ($protocol_type eq 'local') {
+        $handler->mock('spawn_shell', sub {
+            return { success => 1, pid => int(rand(30000)) + 1000 };
+        });
+        $handler->mock('send_input', sub { return length($_[1] || ''); });
+        $handler->mock('get_output', sub { return "Shell output\n"; });
+    }
+    
+    return $handler;
+}
+
+sub simulate_network_delay {
+    my ($delay_ms) = @_;
+    $delay_ms ||= 50; # Default 50ms delay
+    
+    # Only simulate delay if explicitly requested
+    if ($ENV{ASBRU_TEST_SIMULATE_DELAY}) {
+        Time::HiRes::usleep($delay_ms * 1000);
+    }
+}
+
+sub check_tool_availability {
+    my (@tools) = @_;
+    my %availability;
+    
+    for my $tool (@tools) {
+        # In test mode, simulate tool availability
+        if ($ENV{ASBRU_TEST_MODE}) {
+            # Simulate some tools as missing for testing
+            $availability{$tool} = !($tool eq 'missing_tool' || $tool eq 'unavailable_client');
+        } else {
+            # Actually check for tool availability
+            $availability{$tool} = (system("which $tool > /dev/null 2>&1") == 0);
+        }
+    }
+    
+    return %availability;
+}
+
+sub load_test_configuration {
+    my ($config_file) = @_;
+    $config_file ||= File::Spec->catfile(dirname(dirname(abs_path(__FILE__))), 'fixtures', 'test_connections.yml');
+    
+    # Simple YAML-like parser for test configurations
+    my %config;
+    my $current_section;
+    my $current_connection;
+    
+    if (open my $fh, '<', $config_file) {
+        while (my $line = <$fh>) {
+            chomp $line;
+            next if $line =~ /^\s*#/ || $line =~ /^\s*$/;
+            
+            if ($line =~ /^(\w+):/) {
+                $current_section = $1;
+                $config{$current_section} = {};
+            } elsif ($line =~ /^\s+(\w+(?:-\w+)*):/) {
+                $current_connection = $1;
+                $config{$current_section}{$current_connection} = {};
+            } elsif ($line =~ /^\s+(\w+):\s*(.+)/) {
+                my ($key, $value) = ($1, $2);
+                $value =~ s/^["']|["']$//g; # Remove quotes
+                if ($current_connection) {
+                    $config{$current_section}{$current_connection}{$key} = $value;
+                } else {
+                    $config{$current_section}{$key} = $value;
+                }
+            }
+        }
+        close $fh;
+    } else {
+        diag("Warning: Could not load test configuration from $config_file");
+    }
+    
+    return %config;
 }
 
 # Utility functions

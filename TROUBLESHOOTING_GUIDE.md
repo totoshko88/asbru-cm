@@ -1,4 +1,153 @@
-# Ásbrú Connection Manager v7.0.1 - Troubleshooting Guide
+# Ásbrú Connection Manager v7.0.2 - Troubleshooting Guide
+
+## Version 7.0.2 Specific Issues
+
+### Icon System Issues
+
+#### Problem: Icons Not Displaying or Showing as Broken
+This is common after upgrading to 7.0.2 due to the restored icon system.
+
+**Solution:**
+```bash
+# Force icon cache refresh
+asbru-cm --force-icon-rescan
+
+# Clear application icon cache
+rm -rf ~/.cache/asbru-cm/icons/
+
+# Restart with debug output
+ASBRU_DEBUG=1 asbru-cm
+```
+
+#### Problem: Icons Don't Match System Theme
+The restored icon system should automatically detect system themes.
+
+**Solution:**
+```bash
+# Check theme detection
+ASBRU_DEBUG=1 asbru-cm --version
+
+# Force system theme refresh
+gsettings set org.gnome.desktop.interface icon-theme "$(gsettings get org.gnome.desktop.interface icon-theme)"
+```
+
+### Theme System Issues
+
+#### Problem: Connection Tree Text Not Visible in Dark Themes
+Version 7.0.2 fixes this issue, but you may need to reset theme cache.
+
+**Solution:**
+```bash
+# Clear theme cache
+rm -f ~/.config/pac/theme_cache
+
+# Reset theme preferences
+# In application: Preferences -> Look & Feel -> Reset Theme Settings
+```
+
+#### Problem: Theme Changes Don't Apply Immediately
+The new theme system should detect changes automatically.
+
+**Solution:**
+```bash
+# Check theme detection is working
+ASBRU_DEBUG=1 asbru-cm
+
+# Manually trigger theme refresh
+# Switch to a different theme and back in system settings
+```
+
+### Performance Issues
+
+#### Problem: Slow Configuration Import
+Version 7.0.2 includes multithreaded import, but large configs may still be slow.
+
+**Solution:**
+```bash
+# Check configuration file size
+ls -lh ~/.config/pac/pac.yml
+
+# Enable progress indication
+# Large imports should show progress window automatically
+
+# For very large configs, consider splitting them
+```
+
+#### Problem: Application Startup is Slow
+**Solution:**
+```bash
+# Check for dependency issues
+asbru-cm --verbose
+
+# Clear all caches
+rm -rf ~/.cache/asbru-cm/
+rm -f ~/.config/pac/theme_cache
+
+# Check for large configuration files
+du -sh ~/.config/pac/
+```
+
+### Protocol Connection Issues
+
+#### Problem: RDP Connections Fail to Embed
+**Solution:**
+```bash
+# Check RDP client availability
+which xfreerdp rdesktop
+
+# Test RDP client directly
+xfreerdp --version
+rdesktop -h
+
+# Enable RDP debugging
+ASBRU_DEBUG=1 asbru-cm
+# Look for RDP_EMBED messages in output
+```
+
+#### Problem: SSH Connections Don't Work
+**Solution:**
+```bash
+# Check SSH client
+which ssh
+ssh -V
+
+# Test SSH manually
+ssh -o ConnectTimeout=5 user@host
+
+# Check SSH key permissions
+ls -la ~/.ssh/
+```
+
+#### Problem: VNC Connections Fail
+**Solution:**
+```bash
+# Check VNC viewers
+which vncviewer tigervnc xtightvnc
+
+# Test VNC viewer
+vncviewer -help
+
+# Enable VNC debugging
+ASBRU_TEST_VERBOSE=1 asbru-cm
+```
+
+### Dependency Validation Issues
+
+#### Problem: Missing Tool Warnings on Startup
+Version 7.0.2 includes dependency validation that warns about missing tools.
+
+**Solution:**
+```bash
+# Run dependency check
+asbru-cm --verbose
+
+# Install missing tools based on warnings
+# For Debian/Ubuntu:
+sudo apt install freerdp2-x11 rdesktop tigervnc-viewer openssh-client
+
+# For openSUSE:
+sudo zypper install freerdp rdesktop tigervnc openssh
+```
 
 ## Quick Diagnostic Commands
 

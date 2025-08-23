@@ -38,7 +38,7 @@ use Encode qw (encode);
 
 # GTK
 use Gtk3 '-init';
-use PACIcons; # symbolic icon mapping
+# use PACIcons; # symbolic icon mapping - REMOVED, will use PACUtils icon functions
 
 # PAC modules
 use PACUtils;
@@ -205,13 +205,13 @@ sub _initGUI {
 
     # Put a 'refresh' button
     $$self{_WINDOWPIPE}{gui}{btnrefresh} = Gtk3::Button->new();
-    $$self{_WINDOWPIPE}{gui}{btnrefresh}->set_image(PACIcons::icon_image('refresh','view-refresh'));
+    $$self{_WINDOWPIPE}{gui}{btnrefresh}->set_image(Gtk3::Image->new_from_icon_name('view-refresh-symbolic', 'button'));
     $$self{_WINDOWPIPE}{gui}{btnrefresh}->set_always_show_image(1);
     $$self{_WINDOWPIPE}{gui}{btnbox}->pack_start($$self{_WINDOWPIPE}{gui}{btnrefresh}, 1, 1, 0);
 
     # Put a 'close' button
     $$self{_WINDOWPIPE}{gui}{btnclose} = Gtk3::Button->new();
-    $$self{_WINDOWPIPE}{gui}{btnclose}->set_image(PACIcons::icon_image('close','window-close'));
+    $$self{_WINDOWPIPE}{gui}{btnclose}->set_image(Gtk3::Image->new_from_icon_name('window-close-symbolic', 'button'));
     $$self{_WINDOWPIPE}{gui}{btnclose}->set_always_show_image(1);
     $$self{_WINDOWPIPE}{gui}{btnbox}->pack_start($$self{_WINDOWPIPE}{gui}{btnclose}, 1, 1, 0);
 

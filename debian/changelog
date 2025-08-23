@@ -1,3 +1,42 @@
+asbru-cm (7.1.0+icon-clean1) unstable; urgency=medium
+
+  * Themes: Vectorized wrapper SVGs to remove embedded PNG dependencies
+    (chain, prompt, protected/unprotected, script, tab, cluster_auto,
+    cluster_manager2, buttonbar_show/hide, drag_terminal32x32) across
+    default, system, asbru-dark, and asbru-color themes.
+  * Cleanup: Removed the corresponding PNG assets and verified no SVGs
+    embed <image ...> PNGs; no code or Glade references remain to the
+    removed filenames.
+  * Consistency: Preserved theme-first icon resolution and Adwaita/system
+    fallbacks via PACIcons; maintained 24/48 size policy.
+  * Tests: Adjusted icon tests to enforce SVG-only policy (dropped cadaver.png).
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 23 Aug 2025 10:32:00 +0000
+
+asbru-cm (7.1.0) unstable; urgency=medium
+
+  * Tests: Full protocol coverage via linuxserver/* images (SSH, Webtop, RDP)
+  * E2E: Headless end-to-end app test with stdout control markers
+  * Integration: Robust KeePassXC stdin bridge and safer subprocess exec
+  * Stability: Hardened SSH/VNC/RDP flows; Wayland/X11 guards and temp cleanup
+  * Docs: Updated README, NEWS, and testing sections; logo attribution and cultural notes
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Sat, 23 Aug 2025 10:00:00 +0000
+
+asbru-cm (7.0.2) unstable; urgency=medium
+
+  * Icons: Restored original icon system with GTK4 compatibility via PACCompat
+  * Themes: Reverted to original theme system removing complex custom modifications
+  * UI: Fixed connection tree dark theme support with proper contrast detection
+  * Testing: Implemented comprehensive protocol testing framework
+  * Dependencies: Added startup dependency validation system with installation hints
+  * Performance: Implemented multithreaded configuration import with progress indication
+  * Build: Updated build system validation for DEB, RPM, and AppImage packages
+  * Cleanup: Removed development artifacts and organized project structure
+  * Documentation: Updated version to 7.0.2 with comprehensive release notes
+
+ -- Anton Isaiev <totoshko88@gmail.com>  Fri, 22 Aug 2025 12:00:00 +0000
+
 asbru-cm (7.0.1) unstable; urgency=medium
 
   * Critical: Fixed application hanging when creating local shell connections

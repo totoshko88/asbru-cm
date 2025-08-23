@@ -1,36 +1,95 @@
 #!/bin/sh
 
-getCompressedEnv() {
-    echo "LD_LIBRARY_PATH='${LD_LIBRARY_PATH}' PERL5LIB='${PERL5LIB}' GI_TYPELIB_PATH='${GI_TYPELIB_PATH}' XDG_DATA_DIRS='${XDG_DATA_DIRS}' XDG_CONFIG_DIRS='${XDG_CONFIG_DIRS}' GTK_PATH='${GTK_PATH}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GTK_DATA_PREFIX='${GTK_DATA_PREFIX}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GDK_PIXBUF_MODULE_FILE='${GDK_PIXBUF_MODULE_FILE}' GTK_IM_MODULE='${GTK_IM_MODULE}' GTK_IM_MODULE_FILE='${GTK_IM_MODULE_FILE}' PANGO_LIBDIR='${PANGO_LIBDIR}'"
-}
+# Re-exec with bundled busybox sh to avoid host bash+readline warnings
+# Only do this if busybox is actually runnable on this host (suppress errors otherwise)
+if [ -z "${ASBRU_APPRUN_REEXEC:-}" ]; then
+    export ASBRU_APPRUN_REEXEC=1
+    if [ -x "${APPDIR}/usr/bin/busybox" ]; then
+        if "${APPDIR}/usr/bin/busybox" --help >/dev/null 2>&1; then
+            exec "${APPDIR}/usr/bin/busybox" sh "$0" "$@"
+        fi
+    fi
+fi
 
-export ASBRU_ENV_FOR_EXTERNAL="$(getCompressedEnv)"
+getCompressedEnv() {
+    echo "LD_LIBRARY_PATH='${LD_LIBRARY_PATH}' PERL5LIB='${PERL5LIB}' GI_TYPELIB_PATH='${GI_TYPELIB_PATH}' XDG_DATA_DIRS='${XDG_DATA_DIRS}' XDG_CONFIG_DIRS='${XDG_CONFIG_DIRS}' GTK_PATH='${GTK_PATH}' GTK_EXE_PREFIX='${GTK_EXE_PREFIX}' GTK_DATA_PREFIX='${GTK_DATA_PREFIX}' GDK_PIXBUF_MODULE_FILE='${GDK_PIXBUF_MODULE_FILE}' GTK_IM_MODULE='${GTK_IM_MODULE}' GTK_IM_MODULE_FILE='${GTK_IM_MODULE_FILE}' PANGO_LIBDIR='${PANGO_LIBDIR}'"
+}
 
 export ASBRU_IS_APPIMAGE="1"
 
-export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${APPDIR}/usr/local/lib:${APPDIR}/usr/local/share:${APPDIR}/lib:${APPDIR}/usr/lib/perl5/core_perl/CORE/"
+# Display backend: prefer Xwayland on Wayland
+if [ -n "${WAYLAND_DISPLAY}" ] || [ "${XDG_SESSION_TYPE}" = "wayland" ]; then
+    if [ "${GDK_BACKEND}" != "x11" ] && [ -z "${ASBRU_NO_XWAYLAND}" ]; then
+        export GDK_BACKEND="x11"
+        export ASBRU_XWAYLAND="1"
+    fi
+fi
 
-export PERL5LIB="${APPDIR}/usr/local/lib/perl5/site_perl:${APPDIR}/usr/local/share/perl5/site_perl:${APPDIR}/usr/lib/perl5/vendor_perl:${APPDIR}/usr/share/perl5/vendor_perl:${APPDIR}/usr/lib/perl5/core_perl:${APPDIR}/usr/share/perl5/core_perl"
+# Sanitize Perl environment
+unset PERL5LIB PERLLIB PERL5OPT PERL_MM_OPT PERL_MB_OPT PERL_LOCAL_LIB_ROOT
+
+APP_USR_LIBS="${APPDIR}/usr/lib:${APPDIR}/usr/lib64:${APPDIR}/usr/lib/x86_64-linux-gnu"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib/perl5/core_perl/CORE:${APPDIR}/lib:${APPDIR}/usr/local/lib:${APP_USR_LIBS}"
+
+export PERL5LIB="${APPDIR}/usr/lib/perl5/core_perl:${APPDIR}/usr/share/perl5/core_perl:${APPDIR}/opt/asbru-cm/lib:${APPDIR}/opt/asbru-cm/lib/ex:${APPDIR}/opt/asbru-cm/lib/edit:${APPDIR}/usr/local/lib/perl5/site_perl:${APPDIR}/usr/local/share/perl5/site_perl:${APPDIR}/usr/lib/perl5/vendor_perl:${APPDIR}/usr/share/perl5/vendor_perl"
 
 export GI_TYPELIB_PATH="${APPDIR}/usr/lib/girepository-1.0"
-
 export XDG_DATA_DIRS="${APPDIR}/usr/local/share/:${APPDIR}/usr/share/"
 export XDG_CONFIG_DIRS="${APPDIR}/etc/xdg"
-
 export GTK_PATH="${APPDIR}/usr/lib/gtk-3.0"
 export GTK_EXE_PREFIX="${APPDIR}/usr"
 export GTK_DATA_PREFIX="${APPDIR}/usr"
-
+export GTK_MODULES=""
 export GDK_PIXBUF_MODULEDIR="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
 export GDK_PIXBUF_MODULE_FILE="${APPDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-
 export GTK_IM_MODULE="${APPDIR}/usr/lib/gtk-3.0/3.0.0/immodules"
 export GTK_IM_MODULE_FILE="${APPDIR}/usr/lib/gtk-3.0/3.0.0/immodules.cache"
-
 export PANGO_LIBDIR="${APPDIR}/usr/lib"
 
+# Internal env (for the app itself)
 export ASBRU_ENV_FOR_INTERNAL="$(getCompressedEnv)"
+# External env (for helper commands executed via shell): keep minimal safe vars only
+# Include TERM and SHELL to ensure interactive shells initialize correctly
+# Build a minimal, safe external environment string without empty values
+# Ensure LANG is always set to a sane UTF-8 default to avoid shell locale warnings
+if [ -z "${LANG}" ]; then
+    export LANG="C.UTF-8"
+fi
+_ext_env="env -i PATH='${PATH}' LANG='${LANG}' HOME='${HOME}' TERM='${TERM:-xterm-256color}' SHELL='${SHELL:-/bin/sh}'"
+[ -n "${LC_ALL}" ] && _ext_env="${_ext_env} LC_ALL='${LC_ALL}'"
+[ -n "${XDG_RUNTIME_DIR}" ] && _ext_env="${_ext_env} XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR}'"
+[ -n "${DISPLAY}" ] && _ext_env="${_ext_env} DISPLAY='${DISPLAY}'"
+[ -n "${WAYLAND_DISPLAY}" ] && _ext_env="${_ext_env} WAYLAND_DISPLAY='${WAYLAND_DISPLAY}'"
+[ -n "${XDG_SESSION_TYPE}" ] && _ext_env="${_ext_env} XDG_SESSION_TYPE='${XDG_SESSION_TYPE}'"
+export ASBRU_ENV_FOR_EXTERNAL="${_ext_env}"
 
+# Default to light tree styling in AppImage (can override with ASBRU_FORCE_DARK=1)
+export ASBRU_FORCE_DARK="${ASBRU_FORCE_DARK:-0}"
+
+# Set working directory to the AppImage root so relative loader paths (./usr/lib/...) resolve
 cd "${APPDIR}" || exit 1
 
-exec "${APPDIR}/usr/bin/perl" "${APPDIR}/opt/asbru-cm/asbru-cm" $@
+# Ensure musl libc soname symlink is present (libc.musl-x86_64.so.1 -> ld-musl-x86_64.so.1)
+if [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ] && [ ! -e "${APPDIR}/lib/libc.musl-x86_64.so.1" ]; then
+    ln -sf "ld-musl-x86_64.so.1" "${APPDIR}/lib/libc.musl-x86_64.so.1"
+fi
+
+# Ensure libperl.so soname exists (Alpine places versioned .so in CORE)
+if [ ! -e "${APPDIR}/usr/lib/perl5/core_perl/CORE/libperl.so" ]; then
+    _perl_core_dir="${APPDIR}/usr/lib/perl5/core_perl/CORE"
+    if [ -d "${_perl_core_dir}" ]; then
+        _ver_lib=$(ls -1 "${_perl_core_dir}"/libperl.so.* 2>/dev/null | head -n1)
+        if [ -n "${_ver_lib}" ] && [ -f "${_ver_lib}" ]; then
+            ln -sf "$(basename "${_ver_lib}")" "${_perl_core_dir}/libperl.so"
+        fi
+    fi
+fi
+
+# Prefer invoking the in-image MUSL dynamic loader to match musl-compiled Perl/XS modules
+if [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ]; then
+    exec "./lib/ld-musl-x86_64.so.1" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+elif [ -x "${APPDIR}/usr/glibc-compat/lib/ld-linux-x86-64.so.2" ]; then
+    exec "./usr/glibc-compat/lib/ld-linux-x86-64.so.2" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+else
+    exec "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+fi

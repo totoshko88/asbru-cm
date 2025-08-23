@@ -5,7 +5,6 @@ use warnings;
 use v5.20;
 
 use Test::More;
-use Test::MockObject;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
@@ -13,6 +12,7 @@ use AsbruTestFramework qw(
     setup_test_environment
     cleanup_test_environment
     measure_performance
+    create_mock_protocol_handler
 );
 
 # Test plan
@@ -26,8 +26,7 @@ subtest 'RDP Connection Initialization' => sub {
     plan tests => 7;
     
     # Mock RDP connection object
-    my $rdp_conn = Test::MockObject->new();
-    $rdp_conn->set_isa('PACMethod_xfreerdp');
+    my $rdp_conn = create_mock_protocol_handler('rdp');
     
     # Mock connection parameters
     my %connection_params = (
@@ -73,7 +72,7 @@ subtest 'RDP Connection Initialization' => sub {
 subtest 'RDP Authentication Methods' => sub {
     plan tests => 6;
     
-    my $rdp_auth = Test::MockObject->new();
+    my $rdp_auth = create_mock_protocol_handler('rdp');
     
     # Mock different RDP authentication methods
     $rdp_auth->mock('authenticate_ntlm', sub {
@@ -112,7 +111,7 @@ subtest 'RDP Authentication Methods' => sub {
 subtest 'RDP Connection Establishment' => sub {
     plan tests => 7;
     
-    my $rdp_connection = Test::MockObject->new();
+    my $rdp_connection = create_mock_protocol_handler('rdp');
     my $connection_state = 'disconnected';
     my $rdp_process_pid = undef;
     
@@ -185,7 +184,7 @@ subtest 'RDP Connection Establishment' => sub {
 subtest 'RDP Display Configuration' => sub {
     plan tests => 8;
     
-    my $rdp_display = Test::MockObject->new();
+    my $rdp_display = create_mock_protocol_handler('rdp');
     
     $rdp_display->mock('set_resolution', sub {
         my ($self, $width, $height) = @_;
@@ -236,7 +235,7 @@ subtest 'RDP Display Configuration' => sub {
 subtest 'RDP Audio and Media Redirection' => sub {
     plan tests => 6;
     
-    my $rdp_media = Test::MockObject->new();
+    my $rdp_media = create_mock_protocol_handler('rdp');
     
     $rdp_media->mock('set_audio_mode', sub {
         my ($self, $mode) = @_;
@@ -276,7 +275,7 @@ subtest 'RDP Audio and Media Redirection' => sub {
 subtest 'RDP Drive and Printer Redirection' => sub {
     plan tests => 7;
     
-    my $rdp_redirect = Test::MockObject->new();
+    my $rdp_redirect = create_mock_protocol_handler('rdp');
     my @redirected_drives;
     my @redirected_printers;
     
@@ -329,7 +328,7 @@ subtest 'RDP Drive and Printer Redirection' => sub {
 subtest 'RDP Security Settings' => sub {
     plan tests => 6;
     
-    my $rdp_security = Test::MockObject->new();
+    my $rdp_security = create_mock_protocol_handler('rdp');
     
     $rdp_security->mock('set_security_layer', sub {
         my ($self, $layer) = @_;
@@ -369,7 +368,7 @@ subtest 'RDP Security Settings' => sub {
 subtest 'RDP Performance Optimization' => sub {
     plan tests => 7;
     
-    my $rdp_perf = Test::MockObject->new();
+    my $rdp_perf = create_mock_protocol_handler('rdp');
     
     $rdp_perf->mock('set_connection_type', sub {
         my ($self, $type) = @_;
@@ -424,7 +423,7 @@ subtest 'RDP Performance Optimization' => sub {
 subtest 'RDP Error Handling' => sub {
     plan tests => 6;
     
-    my $rdp_error = Test::MockObject->new();
+    my $rdp_error = create_mock_protocol_handler('rdp');
     
     $rdp_error->mock('handle_connection_error', sub {
         my ($self, $error_code, $error_message) = @_;
@@ -466,7 +465,7 @@ subtest 'RDP Performance Testing' => sub {
     # Test RDP connection performance
     my $perf_result = measure_performance('RDP Connection', sub {
         # Simulate RDP connection establishment
-        my $rdp = Test::MockObject->new();
+        my $rdp = create_mock_protocol_handler('rdp');
         $rdp->mock('connect', sub { 
             sleep(0.02) if $ENV{ASBRU_TEST_SIMULATE_DELAY}; 
             return { success => 1, pid => 12345 }; 

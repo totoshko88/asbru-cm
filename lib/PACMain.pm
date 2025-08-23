@@ -59,8 +59,8 @@ use POSIX qw (strftime);
 use Scalar::Util qw(blessed);
 use PACCryptoCompat;
 use SortedTreeStore;
-my $HAVE_VTE = 1;
-eval { require Vte; Vte->import(); 1 } or do { warn "WARNING: VTE bindings unavailable ($@). Running in limited mode.\n"; $HAVE_VTE=0; };
+use PACVte;  # Modern VTE compatibility layer
+my $HAVE_VTE = $PACVte::HAVE_VTE;
 use PACIcons;  # Modern symbolic icon mapping
 
 use Config;
@@ -111,6 +111,23 @@ my $PAC_START_TOTAL = 6;
 my $APP_START_TIME = time();
 
 my $APPICON = "$RES_DIR/asbru-logo-64.png";
+sub _applyDefaultAppIcon {
+    # Try file icon first, then theme icon name, then a generic terminal
+    my $ok = 0;
+    eval {
+        Gtk3::Window::set_default_icon_from_file($APPICON);
+        $ok = 1;
+    };
+    if (!$ok) {
+        eval { Gtk3::Window::set_default_icon_name('asbru-cm'); $ok = 1; };
+    }
+    if (!$ok) {
+        eval { Gtk3::Window::set_default_icon_name('utilities-terminal'); $ok = 1; };
+    }
+    if ($ENV{ASBRU_DEBUG}) {
+        print STDERR "ICON: default app icon applied via " . ($ok ? "success" : "fallback-failed") . "\n";
+    }
+}
 my $AUTOCLUSTERICON;
 my $CLUSTERICON;
 my $GROUPICON_ROOT;
@@ -152,6 +169,10 @@ sub new {
 
     my $self = {};
 
+    # Expose resources directory for modules that need it (e.g., PACConfig theme scanning)
+    # This is critical inside AppImage where relative 'res' may not resolve.
+    $self->{_RES_DIR} = $RES_DIR;
+
     print STDERR "INFO: Config directory is '$CFG_DIR'\n";
 
     $SIG{'TERM'} = $SIG{'STOP'} = $SIG{'QUIT'} = $SIG{'INT'} = sub {
@@ -192,13 +213,25 @@ sub new {
     $_NO_SPLASH ||= $$self{_APP}->get_is_remote;
 
     # Show splash-screen while loading
-    PACUtils::_splash(1, "Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION)", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('🚀 ') . "Starting $PACUtils::APPNAME (v$PACUtils::APPVERSION)" . PACUtils::emoji(' ✨'), ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->{_START_TS} = time;
     $self->{_PROFILE} = [];
     push @{$self->{_PROFILE}}, sprintf('[%0.3f] start:new()', 0.0);
 
-    $self->{_PING} = Net::Ping->new('tcp');
-    $self->{_PING}->tcp_service_check(1);
+    # Initialize Net::Ping safely: some systems lack the 'echo' service in /etc/services.
+    # Construct with an explicit TCP port to avoid croak during object creation.
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    $self->{_PING} = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
+    # Some systems lack the 'echo' tcp service in /etc/services, which makes
+    # tcp_service_check(1) die when resolving the port name. Guard and fall back.
+    eval {
+        $self->{_PING}->tcp_service_check(1);
+        1;
+    } or do {
+        # Disable service name check and use a reasonable default TCP port; later code may override.
+        $self->{_PING}->tcp_service_check(0);
+        $self->{_PING}->port_number($default_ping_port);
+    };
 
     if (grep({ /^--verbose$/ } @{ $$self{_OPTS} })) {
         $$self{_VERBOSE} = 1;
@@ -207,10 +240,11 @@ sub new {
     # Show some info about dependencies
     if ($$self{_VERBOSE}) {
         print STDERR "INFO: Crypt::CBC version is ${Crypt::CBC::VERSION}\n";
+        _checkDependencies($self);
     }
 
     # Read the config/connections file...
-    PACUtils::_splash(1, "Reading config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "📖 Reading config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     my $t0 = time; _readConfiguration($self); my $dt = time - $t0; push @{$self->{_PROFILE}}, sprintf('[%0.3f] config loaded', $dt);
 
     # Set conflictive layout options as early as possible
@@ -227,6 +261,11 @@ sub new {
             $d->{'terminal transparency'} = 0;
         }
     }
+    
+    # Initialize UI appearance defaults
+    my $d = $$self{_CFG}{defaults} ||= {};
+    $d->{'use_native_connection_icons'} //= 1;  # Use method-specific icons by default
+    $d->{'ui emojis'} //= 1;                    # Enable UI emojis by default (toggleable)
 
     if ($$self{_CFG}{'defaults'}{'theme'}) {
         my $cfg_theme = $$self{_CFG}{'defaults'}{'theme'} // 'default';
@@ -253,18 +292,22 @@ sub new {
     print STDERR "INFO: Theme directory is '$$self{_THEME}'\n";
     if ($$self{_VERBOSE}) { print STDERR "DIAG: Startup profile so far -> " . join(' | ', @{$self->{_PROFILE}}) . "\n"; }
 
-    _registerPACIcons($THEME_DIR);
-    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.png");
+    # _registerPACIcons($THEME_DIR); # Removed - will be restored in PACUtils.pm
+    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.svg");
     $CLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_connection.svg");
-    $GROUPICON_ROOT = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
+    # Scale root group icon to 16x16 to match other group icons
+    my $root_pixbuf = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
+    $GROUPICON_ROOT = $root_pixbuf ? $root_pixbuf->scale_simple(16, 16, 'hyper') : _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICON = _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICONOPEN = _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICONCLOSED = _pixBufFromFile("$THEME_DIR/asbru_group_closed_16x16.svg");
     # Try preferred themed connection icon; fallback to cluster connection icon if missing
     if (-f "$THEME_DIR/asbru_quick_connect.svg") {
-        $DEFCONNICON = _pixBufFromFile("$THEME_DIR/asbru_quick_connect.svg");
+        my $def_pixbuf = _pixBufFromFile("$THEME_DIR/asbru_quick_connect.svg");
+        $DEFCONNICON = $def_pixbuf ? $def_pixbuf->scale_simple(16, 16, 'hyper') : $CLUSTERICON;
     } else {
-        $DEFCONNICON = $CLUSTERICON; # reasonable fallback
+        my $cluster_pixbuf = $CLUSTERICON;
+        $DEFCONNICON = $cluster_pixbuf ? $cluster_pixbuf->scale_simple(16, 16, 'hyper') : $cluster_pixbuf;
     }
 
     map({
@@ -305,7 +348,7 @@ sub new {
         my $pass;
         grep({ if (/^--password=(.+)$/) { $pass = $1; } } @{ $$self{_OPTS} });
         if (!defined $pass) {
-            PACUtils::_splash(1, "Waiting for password...", $PAC_START_PROGRESS, $PAC_START_TOTAL);
+            PACUtils::_splash(1, "🔐 Waiting for password...", $PAC_START_PROGRESS, $PAC_START_TOTAL);
             $pass = _wEnterValue(undef, 'GUI Password Protection', 'Please, enter GUI Password...', undef, 0, 'asbru-protected');
         }
         if (!defined $pass) {
@@ -330,36 +373,14 @@ sub new {
         if (grep { /--start-shell/; } @{ $$self{_OPTS} }) {
             _sendAppMessage($$self{_APP}, 'start-shell');
             $getout = 1;
-        } elsif (grep { /--quick-conn/; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'quick-conn');
+        } elsif (grep { /--quick-conn/ } @{ $$self{_OPTS} }) {
+            # TODO: quick-connect message routing for remote instance
             $getout = 1;
-        } elsif (grep { /--start-uuid=(.+)/ and $uuid = $1; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'start-uuid', $uuid);
-            $getout = 1;
-        } elsif (grep { /--edit-uuid=(.+)/ and $uuid = $1; } @{ $$self{_OPTS} }) {
-            _sendAppMessage($$self{_APP}, 'edit-uuid', $uuid);
-            $getout = 1;
-        } else {
-            $getout = 0;
         }
 
-        if (! $getout) {
-            if ($$self{_CFG}{'defaults'}{'allow more instances'}) {
-                print "INFO: Starting '$0' in READ ONLY mode!\n";
-                $$self{_READONLY} = 1;
-            } elsif (! $$self{_CFG}{'defaults'}{'allow more instances'}) {
-                print "INFO: No more instances allowed!\n";
-            eval {
-                if ($self->{_TRAY} && $self->{_TRAY}->can('get_integration_mode')) {
-                    my $mode = $self->{_TRAY}->get_integration_mode();
-                    print "INFO: Tray integration mode active: $mode\n";
-                }
-            };
-                return 0;
-            }
-        } else {
-            Gtk3::Gdk::notify_startup_complete();
-            return 0;
+        # If we handled a remote instance action, exit early
+        if ($getout) {
+            return 1;
         }
     }
 
@@ -405,8 +426,22 @@ sub new {
     # Environment override still wins for quick testing
     if ($ENV{ASBRU_ICON_THEME}) {
         if ((!defined $$self{_CURRENT_SYSTEM_ICON_THEME}) || $$self{_CURRENT_SYSTEM_ICON_THEME} ne $ENV{ASBRU_ICON_THEME}) {
-            eval { Gtk3::IconTheme::get_default()->set_custom_theme($ENV{ASBRU_ICON_THEME}); print STDERR "INFO: Icon theme override: $ENV{ASBRU_ICON_THEME} (ASBRU_ICON_THEME)\n"; 1 } or do { print STDERR "WARN: Failed to apply icon theme '$ENV{ASBRU_ICON_THEME}': $@\n" if $@; };
-            $$self{_CURRENT_SYSTEM_ICON_THEME} = $ENV{ASBRU_ICON_THEME} if !$@;
+            my $ok = 0;
+            eval {
+                my $settings = Gtk3::Settings::get_default();
+                if ($settings) {
+                    $settings->set_property('gtk-icon-theme-name', $ENV{ASBRU_ICON_THEME});
+                    $ok = 1;
+                }
+                1;
+            } or do { };
+            if ($ok) {
+                eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
+                print STDERR "INFO: Icon theme override: $ENV{ASBRU_ICON_THEME} (ASBRU_ICON_THEME)\n";
+                $$self{_CURRENT_SYSTEM_ICON_THEME} = $ENV{ASBRU_ICON_THEME};
+            } else {
+                print STDERR "WARN: Failed to apply icon theme '$ENV{ASBRU_ICON_THEME}' via settings\n" if $ENV{ASBRU_DEBUG};
+            }
         }
     }
     if ($ENV{ASBRU_LARGE_ICONS}) {
@@ -497,7 +532,8 @@ sub start {
             if ($COSMIC) {
                 print "INFO: Using Cosmic tray integration (initializing)\n";
             } else {
-                print "INFO: Using " . ($UNITY ? 'Unity' : 'Gnome') . " tray icon\n";
+                my $label = $UNITY ? 'Unity AppIndicator' : 'legacy StatusIcon';
+                print "INFO: Using $label tray integration\n";
             }
         }
     $DESKTOP_LOGGED = 1;
@@ -505,20 +541,20 @@ sub start {
     }
 
     # Build the GUI (only first invocation reaches here due to $STARTED latch)
-    PACUtils::_splash(1, "Building GUI...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, "🎨 Building GUI...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     if (!$self->_initGUI()) {
         _splash(0);
         return 0;
     }
 
     # Build the Tree with the connections list
-    PACUtils::_splash(1, "Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('🔗 ') . "Loading Connections...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
     $self->_loadTreeConfiguration('__PAC__ROOT__');
 
     # Enable tray menu
     $FUNCS{_TRAY}->set_tray_menu();
 
-    PACUtils::_splash(1, "Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+    PACUtils::_splash(1, PACUtils::emoji('✨ ') . "Finalizing...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
 
     $STARTED = 1; # Mark successful initialization
 
@@ -552,6 +588,10 @@ sub start {
     # Show main interface
     if (!$$self{_CMDLINETRAY}) {
         $$self{_GUI}{main}->show_all();
+        
+        # Start automatic theme monitoring for tree widgets (Task 4.2)
+        PACCompat::startTreeThemeMonitoring();
+        
         if ($$self{_GUI}{hpane}) {
             my $alloc = $$self{_GUI}{hpane}->get_allocation; my $tw=$alloc->{width}||0; if ($tw>200){ my $pos=int($tw*30/100); $pos = 120 if $pos < 120; eval { $$self{_GUI}{hpane}->set_position($pos); }; }
         }
@@ -565,12 +605,23 @@ sub start {
                     if (defined $$self{_LAST_SYSTEM_ICON_THEME_APPLY} && ($now - $$self{_LAST_SYSTEM_ICON_THEME_APPLY}) < 1) { $skip = 1; }
                 }
                 if (!$skip) {
-                    eval { Gtk3::IconTheme::get_default()->set_custom_theme($sys_theme); 1 } or do { print STDERR "WARN: Deferred set_custom_theme($sys_theme) failed: $@\n"; };
-                    if (!$@) {
+                    my $applied = 0;
+                    eval {
+                        my $settings = Gtk3::Settings::get_default();
+                        if ($settings) {
+                            $settings->set_property('gtk-icon-theme-name', $sys_theme);
+                            $applied = 1;
+                        }
+                        1;
+                    } or do { };
+                    if ($applied) {
                         $$self{_CURRENT_SYSTEM_ICON_THEME} = $sys_theme;
                         $$self{_LAST_SYSTEM_ICON_THEME_APPLY} = $now;
+                        eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
                         print STDERR "INFO: Applied deferred system icon theme '$sys_theme'\n" if $ENV{ASBRU_DEBUG};
                         eval { $self->_refresh_all_icons(); };
+                    } else {
+                        print STDERR "WARN: Deferred icon theme apply failed via settings for '$sys_theme'\n" if $ENV{ASBRU_DEBUG};
                     }
                 }
                 return 0;
@@ -773,12 +824,18 @@ sub _initGUI {
     $$self{_GUI}{scroll1}->set_overlay_scrolling($$self{_CFG}{'defaults'}{'tree overlay scrolling'});
     $$self{_GUI}{nbTreeTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbTreeTabLabel} = create_label();
-    my $tree_icon = PACIcons::icon_image('folder','asbru-treelist');
-    if ($tree_icon && eval { $tree_icon->get_parent }) {
-        # Icon already has parent, create a new one
-        $tree_icon = PACIcons::icon_image('folder','asbru-treelist'); 
-    }
-    $$self{_GUI}{nbTreeTab}->pack_start($tree_icon, 0, 1, 0) if $tree_icon;
+    
+    # Fix GTK critical error: ensure icon has no parent before packing
+    eval {
+        my $tree_icon = PACIcons::icon_image('folder','asbru-treelist');
+        if ($tree_icon) {
+            # Check if icon already has a parent and remove it if necessary
+            if (my $parent = $tree_icon->get_parent()) {
+                $parent->remove($tree_icon);
+            }
+            $$self{_GUI}{nbTreeTab}->pack_start($tree_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbTreeTab}->pack_start($$self{_GUI}{nbTreeTabLabel}, 0, 1, 0);
     }
@@ -801,13 +858,19 @@ sub _initGUI {
     $$self{_GUI}{treeConnections}->set_enable_search(0);
     $$self{_GUI}{treeConnections}->set_has_tooltip(1);
     $$self{_GUI}{treeConnections}->set_grid_lines('GTK_TREE_VIEW_GRID_LINES_NONE');
+    
+    # Apply theme-aware styling to connection tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeConnections});
+    
+    # Set custom CSS class for better theme targeting
+    $$self{_GUI}{treeConnections}->get_style_context()->add_class('asbru-connection-tree');
     # Implement a "TreeModelSort" to auto-sort the data
     $$self{_GUI}{treeConnections}->set_model(SortedTreeStore->create($$self{_GUI}{treeConnections}->get_model(), $$self{_CFG}, $$self{_VERBOSE}));
     $$self{_GUI}{treeConnections}->get_selection()->set_mode('GTK_SELECTION_MULTIPLE');
 
     @{$$self{_GUI}{treeConnections}{'data'}}=(
         {
-            value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+            value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
             children => []
         }
     );
@@ -848,7 +911,17 @@ sub _initGUI {
     $$self{_GUI}{scroll2} = create_scrolled_window();
     $$self{_GUI}{nbFavTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbFavTabLabel} = create_label();
-    $$self{_GUI}{nbFavTab}->pack_start(PACIcons::icon_image('favourite_on','asbru-favourite-on'), 0, 1, 0);
+    
+    # Fix GTK critical error for favourites icon
+    eval {
+        my $fav_icon = PACIcons::icon_image('favourite_on','asbru-favourite-on');
+        if ($fav_icon) {
+            if (my $parent = $fav_icon->get_parent()) {
+                $parent->remove($fav_icon);
+            }
+            $$self{_GUI}{nbFavTab}->pack_start($fav_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbFavTab}->pack_start($$self{_GUI}{nbFavTabLabel}, 0, 1, 0);
     }
@@ -876,12 +949,28 @@ sub _initGUI {
     $$self{_GUI}{treeFavourites}->set_enable_search(0);
     $$self{_GUI}{treeFavourites}->set_has_tooltip(1);
     $$self{_GUI}{treeFavourites}->get_selection()->set_mode('GTK_SELECTION_MULTIPLE');
+    
+    # Apply theme-aware styling to favourites tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeFavourites});
+    
+    # Set custom CSS class for better theme targeting
+    $$self{_GUI}{treeFavourites}->get_style_context()->add_class('asbru-connection-tree');
 
     # Create a scrolled3 scrolled window to contain the history tree - AI-assisted modernization: Updated for GTK4 compatibility
     $$self{_GUI}{scroll3} = create_scrolled_window();
     $$self{_GUI}{nbHistTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbHistTabLabel} = create_label();
-    $$self{_GUI}{nbHistTab}->pack_start(PACIcons::icon_image('history','asbru-history'), 0, 1, 0);
+    
+    # Fix GTK critical error for history icon
+    eval {
+        my $hist_icon = PACIcons::icon_image('history','asbru-history');
+        if ($hist_icon) {
+            if (my $parent = $hist_icon->get_parent()) {
+                $parent->remove($hist_icon);
+            }
+            $$self{_GUI}{nbHistTab}->pack_start($hist_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbHistTab}->pack_start($$self{_GUI}{nbHistTabLabel}, 0, 1, 0);
     }
@@ -905,6 +994,9 @@ sub _initGUI {
     $$self{_GUI}{treeHistory}->set_headers_visible(0);
     $$self{_GUI}{treeHistory}->set_enable_search(0);
     $$self{_GUI}{treeHistory}->set_has_tooltip(1);
+    
+    # Apply theme-aware styling to history tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeHistory});
 
     $$self{_GUI}{vboxclu} = create_box('vertical', 0);
 
@@ -919,7 +1011,17 @@ sub _initGUI {
     $$self{_GUI}{scrolledclu} = create_scrolled_window();
     $$self{_GUI}{nbCluTab} = create_box('horizontal', 0);
     $$self{_GUI}{nbCluTabLabel} = create_label();
-    $$self{_GUI}{nbCluTab}->pack_start(PACIcons::icon_image('group','asbru-cluster-manager'), 0, 1, 0);
+    
+    # Fix GTK critical error for cluster icon
+    eval {
+        my $clu_icon = PACIcons::icon_image('group','asbru-cluster-manager');
+        if ($clu_icon) {
+            if (my $parent = $clu_icon->get_parent()) {
+                $parent->remove($clu_icon);
+            }
+            $$self{_GUI}{nbCluTab}->pack_start($clu_icon, 0, 1, 0);
+        }
+    };
     if ($$self{_CFG}{'defaults'}{'layout'} ne 'Compact') {
         $$self{_GUI}{nbCluTab}->pack_start($$self{_GUI}{nbCluTabLabel}, 0, 1, 0);
     }
@@ -942,6 +1044,9 @@ sub _initGUI {
     $$self{_GUI}{treeClusters}->set_headers_visible(0);
     $$self{_GUI}{treeClusters}->set_enable_search(0);
     $$self{_GUI}{treeClusters}->set_has_tooltip(0);
+    
+    # Apply theme-aware styling to clusters tree (Task 4.1)
+    PACCompat::registerTreeWidgetForThemeUpdates($$self{_GUI}{treeClusters});
 
     # Create a hbox0: exec and clusters - AI-assisted modernization: Updated for GTK4 compatibility
     $$self{_GUI}{hbox0} = create_box('vertical', 0);
@@ -1000,7 +1105,7 @@ sub _initGUI {
         $$self{_GUI}{scriptsBtn} = create_button('Scripts');
     }
     $$self{_GUI}{hboxclusters}->pack_start($$self{_GUI}{scriptsBtn}, 1, 1, 0);
-    $$self{_GUI}{scriptsBtn}->set_image(PACIcons::icon_image('settings','asbru-script'));
+    $$self{_GUI}{scriptsBtn}->set_image(PACIcons::icon_image('text-x-script','asbru-script'));
     $$self{_GUI}{scriptsBtn}->set('can-focus' => 0);
     if ($$self{_CFG}{'defaults'}{'layout'} eq 'Compact') {
         $$self{_GUI}{scriptsBtn}->get_style_context()->add_class("button-cp");
@@ -1015,7 +1120,7 @@ sub _initGUI {
         $$self{_GUI}{pccBtn} = create_button('PCC');
     }
     $$self{_GUI}{hboxclusters}->pack_start($$self{_GUI}{pccBtn}, 1, 1, 0);
-    $$self{_GUI}{pccBtn}->set_image(PACIcons::icon_image('settings','gtk-justify-fill'));
+    $$self{_GUI}{pccBtn}->set_image(PACIcons::icon_image('applications-system','gtk-justify-fill'));
     $$self{_GUI}{pccBtn}->set('can-focus' => 0);
     $$self{_GUI}{pccBtn}->set_tooltip_text("Open the Power Clusters Controller:\nexecute commands in every clustered terminal from this single window");
 
@@ -1044,7 +1149,8 @@ sub _initGUI {
 
     my $tablbl = create_box('horizontal', 0);
     $tablbl->pack_start(create_label('Info '), 0, 1, 0);
-    $$self{_GUI}{_TABIMG} = PACIcons::icon_image('settings','gtk-info');
+    # Use current theme's information icon for Info tab
+    $$self{_GUI}{_TABIMG} = PACIcons::icon_image('info','dialog-information');
     $tablbl->pack_start($$self{_GUI}{_TABIMG}, 0, 1, 0);
     $tablbl->show_all();
 
@@ -1158,7 +1264,10 @@ sub _initGUI {
 
     # Create "Lock/Unlock" button
     $$self{_GUI}{lockApplicationBtn} = Gtk3::ToggleButton->new();
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','asbru-unprotected'));
+    # Clear icon cache for fresh lock icons
+    PACIcons::clear_cache();
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
+    eval { $$self{_GUI}{lockApplicationBtn}->set_always_show_image(1); };
     $$self{_GUI}{lockApplicationBtn}->set_active(0);
     $$self{_GUI}{lockApplicationBtn}->set('can-focus' => 0);
     $$self{_GUI}{lockApplicationBtn}->set_tooltip_text('Password [un]lock GUI. In order to use this functionality, check the "Protect with password" field under "Preferences"->"Main Options"');
@@ -1182,12 +1291,15 @@ sub _initGUI {
         $$self{_GUI}{hbuttonbox1}->pack_start($$self{_GUI}{quitBtn}, 1, 1, 0);
     }
     $$self{_GUI}{quitBtn}->set_image(PACIcons::icon_image('quit','gtk-quit'));
+    # Harden: avoid becoming default or being triggered by Enter on startup
+    eval { $$self{_GUI}{quitBtn}->set_can_default(0); };
+    eval { $$self{_GUI}{quitBtn}->set_activates_default(0); };
     $$self{_GUI}{quitBtn}->set('can-focus' => 0);
     $$self{_GUI}{quitBtn}->set_tooltip_text('Close all terminals and terminate the application');
 
     # Setup some window properties.
     $$self{_GUI}{main}->set_title("$APPNAME" . ($$self{_READONLY} ? ' - READ ONLY MODE' : ''));
-    Gtk3::Window::set_default_icon_from_file($APPICON);
+    _applyDefaultAppIcon();
     $$self{_GUI}{main}->set_default_size($$self{_GUI}{sw} // 600, $$self{_GUI}{sh} // 480);
     $$self{_GUI}{main}->set_resizable(1);
 
@@ -1226,7 +1338,7 @@ sub _initGUI {
         $$self{_GUI}{_PACTABS}->set_default_size(600, 400);
         $$self{_GUI}{_PACTABS}->set_resizable(1);
         $$self{_GUI}{_PACTABS}->maximize() if $$self{_CFG}{'defaults'}{'start maximized'};
-        Gtk3::Window::set_default_icon_from_file($APPICON);
+    _applyDefaultAppIcon();
 
         # Create a notebook widget - AI-assisted modernization: Updated for GTK4 compatibility
         $$self{_GUI}{nb} = create_notebook();
@@ -1296,10 +1408,10 @@ sub _initGUI {
         };
     }
     if ($COSMIC) {
-        my $maybe = eval { PACTrayCosmic->new($self) };
-        if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
-        # Some objects might overload boolean false; accept any blessed ref
-        if ($maybe && ref($maybe) || (ref($maybe) && Scalar::Util::blessed($maybe))) {
+    my $maybe = eval { PACTrayCosmic->new($self) };
+    if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
+    # Some objects might overload boolean false; accept any blessed ref
+    if ((defined $maybe && ref($maybe)) || (ref($maybe) && Scalar::Util::blessed($maybe))) {
             $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
         } elsif (ref($maybe)) { # ref but evaluated false somehow
             $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
@@ -2393,15 +2505,30 @@ sub _setupCallbacks {
     });
     $$self{_GUI}{scriptsBtn}->signal_connect('clicked' => sub { $$self{_SCRIPTS}->show(); });
     $$self{_GUI}{pccBtn}->signal_connect('clicked' => sub { $$self{_PCC}->show(); });
-    $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub { $self->_quitProgram(); });
+    if ($ENV{ASBRU_DEBUG}) {
+        $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub {
+            my $age = time() - ($self->{_START_TS} // time);
+            print STDERR "DEBUG: quitBtn clicked ignored under ASBRU_DEBUG (age=${age}s)\n";
+            return 1; # ignore accidental activations during debug runs
+        });
+    } else {
+        $$self{_GUI}{quitBtn}->signal_connect('clicked' => sub {
+            print STDERR "DEBUG: quitBtn clicked -> invoking _quitProgram()\n" if $ENV{ASBRU_DEBUG};
+            $self->_quitProgram();
+        });
+    }
     $$self{_GUI}{saveBtn}->signal_connect('clicked' => sub { $self->_saveConfiguration(); });
     $$self{_GUI}{aboutBtn}->signal_connect('clicked' => sub { $self->_showAboutWindow(); });
     $$self{_GUI}{wolBtn}->signal_connect('clicked' => sub { _wakeOnLan(); });
     $$self{_GUI}{lockApplicationBtn}->signal_connect('toggled' => sub {
         if ($$self{_GUI}{lockApplicationBtn}->get_active()) {
             $self->_lockAsbru();
+            # Update icon to locked
+            $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','changes-prevent'));
         } else {
             $self->_unlockAsbru();
+            # Update icon to unlocked
+            $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
         }
     });
     if ($$self{_CFG}{'defaults'}{'layout'} eq 'Compact') {
@@ -2443,19 +2570,16 @@ sub _setupCallbacks {
         if (!defined $$self{_GUI}{_PACTABS}) {
             return 1;
         }
-        if ($$self{_GUI}{nb}->get_n_pages == 0) {
+        my $pages = $$self{_GUI}{nb}->get_n_pages();
+        if ($pages == 0) {
+            # No more tabs left: apply user preference
             $$self{_GUI}{_PACTABS}->hide();
-        } elsif ($$self{_GUI}{nb}->get_n_pages == 1) {
-            $$self{_GUI}{treeConnections}->grab_focus();
-            $$self{_GUI}{showConnBtn}->set_active(1);
-
-            if ($$self{_CFG}{defaults}{'when no more tabs'} == 0) {
-                #nothing
-            } elsif ($$self{_CFG}{defaults}{'when no more tabs'} == 1) {
-                #quit
+            my $pref = $$self{_CFG}{defaults}{'when no more tabs'} // 0;
+            if ($pref == 1) {
+                # quit
                 $self->_quitProgram();
-            } elsif ($$self{_CFG}{defaults}{'when no more tabs'} == 2) {
-                #hide
+            } elsif ($pref == 2) {
+                # hide
                 $$self{_TRAY}->set_active();
                 # Trigger the "lock" procedure ?
                 if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
@@ -2463,7 +2587,13 @@ sub _setupCallbacks {
                 }
                 # Hide main window
                 $self->_hideConnectionsList();
+            } else {
+                # nothing
             }
+        } elsif ($pages == 1) {
+            # Still one tab left: just reset focus UI, do not apply "no more tabs" preference
+            $$self{_GUI}{treeConnections}->grab_focus();
+            $$self{_GUI}{showConnBtn}->set_active(1);
         }
         return 1;
     });
@@ -2587,21 +2717,16 @@ sub _setupCallbacks {
 
     # Capture window closing
     $$self{_GUI}{main}->signal_connect('delete_event' => sub {
-        if ($$self{_CFG}{defaults}{'close to tray'}) {
-            # Show tray icon
-            $$self{_TRAY}->set_active();
-            # Trigger the "lock" procedure ?
-            if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
-                $$self{_GUI}{lockApplicationBtn}->set_active(1);
-            }
-            # Hide main window
-            if (!$STRAY) {
-                $$self{_GUI}{main}->iconify();
-            } else {
-                $self->_hideConnectionsList();
-            }
+        print STDERR "DEBUG: main delete_event received (hiding window, not quitting)\n" if $ENV{ASBRU_DEBUG};
+        # Always hide to tray instead of quitting directly; users can exit via menu/quit button
+        $$self{_TRAY}->set_active();
+        if ($$self{_CFG}{'defaults'}{'use gui password'} && $$self{_CFG}{'defaults'}{'use gui password tray'}) {
+            $$self{_GUI}{lockApplicationBtn}->set_active(1);
+        }
+        if (!$STRAY) {
+            $$self{_GUI}{main}->iconify();
         } else {
-            $self->_quitProgram();
+            $self->_hideConnectionsList();
         }
         return 1;
     });
@@ -2718,7 +2843,7 @@ sub _setFavourite {
 sub _lockAsbru {
     my $self = shift;
 
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','asbru-protected'));
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_on','changes-prevent'));
     $$self{_GUI}{lockApplicationBtn}->set_active(1);
     $$self{_GUI}{vboxCommandPanel}->set_sensitive(0);
     $$self{_GUI}{showConnBtn}->set_sensitive(0);
@@ -2758,7 +2883,7 @@ sub _unlockAsbru {
         return 0;
     }
 
-    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','asbru-unprotected'));
+    $$self{_GUI}{lockApplicationBtn}->set_image(PACIcons::icon_image('lock_off','changes-allow'));
     $$self{_GUI}{lockApplicationBtn}->set_active(0);
     $$self{_GUI}{vboxCommandPanel}->set_sensitive(1);
     $$self{_GUI}{showConnBtn}->set_sensitive(1);
@@ -2823,11 +2948,18 @@ sub __treeBuildNodeName {
     my $p_color = $$self{_CFG}{defaults}{'protected color'};
     my $p_uncolor = $$self{_CFG}{defaults}{'unprotected color'} // '#000000';
 
-    # Auto-adjust colors for system theme
-    if ($$self{_CFG}{defaults}{theme} eq 'system') {
-        my $auto_color = $self->_getSystemThemeTextColor();
-        if ($auto_color) {
-            $p_uncolor = $auto_color unless $protected;
+    # For connection tree, let CSS handle the color instead of forcing Pango markup
+    # This ensures consistency with the rest of the GTK theme
+    if ($$self{_CFG}{defaults}{theme} eq 'system' || $$self{_CFG}{defaults}{theme} eq 'asbru-dark' || $$self{_CFG}{defaults}{theme} eq 'default') {
+        # Skip color override for connection tree elements - let CSS do the work
+        # Only set color for protected items or non-tree elements
+        if ($protected) {
+            my $auto_color = $self->_getSystemThemeTextColor();
+            $p_uncolor = $auto_color if $auto_color;
+        } else {
+            # For unprotected tree elements, don't set color - let CSS handle it
+            $p_unset = '' if !$protected;
+            $p_uncolor = '';
         }
     }
 
@@ -2842,9 +2974,15 @@ sub __treeBuildNodeName {
     if ($protected) {
         $pset = "$p_set='$p_color'";
     } else {
-        $pset = "$p_unset='$p_uncolor'";
+        # Only set color if we have a color to set
+        if ($p_uncolor && $p_unset) {
+            $pset = "$p_unset='$p_uncolor'";
+        }
     }
-    $name = "<span $pset$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    $name = "<span$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    if ($pset) {
+        $name = "<span $pset$bold font='$$self{_CFG}{defaults}{'tree font'}'> $name</span>";
+    }
 
     return $name;
 }
@@ -2860,26 +2998,76 @@ sub _getSystemThemeTextColor {
     # Try to detect if we're using a dark theme
     my $is_dark = 0;
     
-    # Method 1: Check COSMIC theme settings
-    if ($ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
+    # Method 1: Check KDE theme settings
+    if ($ENV{XDG_CURRENT_DESKTOP} =~ /kde/i) {
+        # For KDE, check if the current theme contains "dark" or if it's a known dark theme
+        my ($kde_theme, $e1, $c1) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'General', '--key', 'ColorScheme'] });
+        if ($c1 != 0 || $kde_theme eq '') { ($kde_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'General', '--key', 'ColorScheme'] }); }
+        chomp $kde_theme;
+        $is_dark = 1 if $kde_theme =~ /dark|opensusedark|breeze.*dark/i;
+
+        # Also check the window decoration theme
+        my ($kde_window_theme, $e2, $c2) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'org.kde.kdecoration2', '--key', 'theme'] });
+        if ($c2 != 0 || $kde_window_theme eq '') { ($kde_window_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'org.kde.kdecoration2', '--key', 'theme'] }); }
+        $is_dark = 1 if $kde_window_theme =~ /dark/i;
+
+        # Fallback: check if system prefers dark mode globally
+        my ($kde_global_theme, $e3, $c3) = PACUtils::run_cmd({ argv => ['kreadconfig6', '--group', 'KDE', '--key', 'LookAndFeelPackage'] });
+        if ($c3 != 0 || $kde_global_theme eq '') { ($kde_global_theme) = PACUtils::run_cmd({ argv => ['kreadconfig5', '--group', 'KDE', '--key', 'LookAndFeelPackage'] }); }
+        $is_dark = 1 if $kde_global_theme =~ /dark/i;
+
+        print STDERR "DEBUG: KDE theme detection - kde_theme: '$kde_theme', window: '$kde_window_theme', global: '$kde_global_theme', is_dark: $is_dark\n" if $ENV{ASBRU_DEBUG};
+    }
+    
+    # Method 2: Check COSMIC theme settings (original code)
+    if (!$is_dark && $ENV{XDG_CURRENT_DESKTOP} =~ /cosmic/i) {
         # For COSMIC, check if the system prefers dark mode
-        my $cosmic_dark = `gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null` || '';
+        my ($cosmic_dark) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'] });
         $is_dark = 1 if $cosmic_dark =~ /prefer-dark/;
-        
+
         # Also check for dark window theme
-        my $window_theme = `gsettings get org.gnome.desktop.wm.preferences theme 2>/dev/null` || '';
+        my ($window_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.wm.preferences', 'theme'] });
         $is_dark = 1 if $window_theme =~ /dark/i;
-        
-        # COSMIC specific: check for dark appearance 
-        my $cosmic_appearance = `dconf read /org/cosmic/desktop/appearance 2>/dev/null` || '';
+
+        # COSMIC specific: check for dark appearance
+        my ($cosmic_appearance) = PACUtils::run_cmd({ argv => ['dconf', 'read', '/org/cosmic/desktop/appearance'] });
         $is_dark = 1 if $cosmic_appearance =~ /dark/i;
     }
     
-    # Method 2: Check GTK theme name
-    my $gtk_theme = $ENV{GTK_THEME} || `gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null` || '';
-    $is_dark = 1 if $gtk_theme =~ /dark/i;
+    # Method 3: Check GTK theme name
+    if (!$is_dark) {
+        my $gtk_theme = $ENV{GTK_THEME};
+        if (!defined $gtk_theme || $gtk_theme eq '') {
+            ($gtk_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+        }
+        $is_dark = 1 if ($gtk_theme // '') =~ /dark/i;
+    }
     
-    # Method 3: Check if TreeView has dark background (heuristic)
+    # Method 4: Heuristic based on known dark themes
+    if (!$is_dark) {
+        my $gtk_env = $ENV{GTK_THEME} // '';
+        my ($gtk_sys) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+        my $all_theme_info = "GTK: $gtk_env\n$gtk_sys";
+        $is_dark = 1 if $all_theme_info =~ /breeze.*dark|adwaita.*dark|arc.*dark|numix.*dark/i;
+    }
+    
+    # Method 5: For openSUSE with Breeze theme, assume dark if no explicit light theme
+    if (!$is_dark && -f '/etc/os-release') {
+        my ($os_info) = PACUtils::run_cmd({ argv => ['/bin/cat', '/etc/os-release'] });
+        if ($os_info =~ /opensuse/i) {
+            my ($current_theme) = PACUtils::run_cmd({ argv => ['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'] });
+            # If it's Breeze and not explicitly light, assume it follows system dark preference
+            if ($current_theme =~ /breeze/i && $current_theme !~ /light/i) {
+                # Check if system has dark preference through various methods
+                if (-f "$ENV{HOME}/.config/kdeglobals") {
+                    my ($grep_out, undef, $grep_code) = PACUtils::run_cmd({ argv => ['/bin/grep', '-i', 'colorscheme.*dark', "$ENV{HOME}/.config/kdeglobals"] });
+                    $is_dark = 1 if $grep_code == 0 && $grep_out ne '';
+                }
+            }
+        }
+    }
+    
+    # Method 6: Check if TreeView has dark background (heuristic) 
     if (!$is_dark && $$self{_GUI}{treeConnections}) {
         eval {
             my $style_context = $$self{_GUI}{treeConnections}->get_style_context();
@@ -2894,7 +3082,7 @@ sub _getSystemThemeTextColor {
         };
     }
     
-    # Method 4: Heuristic - if current window has dark background, assume dark theme
+    # Method 7: Heuristic - if current window has dark background, assume dark theme
     if (!$is_dark && $$self{_GUI}{main}) {
         eval {
             my $style_context = $$self{_GUI}{main}->get_style_context();
@@ -2916,6 +3104,52 @@ sub _getSystemThemeTextColor {
     $$self{_CACHED_THEME_TIME} = time();
     
     return $color;
+}
+
+sub _getConnectionTypeIcon {
+    my $self = shift;
+    my $method = shift // '';
+    
+    my $icon;
+    
+    # Use method-specific icons based on asbru_method_* naming
+    if ($method eq 'SSH') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.svg");
+    } elsif ($method =~ /^RDP|xfreerdp|rdesktop/i) {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.svg");
+    } elsif ($method eq 'VNC') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.svg");
+    } elsif ($method eq 'SFTP') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.svg");
+    } elsif ($method eq 'FTP') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.svg");
+    } elsif ($method eq 'Telnet') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.svg");
+    } elsif ($method eq 'MOSH') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.svg");
+    } elsif ($method eq 'WebDAV') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.svg");
+    } elsif ($method eq 'Generic Command') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg");
+    } elsif ($method eq 'PACShell' || $method eq 'Local') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_local.svg");
+    } elsif ($method eq 'IBM 3270/5250') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.svg");
+    } elsif ($method eq 'Serial (cu)') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.svg");
+    } elsif ($method eq 'Serial (remote-tty)') {
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.svg");
+    }
+    
+    # Fallback to default connection icon if method-specific icon not found
+    $icon //= $DEFCONNICON;
+    
+    # Ensure all connection icons are scaled to 16x16 for consistency
+    if ($icon && $icon->get_width() != 16 || $icon->get_height() != 16) {
+        $icon = $icon->scale_simple(16, 16, 'hyper');
+    }
+    
+    return $icon;
 }
 
 sub _hasProtectedChildren {
@@ -2997,7 +3231,7 @@ sub _treeConnections_menu_lite {
     # Quick Edit variables
     my @var_submenu;
     my $i = 0;
-    foreach my $var (map{ ($_->{hide} ? '<hidden>' : $_->{txt}) // '' } @{ $$self{_CFG}{'environments'}{$sel[0]}{'variables'} }) {
+    foreach my $var (map { ($_->{hide} ? '<hidden>' : $_->{txt}) // '' } @{ $$self{_CFG}{'environments'}{$sel[0]}{'variables'} }) {
         my $j = $i;
         push(@var_submenu, {
             label => '<V:' . $j . '> = ' . $var,
@@ -3014,7 +3248,6 @@ sub _treeConnections_menu_lite {
                 $$self{_CFG}{'environments'}{$sel[0]}{'variables'}[$j]{txt} = $new_var;
             }
         });
-
         ++$i;
     }
     if (scalar(@sel) == 1) {
@@ -3512,16 +3745,46 @@ sub _treeConnections_menu {
 sub _showAboutWindow {
     my $self = shift;
 
+        my $version_txt = PACUtils::emoji('🚀 ') . "v$APPVERSION";
+        my $copyright = PACUtils::_maybe_strip_emojis(
+                "🌟 Copyright © 2025 Anton Isaiev\n"
+            . "📡 Copyright © 2017-2022 Ásbrú Connection Manager team\n"
+            . "⚡ Copyright © 2010-2016 David Torrejón Vaquerizas"
+        );
+        my $license_txt = PACUtils::_maybe_strip_emojis(
+                "\n🚀 Ásbrú Connection Manager (Modernized Fork)\n\n"
+            . "👨‍💻 Copyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\n"
+            . "🌐 Copyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\n"
+            . "⚡ Copyright © 2010-2016 David Torrejón Vaquerizas\n\n"
+            . "📜 This program is free software: you can redistribute it and/or modify\n"
+            . "it under the terms of the GNU General Public License as published by\n"
+            . "the Free Software Foundation, either version 3 of the License, or\n"
+            . "(at your option) any later version.\n\n"
+            . "🔒 This program is distributed in the hope that it will be useful,\n"
+            . "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+            . "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+            . "GNU General Public License for more details.\n\n"
+            . "📖 You should have received a copy of the GNU General Public License\n"
+            . "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n"
+            . "✨ Modern SSH/Telnet connection manager optimized for PopOS 24.04 & Wayland\n"
+            . "🔗 GitHub: https://github.com/totoshko88/asbru-cm\n"
+            . "🌟 Features: KeePassXC integration, session recording, modern UI themes"
+        );
+
     Gtk3::show_about_dialog(
         $$self{_GUI}{main},(
-        "program_name" => '',  # name is shown in the logo
-        "version" => "v$APPVERSION",
-        "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
-        # Modernized fork attribution (2025)
-        "copyright" => "Copyright © 2025 Anton Isaiev\nCopyright © 2017-2022 Ásbrú Connection Manager team\nCopyright © 2010-2016 David Torrejón Vaquerizas",
-        "website" => 'https://asbru-cm.net/',
-    "license" => "\nÁsbrú Connection Manager (Modernized Fork)\n\nCopyright © 2025 Anton Isaiev <totoshko88\@gmail.com>\nCopyright © 2017-2022 Ásbrú Connection Manager team <https://asbru-cm.net>\nCopyright © 2010-2016 David Torrejón Vaquerizas\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n"
-    ));
+                "program_name" => '',  # name is shown in the logo
+                "version" => $version_txt,
+                "logo" => _pixBufFromFile("$RES_DIR/asbru-logo-400.png"),
+                # Modernized fork attribution (2025)
+                "copyright" => $copyright,
+                "website" => 'https://github.com/totoshko88/asbru-cm',
+        # Keep dialog size stable and avoid jitter when showing license
+        "license" => $license_txt,
+        "wrap-license" => 1,
+        "default-width" => 640,
+        "default-height" => 480,
+        ));
 
     return 1;
 }
@@ -3790,7 +4053,8 @@ sub _quitProgram {
         $$self{_CONFIG}->_exporter('yaml', $CFG_FILE);        # Export as YAML file
         $$self{_CONFIG}->_exporter('perl', $CFG_FILE_DUMPER); # Export as Perl data
     };
-    chdir(${CFG_DIR}) and system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} rm -rf sockets/* tmp/*");  # Delete temporal files
+    eval { chdir(${CFG_DIR}); 1 } or warn "WARN: could not chdir to ${CFG_DIR}: $@";
+    eval { PACUtils::remove_tmp_dirs(${CFG_DIR}, 'sockets', 'tmp'); 1 } or warn "WARN: cleanup failed: $@";  # Delete temporal files safely
 
     # And finish every GUI
     Gtk3->main_quit();
@@ -3977,7 +4241,7 @@ sub _readConfiguration {
      # PENDING: I think we should be able to remove this code
     if ($continue && (! -f "${CFG_FILE}.prev3") && (-f $CFG_FILE)) {
         print STDERR "INFO: Migrating config file to v3...\n";
-        PACUtils::_splash(1, "$APPNAME (v$APPVERSION):Migrating config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
+        PACUtils::_splash(1, "🔄 $APPNAME (v$APPVERSION):Migrating config...", ++$PAC_START_PROGRESS, $PAC_START_TOTAL);
         $$self{_CFG} = _cfgCheckMigrationV3();
         copy($CFG_FILE, "${CFG_FILE}.prev3") or die "ERROR: Could not copy pre v.3 cfg file '$CFG_FILE' to '$CFG_FILE.prev3': $!";
         nstore($$self{_CFG}, $CFG_FILE_NFREEZE) or die"ERROR: Could not save config file '$CFG_FILE_NFREEZE': $!";
@@ -4011,7 +4275,7 @@ sub _readConfiguration {
     }
 
     # Make some sanity checks
-    $splash and PACUtils::_splash(1, "$APPNAME (v$APPVERSION):Checking config...", 4, 5);
+    $splash and PACUtils::_splash(1, "🔍 $APPNAME (v$APPVERSION):Checking config...", 4, 5);
     my $pre_override = $$self{_CFG}{'defaults'}{'system icon theme override'};
     _cfgSanityCheck($$self{_CFG});
     # Restore system icon theme override if sanity check discarded it (allow new key persistence)
@@ -4033,7 +4297,7 @@ sub _loadTreeConfiguration {
 
     @{ $$self{_GUI}{treeConnections}{'data'} } =
     ({
-        value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+        value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
         children => []
     });
     foreach my $child (keys %{ $$self{_CFG}{environments}{'__PAC__ROOT__'}{children} }) {
@@ -4056,20 +4320,13 @@ sub __recurLoadTree {
     if (!$$self{_CFG}{environments}{$uuid}{'_is_group'}) {
         # Leaf connection node (not a group)
         my $icon = $$self{_CFG}{environments}{$uuid}{'icon'};
-        if (!$icon) {
-            my $method = $$self{_CFG}{environments}{$uuid}{'method'} // '';
-            my $logical;
-            if ($method =~ /ssh/i) { $logical = 'ssh'; }
-            elsif ($method =~ /xfreerdp|rdesktop|RDP/i) { $logical = 'rdp'; }
-            elsif ($method =~ /vnc/i) { $logical = 'vnc'; }
-            elsif ($method =~ /sftp/i) { $logical = 'sftp'; }
-            elsif ($method =~ /telnet/i) { $logical = 'telnet'; }
-            elsif ($method =~ /ftp/i) { $logical = 'ftp'; }
-            if ($logical) {
-                my $img = PACIcons::icon_image($logical);
-                if ($img) { $icon = $img->get_pixbuf; }
-            }
-            $icon //= $DEFCONNICON;
+        
+        # Use native connection icons if preference is set or no custom icon
+        my $use_native = $$self{_CFG}{'defaults'}{'use_native_connection_icons'} // 1;
+        if ($use_native && $$self{_CFG}{environments}{$uuid}{'method'}) {
+            $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
+        } elsif (!$icon) {
+            $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
         }
         my $label = $node_name;
         my $node = {
@@ -4255,26 +4512,50 @@ sub _updateGUIWithUUID {
 
     my $is_root = $uuid eq '__PAC__ROOT__';
 
-    if ($is_root) {
-        $$self{_GUI}{descBuffer}->set_text(qq"
+     if ($is_root) {
+          my $welcome = sprintf(qq|
+🌟 Welcome to %s v%s! 🌟
 
- * Welcome to $APPNAME version $APPVERSION *
+🚀 Modern SSH/Telnet Connection Manager
+    Optimized for PopOS 24.04 & Wayland environments
 
- - To create a New GROUP of Connections:
+┌─────────────────────────────────────────────────────────────┐
+│ 🔗 Quick Start Guide                                       │
+└─────────────────────────────────────────────────────────────┘
 
-   1- 'click' over 'My Connections' (to create it at root) or any other GROUP
-   2- 'click' on the most left icon over the connections tree (or right-click over selected GROUP)
-   3- Follow instructions
+📁 Create Connection Groups:
+    1️⃣ Click on 'My Connections' or existing group
+    2️⃣ Use the leftmost toolbar icon 📋 or right-click
+    3️⃣ Follow the setup wizard ✨
 
- - To create a New CONNECTION in a selected Group or at root:
+🖥️  Add New Connections:
+    1️⃣ Select target group (or root)
+    2️⃣ Click the connection icon ⚡ in toolbar
+    3️⃣ Configure your connection settings 🔧
 
-   1- Select the container group to create the new connection into (or 'My Connections' to create it at root)
-   2- 'click' on the second most left icon over the connections tree (or right-click over selected GROUP)
-   3- Follow instructions
+┌─────────────────────────────────────────────────────────────┐
+│ 🌐 Resources & Support                                     │
+└─────────────────────────────────────────────────────────────┘
 
- - For the latest news, check the project website (https://asbru-cm.net/).
+🔗 This Fork: https://github.com/totoshko88/asbru-cm
+📖 Original Project: https://asbru-cm.net
+💡 Documentation: Full guides available online
+🐛 Issues: Report bugs on GitHub
 
-");
+┌─────────────────────────────────────────────────────────────┐
+│ ✨ Key Features                                           │
+└─────────────────────────────────────────────────────────────┘
+
+🔐 Secure connection management with KeePassXC integration
+🖼️  Screenshot capture and session recording
+📊 Connection statistics and usage tracking
+🎨 Modern UI with dark/light theme support
+🌍 Multi-protocol support (SSH, Telnet, RDP, VNC)
+⚡ Fast connection clustering and automation
+
+Start exploring by expanding 'My Connections' in the tree! 🎯
+|, $APPNAME, $APPVERSION);
+          $$self{_GUI}{descBuffer}->set_text(PACUtils::_maybe_strip_emojis($welcome));
     } else {
         if (!$$self{_CFG}{'environments'}{$uuid}{'description'}) {
             $$self{_CFG}{'environments'}{$uuid}{'description'} = 'Insert your comments for this connection here ...';
@@ -4518,10 +4799,19 @@ sub _apply_system_icon_theme {
         return 1; # throttle duplicate rapid apply
     }
     eval { require PACIcons; PACIcons::clear_cache(); };
-    eval { Gtk3::IconTheme::get_default()->set_custom_theme($theme); 1 } or do {
-        print STDERR "WARN: Failed to apply system icon theme '$theme': $@\n" if $@;
+    my $ok = 0;
+    eval {
+        my $settings = Gtk3::Settings->get_default();
+        if ($settings) {
+            $settings->set_property('gtk-icon-theme-name', $theme);
+            $ok = 1;
+        }
+        1;
+    } or do { };
+    unless ($ok) {
+        print STDERR "WARN: Failed to apply system icon theme '$theme' via settings\n" if $ENV{ASBRU_DEBUG};
         return 0;
-    };
+    }
     $$self{_CURRENT_SYSTEM_ICON_THEME} = $theme; $$self{_SYSTEM_THEME_SET}=1;
     $$self{_LAST_SYSTEM_ICON_THEME_APPLY} = $now;
     eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
@@ -4539,8 +4829,7 @@ sub _apply_internal_theme {
     $$self{_CFG}{'defaults'}{'theme'} = $theme;
     delete $$self{_CFG}{'defaults'}{'system icon theme override'}; # clear system override when switching to internal theme
     $$self{_THEME} = $dir;
-    eval { require PACIcons; PACIcons::clear_cache(); };
-    eval { PACIcons::set_theme_dir($dir, force => ($ENV{ASBRU_FORCE_ICON_RESCAN}?1:0)); };
+    # PACIcons module removed - icon registration will be handled by PACUtils
     _registerPACIcons($dir);
     
     # Reload CSS styling for theme
@@ -5134,7 +5423,7 @@ sub __importNodes {
         Gtk3::main_iteration() while Gtk3::events_pending();
         @{ $$self{_GUI}{treeConnections}{'data'} } = ();
         @{ $$self{_GUI}{treeConnections}{'data'} } = ({
-            value => [ $GROUPICON_ROOT, '<b>My Connections</b>', '__PAC__ROOT__' ],
+            value => [ $GROUPICON_ROOT, $self->__treeBuildNodeName('__PAC__ROOT__', 'My Connections'), '__PAC__ROOT__' ],
             children => []
         });
         Gtk3::main_iteration() while Gtk3::events_pending();
@@ -5586,58 +5875,70 @@ sub _ApplyLayout {
 # to centralize all tests concerning VTE into a single function
 sub _setVteCapabilities {
     my $self = shift;
-    my $vte = Vte::Terminal->new();
-
-    local $SIG{__WARN__} = sub {};
-    $$self{_Vte}{major_version} = Vte::get_major_version();
-    $$self{_Vte}{minor_version} = Vte::get_minor_version();
     
-    # Store VTE binding version information (AI-assisted modernization)
-    $$self{_Vte}{binding_version} = Vte::get_vte_version() if Vte->can('get_vte_version');
-    $$self{_Vte}{gtk4_compatible} = Vte::is_gtk4_compatible() if Vte->can('is_gtk4_compatible');
-    $$self{_Vte}{is_legacy} = Vte::is_legacy_vte() if Vte->can('is_legacy_vte');
-
-    # Does VTE supports 'set_bold_is_bright'
-    # (supposingly added in v0.52)
-    eval {
-        $vte->set_bold_is_bright(0);
+    # Use modern VTE compatibility layer
+    my $capabilities = PACVte::get_vte_capabilities();
+    
+    # Copy capabilities to internal structure
+    $$self{_Vte} = {
+        major_version => $capabilities->{major_version},
+        minor_version => $capabilities->{minor_version},
+        binding_version => $capabilities->{binding_version},
+        gtk4_compatible => $capabilities->{gtk4_compatible},
+        is_legacy => $capabilities->{is_legacy},
+        has_bright => $capabilities->{has_bright},
+        vte_feed_child => $capabilities->{vte_feed_child},
+        vte_feed_binary => $capabilities->{vte_feed_binary}
     };
-    if ($@) {
-        $$self{_Vte}{has_bright} = 0;
-    } else {
-        $$self{_Vte}{has_bright} = 1;
-    }
-
-    # Does VTE supports 1 or 2 parameters for 'feed_child'
-    # (supposingly 1 parameter as of v0.52 but some distros have a special patched version of v0.52 that
-    #  still requires 2 parameters; so let's discover this by trying ;
-    #  See https://bugs.launchpad.net/ubuntu/+source/ubuntu-release-upgrader/+bug/1780501)
-    $$self{_Vte}{vte_feed_child} = 0;
-    eval {
-        local $SIG{__WARN__} = sub { die @_ };
-        $vte->feed_child('abc', 3);
-        1;
-    } or do {
-        $$self{_Vte}{vte_feed_child} = 1;
-    };
-
-    # Does VTE supports 1 or 2 parameters for 'feed_child_binary'
-    # (1 parameter as of v0.46)
-    $$self{_Vte}{vte_feed_binary} = 0;
-    if ($$self{_Vte}{major_version} >= 1 or $$self{_Vte}{minor_version} >= 46) {
-        $$self{_Vte}{vte_feed_binary} = 1;
-    }
-
-    # Tell the world what we found out (AI-assisted modernization)
-    my $binding_info = $$self{_Vte}{binding_version} ? " (binding: $$self{_Vte}{binding_version})" : "";
-    my $gtk4_info = $$self{_Vte}{gtk4_compatible} ? " [GTK4 Compatible]" : " [GTK3 Legacy]";
-    print STDERR "INFO: Virtual terminal emulator (VTE) version is $$self{_Vte}{major_version}.$$self{_Vte}{minor_version}$binding_info$gtk4_info\n";
-    if ($$self{_VERBOSE}) {
-        foreach my $k (sort keys %{$$self{_Vte}}) {
-            print STDERR "       - $k = $$self{_Vte}{$k}\n";
+    
+    # Create temporary terminal for testing (only if VTE is available)
+    my $vte;
+    if ($HAVE_VTE) {
+        $vte = PACVte::new_terminal();
+        
+        if ($vte) {
+            # Test set_bold_is_bright support (VTE 0.52+)
+            eval {
+                $vte->set_bold_is_bright(0);
+                $$self{_Vte}{has_bright} = 1;
+            };
+            if ($@) {
+                $$self{_Vte}{has_bright} = 0;
+            }
+            
+            # Test feed_child parameter count
+            $$self{_Vte}{vte_feed_child} = 0;
+            eval {
+                local $SIG{__WARN__} = sub { die @_ };
+                $vte->feed_child('abc', 3);
+                1;
+            } or do {
+                $$self{_Vte}{vte_feed_child} = 1;
+            };
+            
+            # Test feed_child_binary (VTE 0.46+)
+            $$self{_Vte}{vte_feed_binary} = 0;
+            if ($$self{_Vte}{major_version} >= 1 or $$self{_Vte}{minor_version} >= 46) {
+                $$self{_Vte}{vte_feed_binary} = 1;
+            }
         }
     }
-    # Proactively destroy the temporary VTE widget to avoid lingering signal disconnect warnings
+    
+    # Report VTE capabilities (AI-assisted modernization)
+    if ($HAVE_VTE) {
+        my $binding_info = $$self{_Vte}{binding_version} ? " (binding: $$self{_Vte}{binding_version})" : "";
+        my $gtk4_info = $$self{_Vte}{gtk4_compatible} ? " [GTK4 Compatible]" : " [GTK3 Legacy]";
+        print STDERR "INFO: Virtual terminal emulator (VTE) version is $$self{_Vte}{major_version}.$$self{_Vte}{minor_version}$binding_info$gtk4_info\n";
+        if ($$self{_VERBOSE}) {
+            foreach my $k (sort keys %{$$self{_Vte}}) {
+                print STDERR "       - $k = $$self{_Vte}{$k}\n";
+            }
+        }
+    } else {
+        print STDERR "WARNING: VTE not available - terminal functionality limited\n";
+    }
+    
+    # Cleanup temporary VTE widget
     eval {
         if ($vte && ref($vte) && $vte->can('destroy')) {
             $vte->destroy();
@@ -5699,6 +6000,387 @@ sub _doFocusPage {
 
         # When found, do not process further
         last;
+    }
+}
+
+sub _checkDependencies {
+    my $self = shift;
+    
+    print STDERR "INFO: Checking system dependencies...\n";
+    
+    # Define tools with their installation hints and version detection
+    my %tools = (
+        # RDP clients
+        'xfreerdp' => {
+            'description' => 'FreeRDP client for RDP connections',
+            'install_hint' => 'freerdp2-wayland or freerdp-x11',
+            'critical' => 0,
+            'version_argv' => ['xfreerdp','--version'],
+            'version_line' => 'first',
+            'alternatives' => ['rdesktop']
+        },
+        'rdesktop' => {
+            'description' => 'Alternative RDP client',
+            'install_hint' => 'rdesktop',
+            'critical' => 0,
+            # Prefer -v if supported; fall back to plain rdesktop output parsing
+            'version_argv' => ['rdesktop','-v'],
+            'version_line' => 'first',
+            'alternatives' => ['xfreerdp']
+        },
+        
+        # VNC clients
+        'vncviewer' => {
+            'description' => 'VNC viewer client',
+            'install_hint' => 'tigervnc-viewer or xtightvncviewer',
+            'critical' => 0,
+            'version_argv' => ['vncviewer','--version'],
+            'version_line' => 'second',
+            'alternatives' => ['vinagre']
+        },
+        'vinagre' => {
+            'description' => 'GNOME VNC/RDP viewer',
+            'install_hint' => 'vinagre',
+            'critical' => 0,
+            'alternatives' => ['vncviewer', 'remmina']
+        },
+        'remmina' => {
+            'description' => 'Multi-protocol remote desktop client',
+            'install_hint' => 'remmina',
+            'critical' => 0,
+            'version_argv' => ['remmina','--version'],
+            'version_line' => 'last',
+            'alternatives' => ['vinagre']
+        },
+        
+        # SSH and secure connections
+        'ssh' => {
+            'description' => 'SSH client for secure connections',
+            'install_hint' => 'openssh-client',
+            'critical' => 1,
+            'version_argv' => ['ssh','-V'],
+            'version_line' => 'first'
+        },
+        'mosh' => {
+            'description' => 'Mobile shell for unstable connections',
+            'install_hint' => 'mosh',
+            'critical' => 0,
+            'version_argv' => ['mosh','--version'],
+            'version_line' => 'first'
+        },
+        'sshpass' => {
+            'description' => 'SSH password authentication helper',
+            'install_hint' => 'sshpass',
+            'critical' => 0,
+            'version_argv' => ['sshpass','-V'],
+            'version_line' => 'first'
+        },
+        
+        # Legacy protocols
+        'telnet' => {
+            'description' => 'Telnet client for legacy connections',
+            'install_hint' => 'telnet',
+            'critical' => 0
+        },
+        'ftp' => {
+            'description' => 'FTP client for file transfers',
+            'install_hint' => 'ftp',
+            'critical' => 0
+        },
+        'sftp' => {
+            'description' => 'Secure FTP client',
+            'install_hint' => 'openssh-client',
+            'critical' => 0
+        },
+        
+        # Serial connection tools
+        'cu' => {
+            'description' => 'Serial connection utility',
+            'install_hint' => 'cu or uucp',
+            'critical' => 0,
+            'version_argv' => ['cu','--version'],
+            'version_line' => 'first',
+            'alternatives' => ['screen', 'minicom']
+        },
+        'screen' => {
+            'description' => 'Terminal multiplexer (can handle serial)',
+            'install_hint' => 'screen',
+            'critical' => 0,
+            'version_argv' => ['screen','-v'],
+            'version_line' => 'first',
+            'alternatives' => ['cu', 'minicom']
+        },
+        'minicom' => {
+            'description' => 'Serial communication program',
+            'install_hint' => 'minicom',
+            'critical' => 0,
+            'version_argv' => ['minicom','--version'],
+            'version_line' => 'first',
+            'alternatives' => ['cu', 'screen']
+        },
+        
+        # Additional useful tools
+        'expect' => {
+            'description' => 'Automation tool for interactive applications',
+            'install_hint' => 'expect',
+            'critical' => 0,
+            'version_argv' => ['expect','-v'],
+            'version_line' => 'first'
+        },
+        'socat' => {
+            'description' => 'Multipurpose relay tool',
+            'install_hint' => 'socat',
+            'critical' => 0,
+            'version_argv' => ['socat','-V'],
+            'version_line' => 'first'
+        },
+        
+        # KeePass integration tools
+        'keepassxc-cli' => {
+            'description' => 'KeePassXC command line interface',
+            'install_hint' => 'keepassxc',
+            'critical' => 0,
+            'version_argv' => ['keepassxc-cli','--version'],
+            'version_line' => 'first'
+        },
+        
+        # IBM Mainframe connection tools
+        'x3270' => {
+            'description' => 'IBM 3270 terminal emulator for mainframe connections',
+            'install_hint' => 'x3270',
+            'critical' => 0
+        }
+    );
+    
+    my $missing_critical = 0;
+    my $missing_optional = 0;
+    my %available_tools = ();
+    
+    # Check tool availability and get versions
+    foreach my $tool (sort keys %tools) {
+        my $available = PACUtils::which_cached($tool) ? 1 : 0;
+        
+        if ($available) {
+            $available_tools{$tool} = 1;
+            my $version_info = "";
+            
+            if ($tools{$tool}{'version_argv'}) {
+                my ($out, $err, $code) = PACUtils::run_cmd({ argv => $tools{$tool}{'version_argv'} });
+                my $txt = '';
+                $txt .= $out if defined $out;
+                $txt .= $err if defined $err;
+                my @lines = grep { defined($_) && $_ ne '' } map { s/[\r\n]+$//r } split(/\n/, $txt // '');
+                if (!@lines && $tool eq 'rdesktop') {
+                    # Fallback: try plain rdesktop for version banner
+                    ($out, $err, $code) = PACUtils::run_cmd({ argv => ['rdesktop'] });
+                    $txt = ($out // '') . ($err // '');
+                    @lines = grep { $_ ne '' } map { s/[\r\n]+$//r } split(/\n/, $txt);
+                }
+                my $pick = $lines[0] // '';
+                if (($tools{$tool}{'version_line'} // '') eq 'last') {
+                    $pick = $lines[-1] // $pick;
+                } elsif (($tools{$tool}{'version_line'} // '') eq 'second') {
+                    $pick = $lines[1] // $pick;
+                }
+                $version_info = $pick ? " [$pick]" : "";
+            }
+            
+            print STDERR PACUtils::emoji('✅ ') . "$tool: Available$version_info ($tools{$tool}{'description'})\n";
+        } else {
+            if ($tools{$tool}{'critical'}) {
+                print STDERR PACUtils::emoji('❌ ') . "$tool: Missing (CRITICAL) - $tools{$tool}{'description'}\n";
+                print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
+                $missing_critical++;
+            } else {
+                print STDERR PACUtils::emoji('⚠️ ') . "$tool: Missing (optional) - $tools{$tool}{'description'}\n";
+                print STDERR "   Install with: $tools{$tool}{'install_hint'}\n";
+                $missing_optional++;
+            }
+        }
+    }
+    
+    # Check for alternative tools and provide suggestions
+    print STDERR "\nINFO: Alternative tool analysis:\n";
+    my %categories = (
+        'RDP' => ['xfreerdp', 'rdesktop', 'remmina'],
+        'VNC' => ['vncviewer', 'vinagre', 'remmina'],
+        'Serial' => ['cu', 'screen', 'minicom'],
+        'Mainframe' => ['x3270']
+    );
+    
+    foreach my $category (sort keys %categories) {
+        my @available_in_category = grep { $available_tools{$_} } @{$categories{$category}};
+        my @missing_in_category = grep { !$available_tools{$_} } @{$categories{$category}};
+        
+        if (@available_in_category) {
+            print STDERR PACUtils::emoji('✅ ') . "$category connections: " . join(', ', @available_in_category) . " available\n";
+        } else {
+            print STDERR PACUtils::emoji('❌ ') . "$category connections: No tools available. Consider installing: " . 
+                         join(' or ', @missing_in_category) . "\n";
+        }
+    }
+    
+    # Detect distribution and provide specific installation commands
+    my $distro = _detectDistribution();
+    if ($distro && ($missing_critical > 0 || $missing_optional > 0)) {
+        print STDERR "\nINFO: Distribution-specific installation suggestions for $distro:\n";
+        _provideInstallationSuggestions($distro, \%tools, \%available_tools);
+    }
+    
+    # Summary
+    print STDERR "\n";
+    if ($missing_critical > 0) {
+        print STDERR "WARNING: $missing_critical critical tool(s) missing. Some features may not work.\n";
+    }
+    if ($missing_optional > 0) {
+        print STDERR "INFO: $missing_optional optional tool(s) missing. Install them for full functionality.\n";
+    }
+    if ($missing_critical == 0 && $missing_optional == 0) {
+        print STDERR "INFO: All dependency checks passed successfully.\n";
+    }
+    
+    return 1;
+}
+
+sub _detectDistribution {
+    # Try to detect the Linux distribution
+    if (-f '/etc/os-release') {
+        my ($os_release) = PACUtils::run_cmd({ argv => ['/bin/cat','/etc/os-release'] });
+        if ($os_release =~ /^ID=(.+)$/m) {
+            my $id = $1;
+            $id =~ s/["']//g;
+            return $id;
+        }
+    }
+    
+    # Fallback methods
+    if (-f '/etc/debian_version') {
+        return 'debian';
+    } elsif (-f '/etc/redhat-release') {
+        return 'rhel';
+    } elsif (-f '/etc/arch-release') {
+        return 'arch';
+    } elsif (-f '/etc/SuSE-release') {
+        return 'suse';
+    }
+    
+    return undef;
+}
+
+sub _provideInstallationSuggestions {
+    my ($distro, $tools, $available_tools) = @_;
+    
+    my %package_maps = (
+        'ubuntu' => {
+            'xfreerdp' => 'freerdp2-x11',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc-viewer',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-client',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-client',
+            'cu' => 'cu',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
+            'x3270' => 'x3270'
+        },
+        'debian' => {
+            'xfreerdp' => 'freerdp2-x11',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc-viewer',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-client',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-client',
+            'cu' => 'cu',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
+            'x3270' => 'x3270'
+        },
+        'fedora' => {
+            'xfreerdp' => 'freerdp',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh-clients',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'telnet',
+            'ftp' => 'ftp',
+            'sftp' => 'openssh-clients',
+            'cu' => 'uucp',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
+            'x3270' => 'x3270'
+        },
+        'arch' => {
+            'xfreerdp' => 'freerdp',
+            'rdesktop' => 'rdesktop',
+            'vncviewer' => 'tigervnc',
+            'vinagre' => 'vinagre',
+            'remmina' => 'remmina',
+            'ssh' => 'openssh',
+            'mosh' => 'mosh',
+            'sshpass' => 'sshpass',
+            'telnet' => 'inetutils',
+            'ftp' => 'inetutils',
+            'sftp' => 'openssh',
+            'cu' => 'uucp',
+            'screen' => 'screen',
+            'minicom' => 'minicom',
+            'expect' => 'expect',
+            'socat' => 'socat',
+            'keepassxc-cli' => 'keepassxc',
+            'x3270' => 'x3270'
+        }
+    );
+    
+    my $package_map = $package_maps{$distro} || $package_maps{'ubuntu'}; # fallback to ubuntu
+    my @missing_packages = ();
+    
+    foreach my $tool (sort keys %$tools) {
+        if (!$available_tools->{$tool} && $package_map->{$tool}) {
+            push @missing_packages, $package_map->{$tool};
+        }
+    }
+    
+    if (@missing_packages) {
+        # Remove duplicates
+        my %seen = ();
+        @missing_packages = grep { !$seen{$_}++ } @missing_packages;
+        
+        my $install_cmd;
+        if ($distro =~ /^(ubuntu|debian)$/) {
+            $install_cmd = "sudo apt-get install " . join(' ', @missing_packages);
+        } elsif ($distro =~ /^(fedora|rhel|centos)$/) {
+            $install_cmd = "sudo dnf install " . join(' ', @missing_packages);
+        } elsif ($distro eq 'arch') {
+            $install_cmd = "sudo pacman -S " . join(' ', @missing_packages);
+        } elsif ($distro =~ /suse/) {
+            $install_cmd = "sudo zypper install " . join(' ', @missing_packages);
+        } else {
+            $install_cmd = "# Install packages: " . join(' ', @missing_packages);
+        }
+        
+        print STDERR "   $install_cmd\n";
     }
 }
 

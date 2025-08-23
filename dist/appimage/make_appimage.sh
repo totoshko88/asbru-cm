@@ -24,9 +24,11 @@ fi
 
 echo "Using container engine: $ENGINE" >&2
 
-$ENGINE build --tag=asbru-cm-appimage-maker --file=dist/appimage/Dockerfile .
-
+# Clean local build outputs to keep context minimal
+rm -rf "${SCRIPT_DIR}/build" || true
 mkdir -p "${SCRIPT_DIR}/build"
+
+$ENGINE build --tag=asbru-cm-appimage-maker --file=dist/appimage/Dockerfile .
 
 CIDFILE_PATH="${SCRIPT_DIR}/build/appimage-maker.cid"
 
@@ -51,3 +53,12 @@ $ENGINE cp "${CONTAINER_ID}:/Asbru-CM.AppImage" "${APPIMAGE_DESTINATION}"
 $ENGINE rm "${CONTAINER_ID}" >/dev/null 2>&1 || true
 
 chmod a+x "${APPIMAGE_DESTINATION}"
+
+# Optional post-build verification
+if [[ -x "${SCRIPT_DIR}/verify_appimage.sh" ]]; then
+	echo "Running AppImage verification..." >&2
+	"${SCRIPT_DIR}/verify_appimage.sh" "${APPIMAGE_DESTINATION}" || {
+		echo "AppImage verification failed" >&2
+		exit 1
+	}
+fi

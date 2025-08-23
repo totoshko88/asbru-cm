@@ -42,7 +42,7 @@
      id="namedview5"
      showgrid="false"
      inkscape:zoom="26.0625"
-     inkscape:cx="16"
+     inkscape:cx="3.2613909"
      inkscape:cy="16"
      inkscape:window-x="0"
      inkscape:window-y="30"
@@ -58,7 +58,7 @@
   <path
      d="M 16,0 C 7.163444,0 0,7.163444 0,16 0,24.836556 7.163444,32 16,32 24.836556,32 32,24.836556 32,16 32,7.163444 24.836556,0 16,0 m 0,4 C 22.627417,4 28,9.372583 28,16 28,22.627417 22.627417,28 16,28 9.372583,28 4,22.627417 4,16 4,9.372583 9.372583,4 16,4 m -2,2 0.613909,10.981415 7.846523,4.289568 0.446643,-0.775779 L 16.35012,16.016187 14.776979,5.8848921 Z"
      id="path2"
-     style="fill:#2c5aa0"
+     style="fill:#333333"
      inkscape:connector-curvature="0"
      sodipodi:nodetypes="csssccssscccccccc" />
 </svg>

@@ -3997,7 +3997,8 @@ If you have the option "Automatically save every configuration change" checked, 
                       <object class="GtkImage" id="image18">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -4198,6 +4199,23 @@ If you have the option "Automatically save every configuration change" checked, 
                             <property name="position">1</property>
                           </packing>
                         </child>
+                            <child>
+                              <object class="GtkCheckButton" id="cbCfgUIEmojis">
+                                <property name="label" translatable="yes">Show emojis in UI</property>
+                                <property name="use_action_appearance">False</property>
+                                <property name="visible">True</property>
+                                <property name="can_focus">True</property>
+                                <property name="receives_default">False</property>
+                                <property name="halign">start</property>
+                                <property name="xalign">0</property>
+                                <property name="draw_indicator">True</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">True</property>
+                                <property name="position">2</property>
+                              </packing>
+                            </child>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -5143,7 +5161,8 @@ Otherwise, only the icon will be shown and save screen space.</property>
                       <object class="GtkImage" id="image17">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -5648,7 +5667,8 @@ sudo -p sudo_prompt_string ...</property>
                       <object class="GtkImage" id="image19">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-preferences</property>
+                        <property name="icon_name">preferences-other</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -5686,7 +5706,7 @@ sudo -p sudo_prompt_string ...</property>
                   <object class="GtkImage" id="image1">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="pixbuf">asbru-logo-24.png</property>
+                    <property name="pixbuf">asbru-logo-64.png</property>
                   </object>
                   <packing>
                     <property name="expand">True</property>
@@ -6453,7 +6473,8 @@ sudo -p sudo_prompt_string ...</property>
                       <object class="GtkImage" id="image20">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -7830,7 +7851,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image21">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8218,7 +8240,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image22">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-preferences</property>
+                        <property name="icon_name">preferences-other</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8483,7 +8506,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image23">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-execute</property>
+                        <property name="icon_name">applications-system</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -8529,7 +8553,8 @@ If you don't use transparency, leave ths option unchecked as it will slightly im
                       <object class="GtkImage" id="image24">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
-                        <property name="stock">gtk-page-setup</property>
+                        <property name="icon_name">preferences-desktop-theme</property>
+                        <property name="icon_size">1</property>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -9444,11 +9469,8 @@ For all other types of connection, this setting will be ignored.
                   <object class="GtkLabel" id="label75">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="margin_bottom">8</property>
-                    <property name="label" translatable="yes">&lt;b&gt;Integration of a KeePass database file&lt;/b&gt;
-&lt;small&gt;
-Ásbrú is using the command line interface of &lt;a href="https://keepassxc.org"&gt;KeePassXC&lt;/a&gt;
-to read any KeePass database file and use any entry to automate connection inside Ásbrú.&lt;/small&gt;</property>
+                    <property name="margin_bottom">4</property>
+                    <property name="label" translatable="yes">&lt;b&gt;Integration of a KeePass database file&lt;/b&gt;</property>
                     <property name="use_markup">True</property>
                   </object>
                 </child>

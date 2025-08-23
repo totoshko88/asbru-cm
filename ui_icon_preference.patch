@@ -1,0 +1,15 @@
+--- lib/PACMain.pm.orig
++++ lib/PACMain.pm
+@@ -4220,7 +4220,12 @@
+     if (!$$self{_CFG}{environments}{$uuid}{'_is_group'}) {
+         # Leaf connection node (not a group)
+         my $icon = $$self{_CFG}{environments}{$uuid}{'icon'};
+-        if (!$icon) {
++        # Use native connection icons if preference is set or no custom icon
++        if (($$self{_CFG}{'defaults'}{'use_native_connection_icons'} && 
++             $$self{_CFG}{environments}{$uuid}{'method'}) || !$icon) {
+             $icon = $self->_getConnectionTypeIcon($$self{_CFG}{environments}{$uuid}{'method'} // '');
++        }
++        if (!$icon) {
++            $icon = $DEFCONNICON;
+         }

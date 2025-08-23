@@ -41,6 +41,8 @@ use Getopt::Long qw(GetOptionsFromString);
 
 # GTK
 use Gtk3 '-init';
+use PACIcons;      # for themed icon mapping
+use PACCompat;     # for CSS provider helpers
 
 # END: Import Modules
 ###################################################################
@@ -414,7 +416,16 @@ sub _buildGUI
     $w{help}->set_label('');
     $w{help}->set_tooltip_text('Open Online Help');
     $w{help}->set_always_show_image(1);
-    require PACIcons; $w{help}->set_image(PACIcons::icon_image('help','asbru-help'));
+    # Theme-aware, icon-only help button consistent with the rest of the app
+    $w{help}->set_image(PACIcons::icon_image('help_link','help-browser'));
+    eval {
+        my $css = ".asbru-help-link { background-color: transparent; padding: 0; }\n.asbru-help-link:backdrop { background-color: transparent; }";
+        my $prov = PACCompat::create_css_provider();
+        PACCompat::load_css_from_data($prov, $css);
+        my $ctx = $w{help}->get_style_context; $ctx->add_class('asbru-help-link');
+        PACCompat::add_css_provider_to_widget($w{help}, $prov, PACCompat::STYLE_PROVIDER_PRIORITY_APPLICATION());
+        $w{help}->set_relief('none') if $w{help}->can('set_relief');
+    };
 
     my $lblsshv = Gtk3::Label->new('SSH Version ');
     $lblsshv->set_alignment(1, 0.5);
@@ -516,7 +527,7 @@ sub _buildGUI
     $w{rbOrderLP}->set_active(1);
 
     # Build 'add' button
-    $w{btnadd} = Gtk3::Button->new(); $w{btnadd}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnadd}->set_always_show_image(1);
+    $w{btnadd} = Gtk3::Button->new(); $w{btnadd}->set_image(Gtk3::Image->new_from_icon_name('list-add-symbolic', 'button')); $w{btnadd}->set_always_show_image(1);
     $w{vbox2}->pack_start($w{btnadd}, 0, 1, 0);
 
     # Build a scrolled window
@@ -561,7 +572,7 @@ sub _buildGUI
     $w{rbOrderLP2}->set_active(1);
 
     # Build 'add' button
-    $w{btnaddRemote} = Gtk3::Button->new(); $w{btnaddRemote}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnaddRemote}->set_always_show_image(1);
+    $w{btnaddRemote} = Gtk3::Button->new(); $w{btnaddRemote}->set_image(Gtk3::Image->new_from_icon_name('list-add-symbolic', 'button')); $w{btnaddRemote}->set_always_show_image(1);
     $w{vbox3}->pack_start($w{btnaddRemote}, 0, 1, 0);
 
     # Build a scrolled window
@@ -602,7 +613,7 @@ sub _buildGUI
     $w{rbOrderLP3}->set_active(1);
 
     # Build 'add' button
-    $w{btnaddDynamic} = Gtk3::Button->new(); $w{btnaddDynamic}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnaddDynamic}->set_always_show_image(1);
+    $w{btnaddDynamic} = Gtk3::Button->new(); $w{btnaddDynamic}->set_image(Gtk3::Image->new_from_icon_name('list-add-symbolic', 'button')); $w{btnaddDynamic}->set_always_show_image(1);
     $w{vbox33}->pack_start($w{btnaddDynamic}, 0, 1, 0);
 
     # Build a scrolled window
@@ -626,7 +637,7 @@ sub _buildGUI
     $w{vboxAdvOpt}->set_border_width(5);
 
     # Build 'add' button
-    $w{btnaddAdvOpt} = Gtk3::Button->new(); $w{btnaddAdvOpt}->set_image(PACIcons::icon_image('add','gtk-add')); $w{btnaddAdvOpt}->set_always_show_image(1);
+    $w{btnaddAdvOpt} = Gtk3::Button->new(); $w{btnaddAdvOpt}->set_image(Gtk3::Image->new_from_icon_name('list-add-symbolic', 'button')); $w{btnaddAdvOpt}->set_always_show_image(1);
     $w{vboxAdvOpt}->pack_start($w{btnaddAdvOpt}, 0, 1, 0);
 
     # Build a scrolled window

@@ -40,7 +40,7 @@ use POSIX qw(strftime);
 
 # GTK
 use Gtk3 '-init';
-use PACIcons; # symbolic icon mapping
+# use PACIcons; # symbolic icon mapping - REMOVED, will use PACUtils icon functions
 
 # Other application modules
 use PACUtils;
@@ -276,7 +276,7 @@ sub _buildStatisticsGUI {
     $w{hbox} = Gtk3::HBox->new(0, 0);
 
     $w{hboxReset} = Gtk3::HBox->new(0, 5);
-    $w{hboxReset}->pack_start(PACIcons::icon_image('refresh','view-refresh'), 0, 1, 5);
+    $w{hboxReset}->pack_start(Gtk3::Image->new_from_icon_name('view-refresh', 'button'), 0, 1, 5);
     $w{hboxReset}->pack_start(Gtk3::Label->new("Reset\nStatistics"), 0, 1, 5);
     $w{btnReset} = Gtk3::Button->new();
     $w{btnReset}->set_size_request(155, 0);

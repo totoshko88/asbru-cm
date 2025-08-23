@@ -57,6 +57,7 @@ use Encode;
 use PACKeePass;
 use PACUtils;
 use POSIX qw(strftime);
+use IO::Select;
 
 use Gtk3 '-init';
 
@@ -159,7 +160,7 @@ if ($ENV{ASBRU_TEST_VERBOSE}) {
 # Check some command line options
 defined $$CFG{'environments'}{$UUID} or die("ERROR: Profile '$UUID' does not exist!!");
 
-my $autossh_bin = (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which autossh 1>/dev/null 2>&1") eq 0);
+my $autossh_bin = PACUtils::which_cached('autossh') ? 1 : 0;
 
 # Shorten some variables
 my $DEBUG = $$CFG{'defaults'}{'debug'};
@@ -281,14 +282,23 @@ $$CFG{'defaults'}{'proxy ip'}   = subst($$CFG{'defaults'}{'proxy ip'});
 $$CFG{'defaults'}{'proxy user'} = subst($$CFG{'defaults'}{'proxy user'});
 $$CFG{'defaults'}{'proxy pass'} = subst($$CFG{'defaults'}{'proxy pass'});
 
+# Validate destination for SSH-like methods early
+if ((defined $METHOD) && ($METHOD =~ /^(?:ssh|autossh|SSH)$/i)) {
+    if (!defined $IP || $IP =~ /^\s*$/) {
+        PACLogger::log_error("SSH destination is empty for profile '$NAME' (UUID=$UUID)");
+        ctrl("CLOSE:Destination host/IP is empty. Please set IP/Host in the profile.");
+        _hardClose($EXP, $UUID);
+    }
+}
+
 # Build initial SSH connection command
 my $CONNECT_OPTS = $$CFG{'environments'}{$UUID}{'options'} || '';
 
-# Test if we can avoid openning consecutive port forwarders
+# Test if we can avoid opening consecutive port forwarders
 if ($CONNECT_OPTS =~ /(-[LR] .+?)( |$)/) {
-    my $x = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ps a | grep ssh `;
+    my ($ps_out) = PACUtils::run_cmd({ argv => ['ps','a'] });
     my $y = $1;
-    if ($x =~ /$y/) {
+    if ((($ps_out // '')) =~ /$y/) {
         $y =~ s/-[LR] //g;
         print "$COLOR{'log'}Skip tunnel opening $y, already open in different terminal. $COLOR{'norm'}\n\n";
         $CONNECT_OPTS =~ s/(-[LR] .+?)( |$)//g;
@@ -304,6 +314,10 @@ my $INT = 0;
 sub open_socket {
     if ($GETCMD) {
         return 0;
+    }
+    # Allow tests/headless runs to skip PACMain sockets entirely
+    if ($ENV{ASBRU_SKIP_SOCKETS}) {
+        return 1;
     }
     $SOCKET = IO::Socket::UNIX->new(
         Type => SOCK_STREAM,
@@ -336,6 +350,10 @@ sub ctrl {
         msg($msg);
     }
     if (!defined $SOCKET) {
+        # When running without PACMain socket (e.g., tests), emit a plain line
+        if ($ENV{ASBRU_TEST_VERBOSE} || $ENV{ASBRU_SKIP_SOCKETS}) {
+            print "$msg\n";
+        }
         return 1;
     }
 
@@ -413,8 +431,12 @@ sub subst {
 
     if (!$GETCMD && $get) {
         ctrl("$get:");
-        $get = readData($get);
-        return $get;
+        if ($ENV{ASBRU_SKIP_SOCKETS} || !defined $SOCKET) {
+            # In tests/headless, just use current string value
+            return $string;
+        }
+        my $val = readData($get);
+        return $val;
     }
     if (!defined $$CFG{'environments'}{$UUID}) {
         return $string;
@@ -469,12 +491,14 @@ sub subst {
 
     # Different from PACUtils implementation
 
-    # Replace '<CMD:#>' with the result of executing 'cmd'
+    # Replace '<CMD:#>' with the result of executing 'cmd' using safe exec
     while ($string =~ /<CMD:(.+?)>/go) {
         my $var = $1;
-        my $output = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} $var 2>&1`;
-        chomp $output;
-        $string =~ s/<CMD:\Q$var\E>/$output/g;
+        my @argv = split /\s+/, $var;
+        my ($out) = PACUtils::run_cmd({ argv => \@argv, env => PACUtils::_external_env_hash() });
+        $out //= '';
+        $out =~ s/\R/ /g; # flatten to single line
+        $string =~ s/<CMD:\Q$var\E>/$out/g;
     }
 
     return wantarray ? ($string, $pos) : $string;
@@ -781,32 +805,34 @@ sub _execScript {
     return 1;
 }
 
+sub _getProxyCmd {
+    my ($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass) = @_;
+    # Return argv in list context, and a display string in scalar context
+    my @argv;
+    if (defined($proxy_user) && $proxy_user ne '') {
+        if (PACUtils::which_cached('ncat')) {
+            @argv = ('ncat','--proxy',"$proxy_ip:$proxy_port",'--proxy-type',$proxy_type,'--proxy-auth',"$proxy_user:$proxy_pass");
+        } else {
+            print("$COLOR{'err'}ERROR$COLOR{'norm'}: ncat is required if using proxy user/password.\nncat is part of the nmap project (https://nmap.org/ncat/).\n");
+            die();
+        }
+    } else {
+        @argv = ('nc','-x',"$proxy_ip:$proxy_port");
+    }
+    return wantarray ? @argv : join(' ', @argv);
+}
 sub _setProxy {
-    my $method = shift;
-    my $user = $USER;
-
-    # Set variables in case they are used in function : sub subst()
+    my ($method) = @_;
+    # Build sanitized SSH client config snippet from user's ~/.ssh/config (if present)
     my $ssh_config = '';
-    if (($$CFG{'environments'}{$UUID}{'use proxy'} == 3) || ($$CFG{'environments'}{$UUID}{'use proxy'} == 0)) {
-        if ($AUTH eq 'publickey') {
-            $user = $PASSPHRASE_USER;
+    if (open(SSHC, "<:utf8", "$ENV{HOME}/.ssh/config")) {
+        while (my $l = <SSHC>) {
+            $l =~ s/\n//g;
+            $l =~ s/^[\t ]+//;
+            next if !$l || $l =~ /^#/ || $l =~ /^Host \*/;
+            $ssh_config .= "$l\n";
         }
-        if (-e "/etc/ssh/ssh_config") {
-            open (SSHC,"<:utf8","/etc/ssh/ssh_config");
-            while (my $l = <SSHC>) {
-                $l =~ s/\n//g;
-                $l =~ s/^[\t ]+//;
-                if (!$l) {
-                    next;
-                } elsif ($l =~ /^#/) {
-                    next;
-                } elsif ($l =~ /^Host \*/) {
-                    next;
-                }
-                $ssh_config .= "$l\n";
-            }
-            close SSHC;
-        }
+        close SSHC;
     }
 
     if ($$CFG{'environments'}{$UUID}{'use proxy'} == 1) {
@@ -815,8 +841,18 @@ sub _setProxy {
         $proxy_port = $$CFG{'environments'}{$UUID}{'proxy port'};
         $proxy_user = $$CFG{'environments'}{$UUID}{'proxy user'};
         $proxy_pass = $$CFG{'environments'}{$UUID}{'proxy pass'};
+        if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+            PACLogger::log_error("Proxy is enabled for this profile, but proxy host is empty");
+            ctrl("CLOSE:Proxy is enabled but host is empty. Check 'Proxy IP' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
+        if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+            PACLogger::log_error("Proxy is enabled for this profile, but proxy port is invalid: '$proxy_port'");
+            ctrl("CLOSE:Proxy is enabled but port is invalid. Check 'Proxy Port' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
         $proxy_cmd  = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
-        if ($method =~ /ssh/i) {
+    if ($method =~ /ssh/i) {
             $CONNECT_OPTS .= " -o ProxyCommand='$proxy_cmd %h %p'";
         } else {
             _openSocksTunnel();
@@ -828,6 +864,16 @@ sub _setProxy {
         $proxy_port = $$CFG{'environments'}{$UUID}{'jump port'};
         $proxy_user = $$CFG{'environments'}{$UUID}{'jump user'};
         $proxy_pass = $$CFG{'environments'}{$UUID}{'jump pass'};
+        if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+            PACLogger::log_error("Jump host is enabled for this profile, but jump host is empty");
+            ctrl("CLOSE:Jump host is enabled but host is empty. Check 'Jump IP' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
+        if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+            PACLogger::log_error("Jump host is enabled for this profile, but jump port is invalid: '$proxy_port'");
+            ctrl("CLOSE:Jump host is enabled but port is invalid. Check 'Jump Port' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
         open(CFG,">:utf8","$CFG_DIR/tmp/$UUID.conf");
         print CFG qq"Host *\n$ssh_config\nProtocol 2\nCompression yes\nTCPKeepAlive yes\nServerAliveInterval 60\nPreferredAuthentications publickey,hostbased,keyboard-interactive,password\n";
         print CFG qq"\nHost jumpserver\nHostName $proxy_ip\nPort $proxy_port\nUser $proxy_user\n";
@@ -836,7 +882,7 @@ sub _setProxy {
         }
         if ($method =~ /ssh/i) {
             # Second server is only important for SSH JumpHost
-            print CFG qq"\nHost server\nHostName $IP\nUser $user\nPort $PORT\n";
+            print CFG qq"\nHost server\nHostName $IP\nUser $USER\nPort $PORT\n";
             if (($PUBKEY)&&($$CFG{'environments'}{$UUID}{'auth type'} eq 'publickey')) {
                 print CFG "IdentityFile $PUBKEY\n";
             }
@@ -854,6 +900,16 @@ sub _setProxy {
             $proxy_port = $$CFG{'defaults'}{'jump port'};
             $proxy_user = $$CFG{'defaults'}{'jump user'};
             $proxy_pass = $$CFG{'defaults'}{'jump pass'};
+            if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+                PACLogger::log_error("Global Jump is enabled, but 'jump ip' is empty in Preferences");
+                ctrl("CLOSE:Global Jump is enabled but 'Jump IP' is empty. Set it in Preferences or disable Jump.");
+                _hardClose($EXP, $UUID);
+            }
+            if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+                PACLogger::log_error("Global Jump is enabled, but 'jump port' is invalid: '$proxy_port'");
+                ctrl("CLOSE:Global Jump is enabled but 'Jump Port' is invalid. Fix it in Preferences or disable Jump.");
+                _hardClose($EXP, $UUID);
+            }
             open(CFG,">:utf8","$CFG_DIR/tmp/$UUID.conf");
             print CFG qq"Host *\n$ssh_config\nProtocol 2\nCompression yes\nTCPKeepAlive yes\nServerAliveInterval 60\nPreferredAuthentications publickey,hostbased,keyboard-interactive,password\n";
             print CFG qq"\nHost jumpserver\nHostName $proxy_ip\nPort $proxy_port\nUser $proxy_user\n";
@@ -862,7 +918,7 @@ sub _setProxy {
             }
             if ($method =~ /ssh/i) {
                 # Second server is only important for SSH JumpHost
-                print CFG qq"\nHost server\nHostName $IP\nUser $user\nPort $PORT\n";
+                print CFG qq"\nHost server\nHostName $IP\nUser $USER\nPort $PORT\n";
                 if (($PUBKEY)&&($$CFG{'environments'}{$UUID}{'auth type'} eq 'publickey')) {
                     print CFG "IdentityFile $PUBKEY\n";
                 }
@@ -878,6 +934,29 @@ sub _setProxy {
             $proxy_port = $$CFG{'defaults'}{'proxy port'};
             $proxy_user = $$CFG{'defaults'}{'proxy user'};
             $proxy_pass = $$CFG{'defaults'}{'proxy pass'};
+
+            my $use_system = (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) ? 1 : 0;
+            if ($use_system) {
+                my ($stype, $shost, $sport, $suser, $spass) = _getSystemProxy();
+                if ($shost && $sport) {
+                    $proxy_type = $stype if $stype;
+                    $proxy_ip   = $shost;
+                    $proxy_port = $sport;
+                    $proxy_user = $suser if defined $suser;
+                    $proxy_pass = $spass if defined $spass;
+                    PACLogger::log_info("Using system proxy $proxy_type://$proxy_ip:$proxy_port") if $ENV{ASBRU_DEBUG};
+                } else {
+                    PACLogger::log_info("Global Proxy selected, but no system proxy detected; continuing without proxy") if $ENV{ASBRU_DEBUG};
+                    return 0;
+                }
+            } else {
+                # Validate only when explicit values are provided
+                if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+                    PACLogger::log_error("Global Proxy is enabled, but 'proxy port' is invalid: '$proxy_port'");
+                    ctrl("CLOSE:Global Proxy is enabled but 'Proxy Port' is invalid. Fix it in Preferences or leave it empty to use system proxy.");
+                    _hardClose($EXP, $UUID);
+                }
+            }
             $proxy_cmd  = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
             if ($method =~ /ssh/i) {
                 $CONNECT_OPTS .= " -o ProxyCommand='$proxy_cmd  %h %p'";
@@ -889,19 +968,55 @@ sub _setProxy {
     return 0;
 }
 
-sub _getProxyCmd {
-    my ($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass) = @_;
-
-    if ($proxy_user ne '') {
-        if (system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} which ncat 1>/dev/null 2>&1") eq 0) {
-            return "ncat --proxy $proxy_ip:$proxy_port --proxy-type $proxy_type --proxy-auth $proxy_user:\"$proxy_pass\"";
-        }
-        print("$COLOR{'err'}ERROR$COLOR{'norm'}: ncat is required if using proxy user/password.\nncat is part of the nmap project (https://nmap.org/ncat/).\n");
-        die();
-    } else {
-        return "nc -x $proxy_ip:$proxy_port";
+# Try to detect system proxy from environment variables
+sub _getSystemProxy {
+    my @candidates = (
+        $ENV{ALL_PROXY} // $ENV{all_proxy},
+        $ENV{HTTPS_PROXY} // $ENV{https_proxy},
+        $ENV{HTTP_PROXY} // $ENV{http_proxy},
+        $ENV{SOCKS_PROXY} // $ENV{socks_proxy},
+    );
+    foreach my $url (@candidates) {
+        next unless defined $url && $url ne '';
+        my ($type, $host, $port, $user, $pass) = _parseProxyUrl($url);
+        if ($host && $port) { return ($type, $host, $port, $user, $pass); }
     }
+    return (undef, undef, undef, undef, undef);
 }
+
+sub _parseProxyUrl {
+    my ($url) = @_;
+    # Accept forms like: scheme://user:pass@host:port or host:port
+    my ($scheme, $auth, $host, $port);
+    if ($url =~ m{^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/@]+@)?([^:/]+)(?::(\d+))?}o) {
+        $scheme = lc($1);
+        $auth   = $2 // '';
+        $host   = $3;
+        $port   = $4;
+    } elsif ($url =~ m{^([^:/]+):(\d+)$}o) {
+        $host = $1; $port = $2; $scheme = 'socks5';
+    }
+    my ($user, $pass) = (undef, undef);
+    if ($auth) {
+        # Drop trailing '@' without regex to avoid '@$' interpolation warning
+        $auth = substr($auth, 0, -1) if substr($auth, -1) eq '@';
+        ($user, $pass) = split(/:/, $auth, 2);
+    }
+    # Map scheme to ncat proxy-type
+    my $ptype = 'socks5';
+    if (defined $scheme) {
+        if ($scheme =~ /^socks5h?$/) { $ptype = 'socks5'; }
+        elsif ($scheme =~ /^socks4a?$/) { $ptype = 'socks4'; }
+        elsif ($scheme =~ /^http|https$/) { $ptype = 'http'; }
+    }
+    # Default ports
+    if (!defined $port || $port eq '') {
+        $port = ($ptype eq 'http') ? 8080 : 1080;
+    }
+    return ($ptype, $host, $port, $user, $pass);
+}
+
+## Removed duplicate _getProxyCmd (unsafe system/which); unified to list-form version above
 
 sub _openSshTunnel {
     my ($uuid) = @_;
@@ -917,31 +1032,80 @@ sub _openSshTunnel {
     $proxy_jump = 2;
 
     if (-e "$TMP_DIR/$uuid.ctl") {
-        # Avoid open a second terminal with the same UUID
-        my $check = `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ssh -F \"$CFG_DIR/tmp/$uuid.conf\" -S \"$TMP_DIR/$uuid.ctl\" -T -O check jumpserver 2>&1`;
-        if ($check =~ /=\d+/) {
+        # Avoid opening a second terminal with the same UUID
+        my ($check) = PACUtils::run_cmd({ argv => ['ssh','-F',"$CFG_DIR/tmp/$uuid.conf",'-S',"$TMP_DIR/$uuid.ctl",'-T','-O','check','jumpserver'], env => PACUtils::_external_env_hash() });
+        if (($check // '') =~ /=\d+/) {
             die "$COLOR{'err'}Can not duplicate VNC/RDP connections$COLOR{'norm'}\nConfigure a different second connection.\n\n";
         }
     }
     # Start SSH tunnel
-    system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ssh -F \"$CFG_DIR/tmp/$uuid.conf\" -S \"$TMP_DIR/$uuid.ctl\" -f -N -T -M -L $LPORT:$IP:$PORT jumpserver";
+    PACUtils::run_cmd({ argv => ['ssh','-F',"$CFG_DIR/tmp/$uuid.conf",'-S',"$TMP_DIR/$uuid.ctl",'-f','-N','-T','-M','-L',"$LPORT:$IP:$PORT",'jumpserver'], env => PACUtils::_external_env_hash() });
     $IP = '127.0.0.1';
     $PORT = $LPORT;
 }
 
 sub _openSocksTunnel {
-    my $pipe = $ENV{"ASBRU_TMP"}."/pipe_$UUID";
-
     $LPORT = _getLocalPort($PORT);
-    $proxy_cmd = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
+    my @proxy_argv = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
     if ($GETCMD) {
-        $proxy_get .= "\nnc -l -p $LPORT <$pipe | $proxy_cmd $IP $PORT >$pipe &";
+        my $display_cmd = join(' ', 'nc','-l','-p',$LPORT, '|', @proxy_argv, $IP, $PORT, '&');
+        $proxy_get .= "\n$display_cmd";
         return 0;
     }
 
-    unlink($pipe);
-    system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} mkfifo $pipe");
-    system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} nc -l -p $LPORT <$pipe | $proxy_cmd $IP $PORT >$pipe &");
+    my $pid = fork();
+    if (!defined $pid) { die "ERROR: cannot fork for SOCKS tunnel"; }
+    if ($pid == 0) {
+        # Child: act as relay between local port and proxy command
+        eval {
+            my $listen = IO::Socket::IP->new(
+                LocalAddr => '127.0.0.1',
+                LocalPort => $LPORT,
+                Listen    => 1,
+                ReuseAddr => 1,
+            ) or die "Cannot listen on 127.0.0.1:$LPORT: $!";
+            binmode($listen);
+            my $client = $listen->accept() or die "Accept failed: $!";
+            binmode($client);
+
+            require IPC::Open3;
+            require Symbol;
+            my $errfh = Symbol::gensym();
+            my $kid = IPC::Open3::open3(my $p_stdin, my $p_stdout, $errfh, @proxy_argv, $IP, $PORT);
+            binmode($p_stdin, ':raw');
+            binmode($p_stdout, ':raw');
+
+            my $sel = IO::Select->new();
+            $sel->add($client);
+            $sel->add($p_stdout);
+            my $alive_client = 1; my $alive_proxy = 1;
+            while ($alive_client || $alive_proxy) {
+                my @ready = $sel->can_read(1);
+                foreach my $fh (@ready) {
+                    my $buf = '';
+                    my $len = sysread($fh, $buf, 8192);
+                    if (!defined $len) { next; }
+                    if ($len == 0) {
+                        # EOF
+                        if ($fh == $client) { $alive_client = 0; eval { close $p_stdin; }; $sel->remove($client); }
+                        elsif ($fh == $p_stdout) { $alive_proxy = 0; $sel->remove($p_stdout); }
+                        next;
+                    }
+                    if ($fh == $client) {
+                        my $off = 0; while ($len) { my $w = syswrite($p_stdin, substr($buf,$off), $len); last if !defined $w; $off += $w; $len -= $w; }
+                    } else {
+                        my $off = 0; my $l2 = length($buf); while ($l2) { my $w = syswrite($client, substr($buf,$off), $l2); last if !defined $w; $off += $w; $l2 -= $w; }
+                    }
+                }
+                last if (!$alive_client && !$alive_proxy);
+            }
+            eval { close $client; };
+            eval { close $p_stdin; close $p_stdout; };
+            waitpid($kid, 0);
+        };
+        exit 0;
+    }
+    # Parent continues
     $IP = '127.0.0.1';
     $PORT = $LPORT;
 }
@@ -950,7 +1114,8 @@ sub _openSocksTunnel {
 sub _getLocalPort {
     my $LPORT = shift;
 
-    my $PING = Net::Ping->new('tcp');
+    my $default_ping_port = $ENV{ASBRU_PING_PORT} // 22;
+    my $PING = Net::Ping->new({ proto => 'tcp', timeout => 5, port => $default_ping_port });
     $PING->service_check(0);
 
     for (my $break = 0; $break < 100; ++$break) {
@@ -1081,7 +1246,7 @@ sub _hardClose {
     }
 
     if ($proxy_jump == 2 && -e $sock) {
-        system "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} ssh -F \"$CFG_DIR/tmp/$uuid.conf\" -S \"$sock\" -T -O exit jumpserver";
+        PACUtils::run_cmd({ argv => ['ssh','-F',"$CFG_DIR/tmp/$uuid.conf",'-S',"$sock",'-T','-O','exit','jumpserver'], env => PACUtils::_external_env_hash() });
     }
     if (-e $pipe) {
         unlink($pipe);
@@ -1142,13 +1307,13 @@ if (defined $METHOD) {
         } elsif (! $AUTHFALLBACK) {
             $key = '-o "PreferredAuthentications=password,keyboard-interactive"';
         }
-        # Build the command line
-        $connection_cmd = $METHOD
-                          . ($PORT > 0 ? " -p $PORT" : '')
-                          . ($key ne '' ? " $key" : "")
-                          . $CONNECT_OPTS
-                          . ($USER ? " -l $USER " : '')
-                          . " $IP";
+    # Build the command line (prefer user@host style for clarity)
+    my $dest = ($USER ? "${USER}\@$IP" : $IP);
+    $connection_cmd = $METHOD
+              . ($PORT > 0 ? " -p $PORT" : '')
+              . ($key ne '' ? " $key" : "")
+              . $CONNECT_OPTS
+              . " $dest";
         if ($proxy_jump) {
             if ($$CFG{'environments'}{$UUID}{'pseudo jump'}) {
                 # Pseudo jump, connect to the first server and then we will send the second connection command over the second server
@@ -1270,7 +1435,7 @@ if (defined $METHOD) {
         }
         
         if ($ENV{ASBRU_DEBUG}) {
-            PACLogger::log_debug("🔍 CONNECT_OPTS filtered: '$CONNECT_OPTS'");
+            PACLogger::log_debug("CONNECT_OPTS filtered: '$CONNECT_OPTS'");
         }
         
         # Only auto-switch to xfreerdp on pure Wayland (not when using Xwayland/X11 backend)
@@ -1412,7 +1577,7 @@ if (defined $METHOD) {
             my $rdesktop_opts = $CONNECT_OPTS;
             
             if ($is_wayland) {
-                PACLogger::log_info("🖥️ Optimizing rdesktop for Xwayland (no embedding)...") if $ENV{ASBRU_DEBUG};
+                PACLogger::log_info("Optimizing rdesktop for Xwayland (no embedding)...") if $ENV{ASBRU_DEBUG};
                 
                 # Add Xwayland optimization flags
                 $rdesktop_opts .= " -P";  # Persistent bitmap caching
@@ -1444,7 +1609,7 @@ if (defined $METHOD) {
         }
     # Debug the actual command being executed
     if ($ENV{ASBRU_DEBUG}) {
-        PACLogger::log_debug("🚀 Final RDP command: $connection_txt");
+    PACLogger::log_debug("Final RDP command: $connection_txt");
     }
     ctrl("RDP_METHOD:$METHOD");
     ctrl("RDP_CMD:$connection_txt");
@@ -1458,9 +1623,10 @@ if (defined $METHOD) {
         my $method = 'VNC';
         my $vncviewer_cmd = "LC_ALL=C $METHOD";
         $CONNECT_OPTS =~ s/\s*-embed//go;
-        if (`$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | $ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/grep RealVNC`) {
+        my ($vnc_help) = PACUtils::run_cmd({ argv => ['vncviewer','--help'], env => PACUtils::_external_env_hash() });
+        if (($vnc_help // '') =~ /RealVNC/i) {
             $method = 'RealVNC';
-        } elsif (`$ENV{'ASBRU_ENV_FOR_EXTERNAL'} vncviewer --help 2>&1 | $ENV{'ASBRU_ENV_FOR_EXTERNAL'} /bin/grep TigerVNC`) {
+        } elsif (($vnc_help // '') =~ /TigerVNC/i) {
             $method = 'TigerVNC';
         }
     # Diagnostics for Ásbrú runtime (captured by main => helps automated tests)
@@ -1468,7 +1634,11 @@ if (defined $METHOD) {
         _setProxy($method);
         if ($method eq 'TigerVNC') {
             my $pfile = "$CFG_DIR/tmp/asbru_conn_{$$}_$UUID";
-            system("$ENV{'ASBRU_ENV_FOR_EXTERNAL'} echo \"" . _doShellEscape($PASS) . "\" | vncpasswd -f > \"$pfile\"");
+            # Generate VNC password file securely
+            my ($out,$err,$code) = PACUtils::run_cmd({ argv => ['vncpasswd','-f'] , stdin => ($PASS // '') });
+            if ($code == 0) {
+                if (open(my $PF, '>:raw', $pfile)) { print {$PF} $out; close $PF; }
+            }
             if (defined $$CFG{'tmp'}{'xid'}) {
                 $connection_cmd = "$vncviewer_cmd $CONNECT_OPTS -PasswordFile=\"$pfile\" -Parent=$$CFG{'tmp'}{'xid'} $IP:$PORT";
                 $connection_txt = "$vncviewer_cmd $CONNECT_OPTS -PasswordFile=\"$pfile\" -Parent=$$CFG{'tmp'}{'xid'} $IP:$PORT";
@@ -1485,8 +1655,9 @@ if (defined $METHOD) {
         } else {
             my $user = '';
 
-            $connection_cmd = "echo \"" . _doShellEscape($PASS) . "\" | $vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
-            $connection_txt = "echo \"<<hidden_password>>\" | $vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
+            # Note: For non-TigerVNC/RealVNC, some viewers accept password via stdin; prefer not to pipe password in shell.
+            $connection_cmd = "$vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
+            $connection_txt = "$vncviewer_cmd $CONNECT_OPTS $user $IP:$PORT";
         }
     ctrl("VNC_CMD:$connection_txt");
     }
@@ -1558,9 +1729,10 @@ $connection_cmd = subst($connection_cmd);
 if ($GETCMD) {
     print "<b>Command line:</b>\n";
     print Glib::Markup::escape_text($connection_cmd);
-    if ($proxy_get ne '') {
-        print "\n\n<b>Proxy setup:</b>";
-        print Glib::Markup::escape_text($proxy_get);
+    if ($proxy_user ne '') {
+        if (PACUtils::which_cached('ncat')) {
+            return "ncat --proxy $proxy_ip:$proxy_port --proxy-type $proxy_type --proxy-auth $proxy_user:\\\"$proxy_pass\\\"";
+        }
     }
     exit 0;
 }
@@ -1607,7 +1779,20 @@ if (($METHOD eq 'rdesktop' || $METHOD =~ /freerdp/) && $is_wayland) {
     }
 }
 
-$do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
+# Preflight: if any placeholder remains, log a clear diagnostic and stop
+if ($do_connection_cmd =~ /<(?:GV|V|ASK|ENV|CMD|CTRL_|TEE|PIPE):/ || $do_connection_cmd =~ /<<(?:proxy|jump)_(?:host|port|user|pass)>>/) {
+    my $diag = $do_connection_cmd; $diag =~ s/\R/ /g;
+    PACLogger::log_error("Unresolved placeholders in command, aborting: $diag");
+    ctrl("CLOSE:Unresolved placeholders remain in command. Check Global/Local variables and templates.");
+    _hardClose($EXP, $UUID);
+}
+
+# Build final wrapper: inject external env once; use POSIX sh -c for consistent parsing
+my $ext_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'} // '';
+my $safe_cwd = $external_dir;
+$safe_cwd =~ s/'/'"'"'/g; # shell-safe single-quote escaping
+$do_connection_cmd =~ s/'/'"'"'/g; # ensure command content is safe in single quotes
+$do_connection_cmd = "$ext_env sh -c 'cd '\''$safe_cwd'\'' && $do_connection_cmd'";
 
 # Give socket a moment to initialize for embedding
 if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '') {
@@ -1616,8 +1801,18 @@ if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '') {
 }
 
 if (!$ENV{ASBRU_DEBUG}) {
-    PACLogger::log_start("🚀 Establishing $METHOD connection...");
+    PACLogger::log_start("Establishing $METHOD connection...");
 }
+# Validate SSH destination when applicable to avoid confusing ssh usage output
+if ($METHOD =~ /^(?:ssh|autossh)$/i) {
+    my $_dest_ok = ($connection_cmd =~ /\b(?:-J\s+\S+\s+server|\b\w+@[^\s]+|\sserver\b|\s[^-][^\s]+)$/);
+    if (!$_dest_ok) {
+        PACLogger::log_error("SSH command missing destination: $connection_cmd");
+        ctrl("CLOSE:SSH command missing destination host. Check IP/Host and User.");
+        _hardClose($EXP, $UUID);
+    }
+}
+
 $EXP->spawn("$do_connection_cmd 2>&1") or die "Cannot spawn '$connection_cmd: $!\n";
 ctrl("SPAWNED:'$connection_txt' (PID:$$)");
 
@@ -1749,7 +1944,7 @@ elsif (($METHOD =~ /^.*vncviewer$/) || ($METHOD eq 'VNC')) {
         ['^.*Connection established using SSL.*$', sub {
             $CONNECTED = 1;
             if ($METHOD eq 'rdesktop' && $is_wayland) {
-                PACLogger::log_success("✅ rdesktop SSL connection established on Xwayland") if $ENV{ASBRU_DEBUG};
+                PACLogger::log_success("rdesktop SSL connection established on Xwayland") if $ENV{ASBRU_DEBUG};
                 ctrl("CONNECTED:rdesktop SSL established");
             } else {
                 ctrl("CONNECTED");
@@ -1997,13 +2192,19 @@ elsif (!$MANUAL) {
             $CONNECTED = 0;
             if ($ACCEPT_KEY) {
                 ctrl("HOSTKEY:deleting offending hostkey by configuration and Restarting connection");
-                open(F, `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} echo $known_hosts 2>&1`) or die "ERROR: could not open for reading '$known_hosts' ($!)";
-                my @data = <F>;
-                close F;
-                splice(@data, $line - 1, 1);
-                open(F, '>' . `$ENV{'ASBRU_ENV_FOR_EXTERNAL'} echo $known_hosts 2>&1`) or die "ERROR: could not open for writing '$known_hosts' ($!)";
-                print F @data;
-                close F;
+                if (open(my $FH, '<', $known_hosts)) {
+                    my @data = <$FH>;
+                    close $FH;
+                    splice(@data, $line - 1, 1);
+                    if (open(my $OFH, '>', $known_hosts)) {
+                        print {$OFH} @data;
+                        close $OFH;
+                    } else {
+                        die "ERROR: could not open for writing '$known_hosts' ($!)";
+                    }
+                } else {
+                    die "ERROR: could not open for reading '$known_hosts' ($!)";
+                }
                 ctrl('RESTART');
             } else {
                 ctrl("CLOSE:HOSTKEY:ignoring offending hostkey by configuration");
