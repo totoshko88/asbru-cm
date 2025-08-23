@@ -1408,12 +1408,15 @@ sub _initGUI {
         };
     }
     if ($COSMIC) {
-    my $maybe = eval { PACTrayCosmic->new($self) };
-    if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
-    # Some objects might overload boolean false; accept any blessed ref
-    if ((defined $maybe && ref($maybe)) || (ref($maybe) && Scalar::Util::blessed($maybe))) {
-            $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
-        } elsif (ref($maybe)) { # ref but evaluated false somehow
+        my $maybe = eval { PACTrayCosmic->new($self) };
+        if ($ENV{ASBRU_DEBUG}) {
+            my $defined = defined $maybe ? 'yes' : 'no';
+            my $reftype = ref($maybe) || '';
+            my $val = defined $maybe ? $maybe : 'undef';
+            print "DEBUG: Cosmic tray constructor returned: defined=$defined, ref='$reftype', value='$val'\n";
+        }
+        if ($@) { print "WARNING: Cosmic tray construction error: $@\n"; }
+        if (defined $maybe && ref($maybe)) {
             $FUNCS{_TRAY} = $$self{_TRAY} = $maybe;
         } else {
             print "INFO: Falling back to standard tray (Cosmic tray unavailable)\n";

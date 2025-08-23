@@ -1490,8 +1490,11 @@ sub _registerPACIcons {
         'asbru-terminal-ok-big' => "$RES_DIR/asbru_terminal64x64.png",
         'asbru-terminal-ko-small' => "$RES_DIR/asbru_terminal_x16x16.png",
         'asbru-terminal-ko-big' => "$RES_DIR/asbru_terminal_x64x64.png",
-        'asbru-tray-bw' => "$RES_DIR/asbru_tray_bw.png",
-        'asbru-tray' => "$RES_DIR/asbru-logo-tray.png",
+    'asbru-tray-bw' => "$RES_DIR/asbru_tray_bw.png",
+    'asbru-tray' => "$RES_DIR/asbru-logo-tray.png",
+    # Indicator icon (explicit for panel/tray usage)
+    'asbru-indicator' => "$RES_DIR/asbru_terminal64x64.png",
+    'asbru_terminal64x64' => "$RES_DIR/asbru_terminal64x64.png",
         'asbru-treelist' => "$THEME_DIR/asbru_treelist.svg",
         'asbru-wol' => "$THEME_DIR/asbru_wol.svg",
     'asbru-prompt' => "$THEME_DIR/asbru_prompt.svg",

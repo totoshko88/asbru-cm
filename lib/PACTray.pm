@@ -40,6 +40,7 @@ use Gtk3 '-init';
 # PAC modules
 use PACUtils;
 use Glib qw/TRUE FALSE/;
+use Net::DBus::Object; # for SNI export when falling back on Wayland/Cosmic
 
 # END: Import Modules
 ###################################################################
@@ -141,125 +142,9 @@ sub _initGUI {
     my $embedded = $$self{_TRAY}->is_embedded();
     $$self{_MAIN}{_CFG}{'tmp'}{'tray available'} = $embedded ? 1 : 'warning';
 
-    # Cosmic shell has no legacy tray: provide small helper window substitute when detected
-    if (!$embedded && !$ENV{ASBRU_DISABLE_COSMIC} && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /cosmic/i)) {
-        print "INFO: Desktop environment detected: cosmic\n";
-        print "INFO: Using Cosmic tray integration (initializing)\n";
-        
-        # Try to integrate with system StatusNotifierItem protocol first
-        my $sni_success = eval {
-            require Net::DBus;
-            my $bus = Net::DBus->session;
-            
-            # Check if StatusNotifierWatcher is available
-            my $watcher_service = eval { $bus->get_service('org.kde.StatusNotifierWatcher') };
-            
-            if ($watcher_service) {
-                print "INFO: StatusNotifierWatcher present on session bus (SNI available)\n";
-                
-                # Create a unique service name based on PID
-                my $pid = $$;
-                my $service_name = "org.kde.StatusNotifierItem-$pid-1";
-                
-                # Export our StatusNotifierItem service
-                my $sni_service = $bus->export_service($service_name);
-                my $sni_object = PACTrayStatusNotifierItem->new($sni_service, $self);
-                
-                # Use the correct DBus export method
-                $sni_service->export_object('/StatusNotifierItem', 
-                    'org.kde.StatusNotifierItem', $sni_object);
-                
-                # Register with watcher
-                my $watcher = $watcher_service->get_object('/StatusNotifierWatcher');
-                $watcher->RegisterStatusNotifierItem($service_name);
-                
-                print "INFO: StatusNotifierItem registered ($service_name)\n";
-                print "INFO: SNI: Registered with StatusNotifierWatcher\n";
-                
-                return 1;
-            } else {
-                print "INFO: StatusNotifierWatcher not available\n";
-                return 0;
-            }
-        };
-        
-        if ($@) {
-            print "WARN: SNI integration failed: $@\n";
-            $sni_success = 0;
-        }
-        
-        # If SNI integration failed, fall back to helper window
-        unless ($sni_success) {
-            print "INFO: Falling back to standard tray (Cosmic tray unavailable)\n";
-            
-            my $helper = Gtk3::Window->new('popup');
-            $helper->set_title($APPNAME . ' Tray');
-            $helper->set_resizable(FALSE);
-            my $img = Gtk3::Image->new_from_file($TRAYICON);
-            my $ebox = Gtk3::EventBox->new();
-            $ebox->add($img);
-            $helper->add($ebox);
-            $helper->set_default_size(24,24);
-            $helper->set_decorated(FALSE);
-            $helper->set_keep_above(TRUE);
-            $helper->stick;
-            
-            # Set window type hint for better panel integration  
-            $helper->set_type_hint('dock');
-            $helper->set_skip_taskbar_hint(TRUE);
-            $helper->set_skip_pager_hint(TRUE);
-            
-            $ebox->set_events(['button-press-mask','button-release-mask','pointer-motion-mask']);
-            my ($dragging,$dx,$dy) = (0,0,0);
-            $ebox->signal_connect('button-press-event' => sub {
-                my ($w,$ev) = @_;
-                if ($ev->button == 1) {
-                    $dragging = 1; ($dx,$dy) = ($ev->x_root, $ev->y_root);
-                } elsif ($ev->button == 3) {
-                    $self->_trayMenu($w,$ev);
-                }
-                return 1;
-            });
-            $ebox->signal_connect('button-release-event' => sub {
-                my ($w,$ev) = @_;
-                if ($ev->button == 1 && $dragging) {
-                    $dragging = 0;
-                    # Toggle main window if it was a click (no movement)
-                    if (abs($ev->x_root - $dx) < 3 && abs($ev->y_root - $dy) < 3) {
-                        if ($$self{_MAIN}{_GUI}{main}->get_visible()) { $$self{_MAIN}->_hideConnectionsList(); }
-                        else { $$self{_MAIN}->_showConnectionsList(); }
-                    }
-                }
-                return 1;
-            });
-            $ebox->signal_connect('motion-notify-event' => sub {
-                my ($w,$ev) = @_;
-                return 0 unless $dragging;
-                my $nx = $ev->x_root - 12; my $ny = $ev->y_root - 12;
-                $helper->move($nx,$ny);
-                return 1;
-            });
-            $helper->show_all();
-            
-            # Position in the top-right corner for Cosmic
-            my $screen = eval { Gtk3::Gdk::Screen::get_default(); };
-            Glib::Idle->add(sub {
-                my $w = 1600; # Cosmic default width for your screen  
-                my $h = 900;  # Cosmic default height for your screen
-                if ($screen) {
-                    eval { $w = $screen->get_width; $h = $screen->get_height; 1 } or do { $w = 1600; $h = 900; };
-                }
-                
-                # Position in top-right corner for Cosmic desktop
-                my $x = $w - 48;  # 48px from right edge 
-                my $y = 8;        # 8px from top edge (COSMIC has top panel)
-                
-                $helper->move($x, $y);
-                print "INFO: Positioned tray helper window at ($x, $y) on ${w}x${h} screen\n";
-                return 0;
-            });
-            $$self{_TRAY_HELPER} = $helper;
-        }
+    # Cosmic: do not show helper overlay; only an AppIndicator/SNI tray is expected (handled elsewhere)
+    if (!$embedded && (($ENV{XDG_CURRENT_DESKTOP} // '') =~ /cosmic/i)) {
+        # Intentionally no helper window to avoid duplicate indicators on Cosmic
     }
 
     return 1;
@@ -370,14 +255,13 @@ sub _trayMenu {
 ###################################################################
 # StatusNotifierItem implementation for proper SNI integration
 package PACTrayStatusNotifierItem;
+use parent 'Net::DBus::Object';
 
 sub new {
-    my ($class, $service, $tray_obj) = @_;
-    my $self = {
-        service => $service,
-        tray => $tray_obj,
-    };
-    bless $self, $class;
+    my ($class, $service, $path, $tray_obj) = @_;
+    my $self = $class->SUPER::new($service, $path);
+    $self->{service} = $service;
+    $self->{tray} = $tray_obj;
     return $self;
 }
 
@@ -399,6 +283,69 @@ sub ContextMenu {
     my $tray = $self->{tray};
     my $event = { x_root => $x, y_root => $y, button => 3 };
     $tray->_trayMenu(undef, $event);
+}
+
+# DBus properties for StatusNotifierItem
+sub Get {
+    my ($self, $interface, $prop) = @_;
+    my %props = $self->_all_props();
+    return $props{$prop};
+}
+
+sub GetAll {
+    my ($self, $interface) = @_;
+    return { $self->_all_props() };
+}
+
+sub Introspect {
+    return <<'XML';
+<node>
+    <interface name="org.kde.StatusNotifierItem">
+        <property name="Category" type="s" access="read"/>
+        <property name="Id" type="s" access="read"/>
+        <property name="Title" type="s" access="read"/>
+        <property name="Status" type="s" access="read"/>
+        <property name="IconName" type="s" access="read"/>
+        <property name="IconThemePath" type="s" access="read"/>
+        <property name="Menu" type="o" access="read"/>
+        <method name="Activate">
+            <arg direction="in" type="i" name="x"/>
+            <arg direction="in" type="i" name="y"/>
+        </method>
+        <method name="ContextMenu">
+            <arg direction="in" type="i" name="x"/>
+            <arg direction="in" type="i" name="y"/>
+        </method>
+    </interface>
+    <interface name="org.freedesktop.DBus.Properties">
+        <method name="Get">
+            <arg direction="in" type="s" name="interface"/>
+            <arg direction="in" type="s" name="prop"/>
+            <arg direction="out" type="v" name="value"/>
+        </method>
+        <method name="GetAll">
+            <arg direction="in" type="s" name="interface"/>
+            <arg direction="out" type="a{sv}" name="props"/>
+        </method>
+    </interface>
+</node>
+XML
+}
+
+sub _all_props {
+    my ($self) = @_;
+    # Use icon name from resources; ensure theme path provided
+    my $icon_name = 'asbru-tray';
+    my $icon_path = $FindBin::RealBin . '/res';
+    return (
+        Category => 'ApplicationStatus',
+        Id => 'asbru-cm',
+        Title => $PACUtils::APPNAME,
+        Status => 'Active',
+        IconName => $icon_name,
+        IconThemePath => $icon_path,
+        Menu => '/StatusNotifierMenu',
+    );
 }
 
 sub SecondaryActivate {

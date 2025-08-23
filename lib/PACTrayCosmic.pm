@@ -131,7 +131,9 @@ sub new {
         print "INFO: Skipping Cosmic tray subsystem (ASBRU_SKIP_COSMIC_TRAY set)\n" if $ENV{ASBRU_DEBUG};
     } else {
         $self->_detectCosmicIntegration();
-        unless (_initGUI($self)) {
+        my $ok = _initGUI($self) ? 1 : 0;
+        if (!$ok) {
+            print "DEBUG: PACTrayCosmic _initGUI returned false, treating as unavailable\n" if $ENV{ASBRU_DEBUG};
             return undef; # signal failure cleanly (avoid returning 0 which breaks method calls)
         }
     }
@@ -253,17 +255,27 @@ sub _detectCosmicIntegration {
         # Check for notification area support
         $NOTIFICATION_AREA_AVAILABLE = $self->_checkNotificationAreaSupport();
         
-        # Allow user to force disable/enable appindicator via env vars
+        # Allow user to force disable appindicator
         if ($ENV{ASBRU_FORCE_NO_APPINDICATOR}) { $HAVE_APPINDICATOR = 0; print "INFO: AppIndicator force disabled (ASBRU_FORCE_NO_APPINDICATOR)\n"; }
-        if ($ENV{ASBRU_FORCE_APPINDICATOR} && !$HAVE_APPINDICATOR) {
-            print "INFO: Forcing attempt to load AppIndicator (ASBRU_FORCE_APPINDICATOR)\n";
+        # On COSMIC, prefer AppIndicator by default: if not loaded yet, try to load it now
+        if (!$HAVE_APPINDICATOR && !$ENV{ASBRU_FORCE_SNI} && !$ENV{ASBRU_FORCE_NO_APPINDICATOR}) {
             eval {
                 require Glib::Object::Introspection;
                 Glib::Object::Introspection->setup(
-                    basename => 'AyatanaAppIndicator3', version => '0.1', package => 'AppIndicator'
+                    basename => 'AppIndicator3', version => '0.1', package => 'AppIndicator'
                 );
                 $HAVE_APPINDICATOR = 1; $AI_PACKAGE = 'AppIndicator';
             };
+            if (!$HAVE_APPINDICATOR) {
+                eval {
+                    require Glib::Object::Introspection;
+                    Glib::Object::Introspection->setup(
+                        basename => 'AyatanaAppIndicator3', version => '0.1', package => 'AppIndicator'
+                    );
+                    $HAVE_APPINDICATOR = 1; $AI_PACKAGE = 'AppIndicator';
+                };
+            }
+            if ($HAVE_APPINDICATOR && $ENV{ASBRU_DEBUG}) { print "INFO: AppIndicator GI loaded for COSMIC (package: $AI_PACKAGE)\n"; }
         }
     my $force_sni = $ENV{ASBRU_FORCE_SNI} ? 1 : 0;
     if ($force_sni && $ENV{ASBRU_DEBUG}) { print "INFO: Forcing StatusNotifierItem mode (ASBRU_FORCE_SNI)\n"; }
@@ -319,15 +331,15 @@ sub _initGUI {
     my $self = shift;
 
     if ($INTEGRATION_MODE eq 'appindicator') {
-        return $self->_initAppIndicator();
+        return $self->_initAppIndicator() ? 1 : 0;
     } elsif ($INTEGRATION_MODE eq 'statusnotifier') {
-        return $self->_initStatusNotifier();
+        return $self->_initStatusNotifier() ? 1 : 0;
     } elsif ($INTEGRATION_MODE eq 'cosmic_panel') {
-        return $self->_initCosmicPanel();
+        return $self->_initCosmicPanel() ? 1 : 0;
     } elsif ($INTEGRATION_MODE eq 'notification_area') {
-        return $self->_initNotificationArea();
+        return $self->_initNotificationArea() ? 1 : 0;
     } else {
-        return $self->_initMenuBar();
+        return $self->_initMenuBar() ? 1 : 0;
     }
 }
 
@@ -376,7 +388,8 @@ sub _initStatusNotifier {
         <property name="Title" type="s" access="read"/>
         <property name="Status" type="s" access="read"/>
         <property name="IconName" type="s" access="read"/>
-        <property name="IconThemePath" type="s" access="read"/>
+    <property name="IconThemePath" type="s" access="read"/>
+    <property name="AbsoluteIconPath" type="s" access="read"/>
         <property name="Menu" type="o" access="read"/>
         <method name="Activate">
             <arg direction="in" type="i" name="x"/>
@@ -403,15 +416,17 @@ XML
                 *{$package.'::Activate'} = sub { my ($o,$x,$y)=@_; $o->{_TRAY}{_MAIN}->_showConnectionsList(); } unless defined &{ $package.'::Activate' };
                 *{$package.'::ContextMenu'} = sub { my ($o,$x,$y)=@_; $o->{_TRAY}{_MAIN}->_showConnectionsList(); } unless defined &{ $package.'::ContextMenu' };
                 *{$package.'::_sni_property'} = sub { my ($o,$p)=@_; my %h=$o->_sni_all_props(); return $h{$p}; } unless defined &{ $package.'::_sni_property' };
-                *{$package.'::_sni_all_props'} = sub {
-                        my ($o)=@_;
-                        return (
+        *{$package.'::_sni_all_props'} = sub {
+            my ($o)=@_;
+            my $abs_icon = "$RealBin/res/asbru_terminal64x64.png";
+            return (
                                 Category => 'ApplicationStatus',
                                 Id => 'asbru-cm',
                                 Title => $APPNAME,
                                 Status => 'Active',
-                                IconName => 'asbru-logo-tray',
-                                IconThemePath => "$RealBin/res",
+                                IconName => 'asbru_terminal64x64',
+                IconThemePath => "$RealBin/res",
+                AbsoluteIconPath => $abs_icon,
                                 Menu => '/StatusNotifierMenu'
                         );
                 };
@@ -451,61 +466,109 @@ sub _initAppIndicator {
     unless ($HAVE_APPINDICATOR) {
         print "WARNING: AppIndicator requested but not available.\n";
         $INTEGRATION_MODE = 'menubar';
-        return $self->_initMenuBar();
+        return $self->_initMenuBar() ? 1 : 0;
     }
-    eval {
+    my $ok = eval {
         print "INFO: Initializing AppIndicator (package=$AI_PACKAGE) ...\n";
         my $icon_path = "$RealBin/res";
-        my $tray_icon = 'asbru-logo-tray';
+        my $tray_icon = 'asbru_terminal64x64';
+        my $tray_icon_file = "$icon_path/$tray_icon.png";
         # Use same call signature as Unity implementation
         $APPINDICATOR = AppIndicator::Indicator->new('asbru-cm', $tray_icon, 'application-status');
         $APPINDICATOR->set_icon_theme_path($icon_path) if $APPINDICATOR->can('set_icon_theme_path');
+        # Re-assert icon by name after theme path set
+        eval { $APPINDICATOR->set_icon($tray_icon) if $APPINDICATOR->can('set_icon'); 1 };
+        # If available, set icon by absolute file path to ensure pixmap delivery to panel
+        if ($APPINDICATOR->can('set_icon_full') && -f $tray_icon_file) {
+            eval { $APPINDICATOR->set_icon_full($tray_icon_file, 'Asbru Indicator'); 1 };
+            print "INFO: AppIndicator icon set via file path ($tray_icon_file)\n" if $ENV{ASBRU_DEBUG};
+        } else {
+            print "INFO: AppIndicator icon set via name ($tray_icon)\n" if $ENV{ASBRU_DEBUG};
+        }
         $APPINDICATOR->set_status('active') if $APPINDICATOR->can('set_status');
-        my $menu = $self->_buildIndicatorMenu();
+    my $menu = $self->_buildIndicatorMenu();
         $APPINDICATOR->set_menu($menu) if $APPINDICATOR->can('set_menu');
         $self->{_TRAY} = $APPINDICATOR;
+    eval { Gtk3::IconTheme::get_default()->rescan_if_needed(); };
         $self->{_MAIN}{_CFG}{'tmp'}{'tray available'} = 1;
         print "INFO: AppIndicator created successfully (Cosmic, mode=$INTEGRATION_MODE)\n";
-        return 1;
+        1;
     };
-    if ($@) {
+    if (!$ok) {
+        my $err = $@;
         print "WARNING: Failed to init AppIndicator: $@\n";
         $INTEGRATION_MODE = 'menubar';
-        return $self->_initMenuBar();
+        return $self->_initMenuBar() ? 1 : 0;
     }
+    return 1;
 }
 
 sub _buildIndicatorMenu {
     my $self = shift;
+    # Build AppIndicator menu mirroring the default tray structure
     my $menu = Gtk3::Menu->new();
-
-    my $item_shell = Gtk3::MenuItem->new_with_label('Local Shell');
-    $item_shell->signal_connect(activate => sub { $PACMain::FUNCS{_MAIN}{_GUI}{shellBtn}->clicked(); });
-    $menu->append($item_shell);
-
-    my $item_show = Gtk3::MenuItem->new_with_label('Show/Hide Window');
-    $item_show->signal_connect(activate => sub {
-        if ($self->{_MAIN}{_GUI}{main}->get_visible()) { $self->{_MAIN}->_hideConnectionsList(); } else { $self->{_MAIN}->_showConnectionsList(); }
-    });
-    $menu->append($item_show);
-
-    my $sep1 = Gtk3::SeparatorMenuItem->new(); $menu->append($sep1);
-
-    my $item_prefs = Gtk3::MenuItem->new_with_label('Preferences...');
-    $item_prefs->signal_connect(activate => sub { $self->{_MAIN}{_CONFIG}->show(); });
-    $menu->append($item_prefs);
-
-    my $item_about = Gtk3::MenuItem->new_with_label('About');
-    $item_about->signal_connect(activate => sub { $self->{_MAIN}->_showAboutWindow(); });
-    $menu->append($item_about);
-
-    my $sep2 = Gtk3::SeparatorMenuItem->new(); $menu->append($sep2);
-
-    my $item_quit = Gtk3::MenuItem->new_with_label('Quit');
-    $item_quit->signal_connect(activate => sub { $self->{_MAIN}->_quitProgram(); });
-    $menu->append($item_quit);
-
+    my $items = $self->_buildDefaultMenuSpec();
+    $self->_appendMenuItems($menu, $items);
     $menu->show_all();
+    return $menu;
+}
+
+sub _buildDefaultMenuSpec {
+    my $self = shift;
+    # Reuse the same entries as _createTrayMenu but as data specs
+    my @spec;
+    push @spec, {label => 'Local Shell', on => sub { $PACMain::FUNCS{_MAIN}{_GUI}{shellBtn}->clicked(); }};
+    push @spec, {sep => 1};
+    my $clusters = eval { $self->_menuClusterConnections() } || undef;
+    my $favs = eval { $self->_menuFavouriteConnections() } || undef;
+    my $tree = eval { $PACMain::FUNCS{_MAIN}{_GUI}{treeConnections}{data} };
+    my $connect = eval { $self->_menuAvailableConnections($tree) } || undef;
+    push @spec, {label => 'Clusters', submenu => $clusters} if $clusters;
+    push @spec, {label => 'Favourites', submenu => $favs} if $favs;
+    push @spec, {label => 'Connect to', submenu => $connect} if $connect;
+    push @spec, {sep => 1};
+    push @spec, {label => 'Preferences...', on => sub { $self->{_MAIN}{_CONFIG}->show(); }};
+    push @spec, {label => 'Clusters...', on => sub { $self->{_MAIN}{_CLUSTER}->show(); }};
+    push @spec, {label => 'PCC', on => sub { $self->{_MAIN}{_PCC}->show(); }};
+    push @spec, {label => 'Show Window', on => sub { $self->{_MAIN}->_showConnectionsList(); }};
+    push @spec, {sep => 1};
+    push @spec, {label => 'About', on => sub { $self->{_MAIN}->_showAboutWindow(); }};
+    push @spec, {label => 'Exit', on => sub { $self->{_MAIN}->_quitProgram(); }};
+    return \@spec;
+}
+
+sub _appendMenuItems {
+    my ($self, $menu, $specs) = @_;
+    foreach my $it (@$specs) {
+        if ($it->{sep}) { $menu->append(Gtk3::SeparatorMenuItem->new()); next; }
+        my $mi = Gtk3::MenuItem->new_with_label($it->{label} // '');
+        if ($it->{submenu}) {
+            my $sub = $self->_buildMenuFromArray($it->{submenu});
+            $mi->set_submenu($sub) if $sub;
+        } elsif ($it->{on}) {
+            my $cb = $it->{on};
+            $mi->signal_connect(activate => sub { $cb->() });
+        }
+        $menu->append($mi);
+    }
+}
+
+sub _buildMenuFromArray {
+    my ($self, $arr) = @_;
+    return undef unless $arr && ref($arr) eq 'ARRAY' && @$arr;
+    my $menu = Gtk3::Menu->new();
+    foreach my $e (@$arr) {
+        if ($e->{separator}) { $menu->append(Gtk3::SeparatorMenuItem->new()); next; }
+        my $mi = Gtk3::MenuItem->new_with_label($e->{label} // '');
+        if ($e->{submenu}) {
+            my $sub = $self->_buildMenuFromArray($e->{submenu});
+            $mi->set_submenu($sub) if $sub;
+        } elsif ($e->{code}) {
+            my $cb = $e->{code};
+            $mi->signal_connect(activate => sub { $cb->() });
+        }
+        $menu->append($mi);
+    }
     return $menu;
 }
 
