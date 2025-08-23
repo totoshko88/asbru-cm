@@ -50,7 +50,7 @@ use Glib qw/TRUE FALSE/;
 my $APPNAME = $PACUtils::APPNAME;
 my $APPVERSION = $PACUtils::APPVERSION;
 my $APPICON = "$RealBin/res/asbru-logo-64.png";
-my $TRAYICON = "$RealBin/res/asbru-logo-tray.png";
+my $TRAYICON = "$RealBin/res/asbru_terminal64x64.png";
 my $GROUPICON_ROOT = _pixBufFromFile("$RealBin/res/themes/default/asbru_group.svg");
 my $CALLBACKS_INITIALIZED = 0;
 

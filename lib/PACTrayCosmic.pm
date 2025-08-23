@@ -97,7 +97,7 @@ use PACCompat;
 my $APPNAME = $PACUtils::APPNAME;
 my $APPVERSION = $PACUtils::APPVERSION;
 my $APPICON = "$RealBin/res/asbru-logo-64.png";
-my $TRAYICON = "$RealBin/res/asbru-logo-tray.png";
+my $TRAYICON = "$RealBin/res/asbru_terminal64x64.png";
 my $GROUPICON_ROOT = _pixBufFromFile("$RealBin/res/themes/default/asbru_group.svg");
 my $CALLBACKS_INITIALIZED = 0;
 
@@ -125,7 +125,7 @@ sub new {
     bless($self, $class);
 
     if ($self->{_MAIN} && $self->{_MAIN}{_CFG}{defaults}{'use bw icon'}) {
-        $TRAYICON = "$RealBin/res/asbru_tray_bw.png";
+    $TRAYICON = "$RealBin/res/asbru_tray_bw.png";
     }
     if ($SKIP_ALL_TRAY) {
         print "INFO: Skipping Cosmic tray subsystem (ASBRU_SKIP_COSMIC_TRAY set)\n" if $ENV{ASBRU_DEBUG};

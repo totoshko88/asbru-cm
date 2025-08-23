@@ -112,7 +112,7 @@ sub show {
     $GROUPICONCLOSED = _pixBufFromFile("$THEME_DIR/asbru_group_closed_16x16.svg");
     $GROUPICONOPEN = _pixBufFromFile("$THEME_DIR/asbru_group_open_16x16.svg");
     $GROUPICON_ROOT = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
-    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.png");
+    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.svg");
     $ICON_ON = Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$RES_DIR/asbru_terminal16x16.png", 16, 16, 0);
     $ICON_OFF = Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$RES_DIR/asbru_terminal_x16x16.png", 16, 16, 0);
 

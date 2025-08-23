@@ -38,12 +38,11 @@ sub check_local_icons {
     
     for my $theme (@themes) {
         my $svg_path = "$RealBin/res/themes/$theme/asbru_method_local.svg";
-        my $png_path = "$RealBin/res/themes/$theme/asbru_method_local.png";
         
-        if (-f $svg_path && -f $png_path) {
-            print "   ✓ $theme theme has Local icons\n";
+        if (-f $svg_path) {
+            print "   ✓ $theme theme has Local SVG icon\n";
         } else {
-            print "   ✗ $theme theme missing Local icons\n";
+            print "   ✗ $theme theme missing Local SVG icon\n";
             $all_exist = 0;
         }
     }
@@ -60,12 +59,11 @@ sub check_keepass_icons {
     
     for my $theme (@themes) {
         my $svg_path = "$RealBin/res/themes/$theme/asbru_keepass.svg";
-        my $png_path = "$RealBin/res/themes/$theme/asbru_keepass.png";
         
-        if (-f $svg_path && -f $png_path) {
-            print "   ✓ $theme theme has KeePass icons\n";
+        if (-f $svg_path) {
+            print "   ✓ $theme theme has KeePass SVG icon\n";
         } else {
-            print "   ✗ $theme theme missing KeePass icons\n";
+            print "   ✗ $theme theme missing KeePass SVG icon\n";
             $all_exist = 0;
         }
     }

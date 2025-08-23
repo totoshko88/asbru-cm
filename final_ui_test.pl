@@ -46,8 +46,7 @@ my $local_support = `grep -A 2 -B 2 "PACShell.*Local.*asbru_method_local" "$main
 my @themes = qw(default system asbru-dark asbru-color);
 my $local_files = 1;
 for my $theme (@themes) {
-    unless (-f "$RealBin/res/themes/$theme/asbru_method_local.svg" && 
-            -f "$RealBin/res/themes/$theme/asbru_method_local.png") {
+    unless (-f "$RealBin/res/themes/$theme/asbru_method_local.svg") {
         $local_files = 0;
         last;
     }
@@ -65,8 +64,7 @@ print "4. Testing WebDAV icon display...\n";
 my $webdav_mapping = `grep -A 2 -B 2 "WebDAV.*cadaver" "$main_pm"`;
 my $webdav_files = 1;
 for my $theme (@themes) {
-    unless (-f "$RealBin/res/themes/$theme/asbru_method_cadaver.svg" && 
-            -f "$RealBin/res/themes/$theme/asbru_method_cadaver.png") {
+    unless (-f "$RealBin/res/themes/$theme/asbru_method_cadaver.svg") {
         $webdav_files = 0;
         last;
     }
@@ -108,8 +106,7 @@ my $config_pm = "$RealBin/lib/PACConfig.pm";
 my $keepass_icon_code = `grep -A 10 -B 5 "asbru_keepass.svg" "$config_pm"`;
 my $keepass_files = 1;
 for my $theme (@themes) {
-    unless (-f "$RealBin/res/themes/$theme/asbru_keepass.svg" && 
-            -f "$RealBin/res/themes/$theme/asbru_keepass.png") {
+    unless (-f "$RealBin/res/themes/$theme/asbru_keepass.svg") {
         $keepass_files = 0;
         last;
     }

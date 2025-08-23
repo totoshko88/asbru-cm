@@ -111,6 +111,23 @@ my $PAC_START_TOTAL = 6;
 my $APP_START_TIME = time();
 
 my $APPICON = "$RES_DIR/asbru-logo-64.png";
+sub _applyDefaultAppIcon {
+    # Try file icon first, then theme icon name, then a generic terminal
+    my $ok = 0;
+    eval {
+        Gtk3::Window::set_default_icon_from_file($APPICON);
+        $ok = 1;
+    };
+    if (!$ok) {
+        eval { Gtk3::Window::set_default_icon_name('asbru-cm'); $ok = 1; };
+    }
+    if (!$ok) {
+        eval { Gtk3::Window::set_default_icon_name('utilities-terminal'); $ok = 1; };
+    }
+    if ($ENV{ASBRU_DEBUG}) {
+        print STDERR "ICON: default app icon applied via " . ($ok ? "success" : "fallback-failed") . "\n";
+    }
+}
 my $AUTOCLUSTERICON;
 my $CLUSTERICON;
 my $GROUPICON_ROOT;
@@ -272,7 +289,7 @@ sub new {
     if ($$self{_VERBOSE}) { print STDERR "DIAG: Startup profile so far -> " . join(' | ', @{$self->{_PROFILE}}) . "\n"; }
 
     # _registerPACIcons($THEME_DIR); # Removed - will be restored in PACUtils.pm
-    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.png");
+    $AUTOCLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_auto.svg");
     $CLUSTERICON = _pixBufFromFile("$THEME_DIR/asbru_cluster_connection.svg");
     # Scale root group icon to 16x16 to match other group icons
     my $root_pixbuf = _pixBufFromFile("$THEME_DIR/asbru_group.svg");
@@ -1252,7 +1269,7 @@ sub _initGUI {
 
     # Setup some window properties.
     $$self{_GUI}{main}->set_title("$APPNAME" . ($$self{_READONLY} ? ' - READ ONLY MODE' : ''));
-    Gtk3::Window::set_default_icon_from_file($APPICON);
+    _applyDefaultAppIcon();
     $$self{_GUI}{main}->set_default_size($$self{_GUI}{sw} // 600, $$self{_GUI}{sh} // 480);
     $$self{_GUI}{main}->set_resizable(1);
 
@@ -1291,7 +1308,7 @@ sub _initGUI {
         $$self{_GUI}{_PACTABS}->set_default_size(600, 400);
         $$self{_GUI}{_PACTABS}->set_resizable(1);
         $$self{_GUI}{_PACTABS}->maximize() if $$self{_CFG}{'defaults'}{'start maximized'};
-        Gtk3::Window::set_default_icon_from_file($APPICON);
+    _applyDefaultAppIcon();
 
         # Create a notebook widget - AI-assisted modernization: Updated for GTK4 compatibility
         $$self{_GUI}{nb} = create_notebook();
@@ -3067,31 +3084,31 @@ sub _getConnectionTypeIcon {
     
     # Use method-specific icons based on asbru_method_* naming
     if ($method eq 'SSH') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ssh.svg");
     } elsif ($method =~ /^RDP|xfreerdp|rdesktop/i) {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_rdesktop.svg");
     } elsif ($method eq 'VNC') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_vncviewer.svg");
     } elsif ($method eq 'SFTP') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_sftp.svg");
     } elsif ($method eq 'FTP') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_ftp.svg");
     } elsif ($method eq 'Telnet') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_telnet.svg");
     } elsif ($method eq 'MOSH') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_mosh.svg");
     } elsif ($method eq 'WebDAV') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cadaver.svg");
     } elsif ($method eq 'Generic Command') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_generic.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_generic.svg");
     } elsif ($method eq 'PACShell' || $method eq 'Local') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_local.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_local.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_local.svg");
     } elsif ($method eq 'IBM 3270/5250') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_3270.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_3270.svg");
     } elsif ($method eq 'Serial (cu)') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_cu.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_cu.svg");
     } elsif ($method eq 'Serial (remote-tty)') {
-        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.svg") || _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.png");
+        $icon = _pixBufFromFile("$$self{_THEME}/asbru_method_remote-tty.svg");
     }
     
     # Fallback to default connection icon if method-specific icon not found

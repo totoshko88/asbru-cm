@@ -136,9 +136,10 @@ our %ICON_MAP = (
 # Fallback icon sizes
 our %ICON_SIZES = (
     'menu' => 16,
-    'small-toolbar' => 18,
-    'large-toolbar' => 24,
-    'button' => 20,
+    # Align with policy: small = 24, medium = 48
+    'small-toolbar' => 24,
+    'large-toolbar' => 48,
+    'button' => 24,
     'dnd' => 32,
     'dialog' => 48,
 );

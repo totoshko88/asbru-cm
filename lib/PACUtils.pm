@@ -656,7 +656,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
@@ -727,7 +727,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_rdesktop.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
@@ -796,7 +796,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_vncviewer.svg", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_vncviewer.svg", 16, 16, 0),
         'escape' => ["\cc"]
     };
 
@@ -846,7 +846,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.png", 16, 16, 0),
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_cu.svg", 16, 16, 0),
         'escape' => ['~.']
     };
 
@@ -913,7 +913,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.png", 16, 16, 0)
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_remote-tty.svg", 16, 16, 0)
     };
 
     my $c3270 = PACUtils::which_cached('c3270') ? 1 : 0;
@@ -965,7 +965,7 @@ sub _getMethods {
             _($self, 'cbAutossh')->set_sensitive(0);
             _($self, 'cbAutossh')->set_active(0);
         },
-        'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.svg", 16, 16, 0) || Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.png", 16, 16, 0)
+    'icon' => Gtk3::Gdk::Pixbuf->new_from_file_at_scale("$THEME_DIR/asbru_method_3270.svg", 16, 16, 0)
     };
 
     my $autossh = PACUtils::which_cached('autossh') ? 1 : 0;
@@ -1454,10 +1454,11 @@ sub _registerPACIcons {
         'asbru-app-big' => "$RES_DIR/asbru-logo-64.png",
         'asbru-group-add' => "$THEME_DIR/asbru_group_add_16x16.svg",
         'asbru-node-add' => "$THEME_DIR/asbru_node_add_16x16.svg",
-        'asbru-node-del' => "$THEME_DIR/asbru_node_del_16x16.png",
-        'asbru-chain' => "$THEME_DIR/asbru_chain.png",
-        'asbru-cluster-auto' => "$THEME_DIR/asbru_cluster_auto.png",
-        'asbru-cluster-manager2' => "$THEME_DIR/asbru_cluster_manager2.png",
+    # No explicit asbru_node_del asset; use themed delete icon
+    'asbru-node-del' => "$THEME_DIR/gtk-delete.svg",
+    'asbru-chain' => "$THEME_DIR/asbru_chain.svg",
+    'asbru-cluster-auto' => "$THEME_DIR/asbru_cluster_auto.svg",
+    'asbru-cluster-manager2' => "$THEME_DIR/asbru_cluster_manager2.svg",
         'asbru-cluster-manager' => "$THEME_DIR/asbru_cluster_manager.svg",
         'asbru-cluster-manager-off' => "$THEME_DIR/asbru_cluster_manager_off.svg",
         'asbru-favourite-on' => "$THEME_DIR/asbru_favourite_on.svg",
@@ -1466,7 +1467,7 @@ sub _registerPACIcons {
         'asbru-group-open' => "$THEME_DIR/asbru_group_open_16x16.svg",
         'asbru-group' => "$THEME_DIR/asbru_group.svg",
         'asbru-history' => "$THEME_DIR/asbru_history.svg",
-        'asbru-keepass' => "$THEME_DIR/asbru_keepass.png",
+    'asbru-keepass' => "$THEME_DIR/asbru_keepass.svg",
         'asbru-method-WebDAV' => "$THEME_DIR/asbru_method_cadaver.svg",
         'asbru-method-MOSH' => "$THEME_DIR/asbru_method_mosh.svg",
         'asbru-method-IBM 3270/5250' => "$THEME_DIR/asbru_method_3270.svg",
@@ -1482,9 +1483,9 @@ sub _registerPACIcons {
         'asbru-method-Telnet' => "$THEME_DIR/asbru_method_telnet.svg",
         'asbru-method-VNC' => "$THEME_DIR/asbru_method_vncviewer.svg",
         'asbru-quick-connect' => "$THEME_DIR/asbru_quick_connect.svg",
-        'asbru-script' => "$THEME_DIR/asbru_script.png",
+    'asbru-script' => "$THEME_DIR/asbru_script.svg",
         'asbru-shell' => "$THEME_DIR/asbru_shell.svg",
-        'asbru-tab' => "$THEME_DIR/asbru_tab.png",
+    'asbru-tab' => "$THEME_DIR/asbru_tab.svg",
         'asbru-terminal-ok-small' => "$RES_DIR/asbru_terminal16x16.png",
         'asbru-terminal-ok-big' => "$RES_DIR/asbru_terminal64x64.png",
         'asbru-terminal-ko-small' => "$RES_DIR/asbru_terminal_x16x16.png",
@@ -1493,11 +1494,11 @@ sub _registerPACIcons {
         'asbru-tray' => "$RES_DIR/asbru-logo-tray.png",
         'asbru-treelist' => "$THEME_DIR/asbru_treelist.svg",
         'asbru-wol' => "$THEME_DIR/asbru_wol.svg",
-        'asbru-prompt' => "$THEME_DIR/asbru_prompt.png",
-        'asbru-protected' => "$THEME_DIR/asbru_protected.png",
-        'asbru-unprotected' => "$THEME_DIR/asbru_unprotected.png",
-        'asbru-buttonbar-show' => "$THEME_DIR/asbru_buttonbar_show.png",
-        'asbru-buttonbar-hide' => "$THEME_DIR/asbru_buttonbar_hide.png",
+    'asbru-prompt' => "$THEME_DIR/asbru_prompt.svg",
+    'asbru-protected' => "$THEME_DIR/asbru_protected.svg",
+    'asbru-unprotected' => "$THEME_DIR/asbru_unprotected.svg",
+    'asbru-buttonbar-show' => "$THEME_DIR/asbru_buttonbar_show.svg",
+    'asbru-buttonbar-hide' => "$THEME_DIR/asbru_buttonbar_hide.svg",
     );
 
     # Use PACCompat for GTK3/GTK4 compatibility

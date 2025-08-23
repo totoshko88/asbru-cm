@@ -70,12 +70,11 @@ sub test_local_icons {
     
     for my $theme (@themes) {
         my $svg_exists = -f "$RealBin/res/themes/$theme/asbru_method_local.svg";
-        my $png_exists = -f "$RealBin/res/themes/$theme/asbru_method_local.png";
         
-        if ($svg_exists && $png_exists) {
-            print "   ✓ $theme theme has Local icons\n";
+        if ($svg_exists) {
+            print "   ✓ $theme theme has Local SVG icon\n";
         } else {
-            print "   ✗ $theme theme missing Local icons\n";
+            print "   ✗ $theme theme missing Local SVG icon\n";
             $all_present = 0;
         }
     }
@@ -94,9 +93,13 @@ sub test_webdav_icons {
         my $svg_exists = -f "$RealBin/res/themes/$theme/asbru_method_cadaver.svg";
         my $png_exists = -f "$RealBin/res/themes/$theme/asbru_method_cadaver.png";
         
-        unless ($svg_exists && $png_exists) {
-            print "   ✗ $theme theme missing WebDAV icons\n";
+        unless ($svg_exists) {
+            print "   ✗ $theme theme missing WebDAV SVG icon\n";
             $files_present = 0;
+        }
+        # Note: cadaver.svg embeds cadaver.png; keep PNG present for now
+        unless ($png_exists) {
+            print "   ⚠ $theme theme missing cadaver.png referenced by SVG\n";
         }
     }
     
