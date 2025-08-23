@@ -24,9 +24,22 @@ GetOptions(
     'help|h'        => \$help
 ) or die "Error in command line arguments\n";
 
+# Allow positional category arguments (e.g., `protocols`, `gui performance`)
+if (@ARGV) {
+    my %pos;
+    for my $arg (@ARGV) {
+        $pos{lc $arg} = 1 if $arg =~ /^(gui|protocols|performance)$/i;
+    }
+    if (%pos) {
+        $gui_only         = $pos{gui}         // 0;
+        $protocols_only   = $pos{protocols}   // 0;
+        $performance_only = $pos{performance} // 0;
+    }
+}
+
 if ($help) {
     print <<EOF;
-Usage: $0 [options]
+Usage: $0 [options] [categories]
 
 Options:
     -v, --verbose      Enable verbose test output
@@ -35,10 +48,13 @@ Options:
     -f, --performance  Run only performance tests
     -h, --help         Show this help message
 
+Positional categories (optional): gui, protocols, performance
+
 Examples:
-    $0                 # Run all tests
-    $0 --gui           # Run only GUI tests
-    $0 --verbose       # Run all tests with verbose output
+    $0                       # Run all tests
+    $0 --gui                 # Run only GUI tests
+    $0 protocols             # Run only protocol tests (positional)
+    $0 gui performance -v    # Run GUI and performance tests, verbose
 EOF
     exit 0;
 }
@@ -55,16 +71,42 @@ print "This test suite was developed with AI assistance as part of the GTK4 migr
 
 # Determine which tests to run
 my @test_categories;
-
-if ($gui_only) {
-    @test_categories = ('gui');
-} elsif ($protocols_only) {
-    @test_categories = ('protocols');
-} elsif ($performance_only) {
-    @test_categories = ('performance');
+if ($gui_only || $protocols_only || $performance_only) {
+    push @test_categories, 'gui'         if $gui_only;
+    push @test_categories, 'protocols'   if $protocols_only;
+    push @test_categories, 'performance' if $performance_only;
 } else {
     @test_categories = ('gui', 'protocols', 'performance');
 }
+
+# Capability checks (affect category/test selection)
+print "Checking required Perl modules...\n";
+my @required_modules = qw(Test::More Time::HiRes Benchmark);
+my @missing_required;
+for my $module (@required_modules) {
+    eval "require $module";
+    if ($@) { push @missing_required, $module; }
+    else { print "  ✓ $module\n"; }
+}
+if (@missing_required) {
+    print "\nMissing required modules:\n";
+    print "  ✗ $_\n" for @missing_required;
+    print "\nProceeding with available tests; some will be skipped.\n";
+}
+
+my $have_mock = eval { require Test::MockObject; 1 } ? 1 : 0;
+if ($have_mock) {
+    print "  (optional) available Test::MockObject\n";
+} else {
+    print "  (optional) missing Test::MockObject - will skip related tests\n";
+    $ENV{ASBRU_SKIP_MOCK_TESTS} = 1;
+}
+my $have_gtk4 = eval { require Gtk4; 1 } ? 1 : 0;
+if (!$have_gtk4) {
+    print "  (optional) missing Gtk4 - GUI tests will be skipped if selected\n";
+}
+
+print "\nAll required modules available.\n\n";
 
 my @all_test_files;
 my $total_tests = 0;
@@ -72,23 +114,32 @@ my $total_tests = 0;
 # Collect test files from each category
 for my $category (@test_categories) {
     my $category_dir = File::Spec->catdir($Bin, $category);
-    
+
     unless (-d $category_dir) {
         warn "Test category directory not found: $category_dir\n";
         next;
     }
-    
+
     print "Collecting $category tests...\n";
-    
-    # Get test files for this category
+
     my @category_files;
-    
+
     if ($category eq 'gui') {
-        @category_files = (
-            'test_widget_rendering.pl',
-            'test_theme_compatibility.pl',
-            'test_keyboard_shortcuts.pl'
+        if (!$have_gtk4) {
+            print "GTK4 not available; skipping GUI tests.\n";
+            next;
+        }
+        my @gui_candidates = (
+            'test_widget_rendering.pl',          # Gtk4 only
+            'test_theme_compatibility.pl',       # Gtk4 + Mock
+            'test_keyboard_shortcuts.pl'         # Gtk4 + Mock
         );
+        if (!$have_mock) {
+            @category_files = grep { $_ eq 'test_widget_rendering.pl' } @gui_candidates;
+            print "Test::MockObject not available; skipping GUI tests that require it.\n";
+        } else {
+            @category_files = @gui_candidates;
+        }
     } elsif ($category eq 'protocols') {
         @category_files = (
             'test_ssh_connections.pl',
@@ -96,12 +147,16 @@ for my $category (@test_categories) {
             'test_vnc_connections.pl'
         );
     } elsif ($category eq 'performance') {
+        if (!$have_mock) {
+            print "Test::MockObject not available; skipping performance tests.\n";
+            next;
+        }
         @category_files = (
             'test_startup_performance.pl',
             'test_integration.pl'
         );
     }
-    
+
     # Convert to full paths and verify existence
     for my $test_file (@category_files) {
         my $full_path = File::Spec->catfile($category_dir, $test_file);
@@ -128,41 +183,6 @@ print "  Verbose Output: " . ($verbose ? 'Enabled' : 'Disabled') . "\n";
 print "  Desktop Environment: " . ($ENV{XDG_CURRENT_DESKTOP} || 'Unknown') . "\n";
 print "  Display Server: " . ($ENV{WAYLAND_DISPLAY} ? 'Wayland' : ($ENV{DISPLAY} ? 'X11' : 'Unknown')) . "\n";
 print "\n";
-
-# Check for required Perl modules
-print "Checking required Perl modules...\n";
-my @required_modules = qw(Test::More Time::HiRes Benchmark);
-my @optional_modules = qw(Test::MockObject);
-my @missing_modules;
-
-for my $module (@required_modules) {
-    eval "require $module";
-    if ($@) {
-        push @missing_modules, $module;
-    } else {
-        print "  ✓ $module\n";
-    }
-}
-
-if (@missing_modules) {
-    print "\nMissing required modules:\n";
-    for my $module (@missing_modules) {
-        print "  ✗ $module\n";
-    }
-    print "\nProceeding with available tests; some will be skipped.\n";
-}
-
-# Check optional modules
-for my $module (@optional_modules) {
-    eval "require $module";
-    if ($@) {
-        print "  (optional) missing $module - will skip related tests\n";
-        $ENV{ASBRU_SKIP_MOCK_TESTS} = 1;
-    } else {
-        print "  (optional) available $module\n";
-    }
-}
-print "\nAll required modules available.\n\n";
 
 # Run the tests
 print "Starting test execution...\n";
@@ -198,7 +218,7 @@ for my $category (@test_categories) {
         'protocols' => 'SSH, RDP, and VNC connection protocol validation',
         'performance' => 'Startup performance, memory usage, and system integration'
     };
-    
+
     print "  $category: " . ($description->{$category} || 'Unknown category') . "\n";
 }
 

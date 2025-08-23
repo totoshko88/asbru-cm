@@ -282,6 +282,15 @@ $$CFG{'defaults'}{'proxy ip'}   = subst($$CFG{'defaults'}{'proxy ip'});
 $$CFG{'defaults'}{'proxy user'} = subst($$CFG{'defaults'}{'proxy user'});
 $$CFG{'defaults'}{'proxy pass'} = subst($$CFG{'defaults'}{'proxy pass'});
 
+# Validate destination for SSH-like methods early
+if ((defined $METHOD) && ($METHOD =~ /^(?:ssh|autossh|SSH)$/i)) {
+    if (!defined $IP || $IP =~ /^\s*$/) {
+        PACLogger::log_error("SSH destination is empty for profile '$NAME' (UUID=$UUID)");
+        ctrl("CLOSE:Destination host/IP is empty. Please set IP/Host in the profile.");
+        _hardClose($EXP, $UUID);
+    }
+}
+
 # Build initial SSH connection command
 my $CONNECT_OPTS = $$CFG{'environments'}{$UUID}{'options'} || '';
 
@@ -832,6 +841,16 @@ sub _setProxy {
         $proxy_port = $$CFG{'environments'}{$UUID}{'proxy port'};
         $proxy_user = $$CFG{'environments'}{$UUID}{'proxy user'};
         $proxy_pass = $$CFG{'environments'}{$UUID}{'proxy pass'};
+        if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+            PACLogger::log_error("Proxy is enabled for this profile, but proxy host is empty");
+            ctrl("CLOSE:Proxy is enabled but host is empty. Check 'Proxy IP' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
+        if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+            PACLogger::log_error("Proxy is enabled for this profile, but proxy port is invalid: '$proxy_port'");
+            ctrl("CLOSE:Proxy is enabled but port is invalid. Check 'Proxy Port' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
         $proxy_cmd  = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
     if ($method =~ /ssh/i) {
             $CONNECT_OPTS .= " -o ProxyCommand='$proxy_cmd %h %p'";
@@ -845,6 +864,16 @@ sub _setProxy {
         $proxy_port = $$CFG{'environments'}{$UUID}{'jump port'};
         $proxy_user = $$CFG{'environments'}{$UUID}{'jump user'};
         $proxy_pass = $$CFG{'environments'}{$UUID}{'jump pass'};
+        if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+            PACLogger::log_error("Jump host is enabled for this profile, but jump host is empty");
+            ctrl("CLOSE:Jump host is enabled but host is empty. Check 'Jump IP' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
+        if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+            PACLogger::log_error("Jump host is enabled for this profile, but jump port is invalid: '$proxy_port'");
+            ctrl("CLOSE:Jump host is enabled but port is invalid. Check 'Jump Port' in profile settings.");
+            _hardClose($EXP, $UUID);
+        }
         open(CFG,">:utf8","$CFG_DIR/tmp/$UUID.conf");
         print CFG qq"Host *\n$ssh_config\nProtocol 2\nCompression yes\nTCPKeepAlive yes\nServerAliveInterval 60\nPreferredAuthentications publickey,hostbased,keyboard-interactive,password\n";
         print CFG qq"\nHost jumpserver\nHostName $proxy_ip\nPort $proxy_port\nUser $proxy_user\n";
@@ -871,6 +900,16 @@ sub _setProxy {
             $proxy_port = $$CFG{'defaults'}{'jump port'};
             $proxy_user = $$CFG{'defaults'}{'jump user'};
             $proxy_pass = $$CFG{'defaults'}{'jump pass'};
+            if (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) {
+                PACLogger::log_error("Global Jump is enabled, but 'jump ip' is empty in Preferences");
+                ctrl("CLOSE:Global Jump is enabled but 'Jump IP' is empty. Set it in Preferences or disable Jump.");
+                _hardClose($EXP, $UUID);
+            }
+            if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+                PACLogger::log_error("Global Jump is enabled, but 'jump port' is invalid: '$proxy_port'");
+                ctrl("CLOSE:Global Jump is enabled but 'Jump Port' is invalid. Fix it in Preferences or disable Jump.");
+                _hardClose($EXP, $UUID);
+            }
             open(CFG,">:utf8","$CFG_DIR/tmp/$UUID.conf");
             print CFG qq"Host *\n$ssh_config\nProtocol 2\nCompression yes\nTCPKeepAlive yes\nServerAliveInterval 60\nPreferredAuthentications publickey,hostbased,keyboard-interactive,password\n";
             print CFG qq"\nHost jumpserver\nHostName $proxy_ip\nPort $proxy_port\nUser $proxy_user\n";
@@ -895,6 +934,29 @@ sub _setProxy {
             $proxy_port = $$CFG{'defaults'}{'proxy port'};
             $proxy_user = $$CFG{'defaults'}{'proxy user'};
             $proxy_pass = $$CFG{'defaults'}{'proxy pass'};
+
+            my $use_system = (!defined($proxy_ip) || $proxy_ip =~ /^\s*$/) ? 1 : 0;
+            if ($use_system) {
+                my ($stype, $shost, $sport, $suser, $spass) = _getSystemProxy();
+                if ($shost && $sport) {
+                    $proxy_type = $stype if $stype;
+                    $proxy_ip   = $shost;
+                    $proxy_port = $sport;
+                    $proxy_user = $suser if defined $suser;
+                    $proxy_pass = $spass if defined $spass;
+                    PACLogger::log_info("Using system proxy $proxy_type://$proxy_ip:$proxy_port") if $ENV{ASBRU_DEBUG};
+                } else {
+                    PACLogger::log_info("Global Proxy selected, but no system proxy detected; continuing without proxy") if $ENV{ASBRU_DEBUG};
+                    return 0;
+                }
+            } else {
+                # Validate only when explicit values are provided
+                if (!defined($proxy_port) || $proxy_port !~ /^\d+$/) {
+                    PACLogger::log_error("Global Proxy is enabled, but 'proxy port' is invalid: '$proxy_port'");
+                    ctrl("CLOSE:Global Proxy is enabled but 'Proxy Port' is invalid. Fix it in Preferences or leave it empty to use system proxy.");
+                    _hardClose($EXP, $UUID);
+                }
+            }
             $proxy_cmd  = _getProxyCmd($proxy_type, $proxy_ip, $proxy_port, $proxy_user, $proxy_pass);
             if ($method =~ /ssh/i) {
                 $CONNECT_OPTS .= " -o ProxyCommand='$proxy_cmd  %h %p'";
@@ -904,6 +966,54 @@ sub _setProxy {
         }
     }
     return 0;
+}
+
+# Try to detect system proxy from environment variables
+sub _getSystemProxy {
+    my @candidates = (
+        $ENV{ALL_PROXY} // $ENV{all_proxy},
+        $ENV{HTTPS_PROXY} // $ENV{https_proxy},
+        $ENV{HTTP_PROXY} // $ENV{http_proxy},
+        $ENV{SOCKS_PROXY} // $ENV{socks_proxy},
+    );
+    foreach my $url (@candidates) {
+        next unless defined $url && $url ne '';
+        my ($type, $host, $port, $user, $pass) = _parseProxyUrl($url);
+        if ($host && $port) { return ($type, $host, $port, $user, $pass); }
+    }
+    return (undef, undef, undef, undef, undef);
+}
+
+sub _parseProxyUrl {
+    my ($url) = @_;
+    # Accept forms like: scheme://user:pass@host:port or host:port
+    my ($scheme, $auth, $host, $port);
+    if ($url =~ m{^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/@]+@)?([^:/]+)(?::(\d+))?}o) {
+        $scheme = lc($1);
+        $auth   = $2 // '';
+        $host   = $3;
+        $port   = $4;
+    } elsif ($url =~ m{^([^:/]+):(\d+)$}o) {
+        $host = $1; $port = $2; $scheme = 'socks5';
+    }
+    my ($user, $pass) = (undef, undef);
+    if ($auth) {
+        # Drop trailing '@' without regex to avoid '@$' interpolation warning
+        $auth = substr($auth, 0, -1) if substr($auth, -1) eq '@';
+        ($user, $pass) = split(/:/, $auth, 2);
+    }
+    # Map scheme to ncat proxy-type
+    my $ptype = 'socks5';
+    if (defined $scheme) {
+        if ($scheme =~ /^socks5h?$/) { $ptype = 'socks5'; }
+        elsif ($scheme =~ /^socks4a?$/) { $ptype = 'socks4'; }
+        elsif ($scheme =~ /^http|https$/) { $ptype = 'http'; }
+    }
+    # Default ports
+    if (!defined $port || $port eq '') {
+        $port = ($ptype eq 'http') ? 8080 : 1080;
+    }
+    return ($ptype, $host, $port, $user, $pass);
 }
 
 ## Removed duplicate _getProxyCmd (unsafe system/which); unified to list-form version above
@@ -1197,13 +1307,13 @@ if (defined $METHOD) {
         } elsif (! $AUTHFALLBACK) {
             $key = '-o "PreferredAuthentications=password,keyboard-interactive"';
         }
-        # Build the command line
-        $connection_cmd = $METHOD
-                          . ($PORT > 0 ? " -p $PORT" : '')
-                          . ($key ne '' ? " $key" : "")
-                          . $CONNECT_OPTS
-                          . ($USER ? " -l $USER " : '')
-                          . " $IP";
+    # Build the command line (prefer user@host style for clarity)
+    my $dest = ($USER ? "${USER}\@$IP" : $IP);
+    $connection_cmd = $METHOD
+              . ($PORT > 0 ? " -p $PORT" : '')
+              . ($key ne '' ? " $key" : "")
+              . $CONNECT_OPTS
+              . " $dest";
         if ($proxy_jump) {
             if ($$CFG{'environments'}{$UUID}{'pseudo jump'}) {
                 # Pseudo jump, connect to the first server and then we will send the second connection command over the second server
@@ -1669,7 +1779,20 @@ if (($METHOD eq 'rdesktop' || $METHOD =~ /freerdp/) && $is_wayland) {
     }
 }
 
-$do_connection_cmd = "$ENV{'ASBRU_ENV_FOR_EXTERNAL'} cd '$external_dir' && $ENV{'ASBRU_ENV_FOR_EXTERNAL'} $do_connection_cmd";
+# Preflight: if any placeholder remains, log a clear diagnostic and stop
+if ($do_connection_cmd =~ /<(?:GV|V|ASK|ENV|CMD|CTRL_|TEE|PIPE):/ || $do_connection_cmd =~ /<<(?:proxy|jump)_(?:host|port|user|pass)>>/) {
+    my $diag = $do_connection_cmd; $diag =~ s/\R/ /g;
+    PACLogger::log_error("Unresolved placeholders in command, aborting: $diag");
+    ctrl("CLOSE:Unresolved placeholders remain in command. Check Global/Local variables and templates.");
+    _hardClose($EXP, $UUID);
+}
+
+# Build final wrapper: inject external env once; use POSIX sh -c for consistent parsing
+my $ext_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'} // '';
+my $safe_cwd = $external_dir;
+$safe_cwd =~ s/'/'"'"'/g; # shell-safe single-quote escaping
+$do_connection_cmd =~ s/'/'"'"'/g; # ensure command content is safe in single quotes
+$do_connection_cmd = "$ext_env sh -c 'cd '\''$safe_cwd'\'' && $do_connection_cmd'";
 
 # Give socket a moment to initialize for embedding
 if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '') {
@@ -1680,6 +1803,16 @@ if (defined $$CFG{'tmp'}{'xid'} && $$CFG{'tmp'}{'xid'} ne '') {
 if (!$ENV{ASBRU_DEBUG}) {
     PACLogger::log_start("Establishing $METHOD connection...");
 }
+# Validate SSH destination when applicable to avoid confusing ssh usage output
+if ($METHOD =~ /^(?:ssh|autossh)$/i) {
+    my $_dest_ok = ($connection_cmd =~ /\b(?:-J\s+\S+\s+server|\b\w+@[^\s]+|\sserver\b|\s[^-][^\s]+)$/);
+    if (!$_dest_ok) {
+        PACLogger::log_error("SSH command missing destination: $connection_cmd");
+        ctrl("CLOSE:SSH command missing destination host. Check IP/Host and User.");
+        _hardClose($EXP, $UUID);
+    }
+}
+
 $EXP->spawn("$do_connection_cmd 2>&1") or die "Cannot spawn '$connection_cmd: $!\n";
 ctrl("SPAWNED:'$connection_txt' (PID:$$)");
 

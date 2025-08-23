@@ -3,6 +3,7 @@
 # CI-like verification for Asbru-CM AppImage
 # - Ensures perl has PT_INTERP set to /lib/ld-musl-x86_64.so.1 (musl) or /usr/glibc-compat/lib/ld-linux-x86-64.so.2 (glibc)
 # - Ensures GTK loaders and immodules caches exist and reference ./usr/lib paths
+# - Validates desktop and icon metadata (asbru-cm.desktop present, Icon matches an icon file, .DirIcon present)
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -68,9 +69,42 @@ if ! grep -q "./usr/lib" "$LOADERSCACHE"; then
   exit 10
 fi
 
+# Ensure libperl.so soname symlink exists in CORE
+CORE_DIR="$ROOT/usr/lib/perl5/core_perl/CORE"
+if [[ ! -e "$CORE_DIR/libperl.so" ]]; then
+  echo "ERROR: libperl.so (soname) is missing in CORE; dynamic loading may fail" >&2
+  ls -l "$CORE_DIR" | sed 's/^/  /' || true
+  exit 11
+fi
+
 # Optional: presence of bundled busybox used by AppRun
 if [[ ! -x "$ROOT/usr/bin/busybox" ]]; then
   echo "WARN: busybox not found (AppRun will fall back to system sh); not fatal" >&2
 fi
 
 echo "VERIFY PASS: AppImage integrity checks succeeded"
+
+# Additional metadata checks
+DESKTOP_FILE="$ROOT/asbru-cm.desktop"
+if [[ ! -f "$DESKTOP_FILE" ]]; then
+  echo "ERROR: Desktop file 'asbru-cm.desktop' not found at AppDir root" >&2
+  exit 12
+fi
+
+ICON_KEY=$(grep -E '^Icon=' "$DESKTOP_FILE" | sed 's/^Icon=//')
+if [[ -z "$ICON_KEY" ]]; then
+  echo "ERROR: Icon key missing in asbru-cm.desktop" >&2
+  exit 13
+fi
+
+if [[ ! -f "$ROOT/${ICON_KEY}.png" && ! -f "$ROOT/${ICON_KEY}.svg" ]]; then
+  echo "ERROR: Icon file '${ICON_KEY}.(png|svg)' not found at AppDir root" >&2
+  ls -1 "$ROOT" | sed 's/^/  /' | head -n 50 || true
+  exit 14
+fi
+
+if [[ ! -f "$ROOT/.DirIcon" ]]; then
+  echo "WARN: .DirIcon not present (mount icon); not fatal" >&2
+fi
+
+echo "VERIFY PASS: Desktop and icon metadata OK (Icon=$ICON_KEY)"

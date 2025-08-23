@@ -50,7 +50,18 @@ export PANGO_LIBDIR="${APPDIR}/usr/lib"
 export ASBRU_ENV_FOR_INTERNAL="$(getCompressedEnv)"
 # External env (for helper commands executed via shell): keep minimal safe vars only
 # Include TERM and SHELL to ensure interactive shells initialize correctly
-export ASBRU_ENV_FOR_EXTERNAL="env -i PATH='${PATH}' LANG='${LANG}' LC_ALL='${LC_ALL}' HOME='${HOME}' TERM='${TERM:-xterm-256color}' SHELL='${SHELL:-/bin/sh}' XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR}' DISPLAY='${DISPLAY}' WAYLAND_DISPLAY='${WAYLAND_DISPLAY}' XDG_SESSION_TYPE='${XDG_SESSION_TYPE}'"
+# Build a minimal, safe external environment string without empty values
+# Ensure LANG is always set to a sane UTF-8 default to avoid shell locale warnings
+if [ -z "${LANG}" ]; then
+    export LANG="C.UTF-8"
+fi
+_ext_env="env -i PATH='${PATH}' LANG='${LANG}' HOME='${HOME}' TERM='${TERM:-xterm-256color}' SHELL='${SHELL:-/bin/sh}'"
+[ -n "${LC_ALL}" ] && _ext_env="${_ext_env} LC_ALL='${LC_ALL}'"
+[ -n "${XDG_RUNTIME_DIR}" ] && _ext_env="${_ext_env} XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR}'"
+[ -n "${DISPLAY}" ] && _ext_env="${_ext_env} DISPLAY='${DISPLAY}'"
+[ -n "${WAYLAND_DISPLAY}" ] && _ext_env="${_ext_env} WAYLAND_DISPLAY='${WAYLAND_DISPLAY}'"
+[ -n "${XDG_SESSION_TYPE}" ] && _ext_env="${_ext_env} XDG_SESSION_TYPE='${XDG_SESSION_TYPE}'"
+export ASBRU_ENV_FOR_EXTERNAL="${_ext_env}"
 
 # Default to light tree styling in AppImage (can override with ASBRU_FORCE_DARK=1)
 export ASBRU_FORCE_DARK="${ASBRU_FORCE_DARK:-0}"
@@ -58,11 +69,27 @@ export ASBRU_FORCE_DARK="${ASBRU_FORCE_DARK:-0}"
 # Set working directory to the AppImage root so relative loader paths (./usr/lib/...) resolve
 cd "${APPDIR}" || exit 1
 
-# Prefer invoking the in-image dynamic loader directly to avoid PT_INTERP issues
-if [ -x "${APPDIR}/usr/glibc-compat/lib/ld-linux-x86-64.so.2" ]; then
-    exec "./usr/glibc-compat/lib/ld-linux-x86-64.so.2" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
-elif [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ]; then
+# Ensure musl libc soname symlink is present (libc.musl-x86_64.so.1 -> ld-musl-x86_64.so.1)
+if [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ] && [ ! -e "${APPDIR}/lib/libc.musl-x86_64.so.1" ]; then
+    ln -sf "ld-musl-x86_64.so.1" "${APPDIR}/lib/libc.musl-x86_64.so.1"
+fi
+
+# Ensure libperl.so soname exists (Alpine places versioned .so in CORE)
+if [ ! -e "${APPDIR}/usr/lib/perl5/core_perl/CORE/libperl.so" ]; then
+    _perl_core_dir="${APPDIR}/usr/lib/perl5/core_perl/CORE"
+    if [ -d "${_perl_core_dir}" ]; then
+        _ver_lib=$(ls -1 "${_perl_core_dir}"/libperl.so.* 2>/dev/null | head -n1)
+        if [ -n "${_ver_lib}" ] && [ -f "${_ver_lib}" ]; then
+            ln -sf "$(basename "${_ver_lib}")" "${_perl_core_dir}/libperl.so"
+        fi
+    fi
+fi
+
+# Prefer invoking the in-image MUSL dynamic loader to match musl-compiled Perl/XS modules
+if [ -x "${APPDIR}/lib/ld-musl-x86_64.so.1" ]; then
     exec "./lib/ld-musl-x86_64.so.1" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
+elif [ -x "${APPDIR}/usr/glibc-compat/lib/ld-linux-x86-64.so.2" ]; then
+    exec "./usr/glibc-compat/lib/ld-linux-x86-64.so.2" --library-path "${LD_LIBRARY_PATH}" "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
 else
     exec "./usr/bin/perl" "./opt/asbru-cm/asbru-cm" "$@"
 fi

@@ -98,15 +98,29 @@ if ($ENV{ASBRU_IS_APPIMAGE}) {
     }
     # Detect and use the bundled dynamic loader to avoid PT_INTERP issues
     if ($appdir) {
-        # Prefer glibc-compat loader if available (packaged Perl and XS modules are glibc-linked)
-        if (-x "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2") {
-            $LOADER_BIN = "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2";
-        } elsif (-x "$appdir/lib/ld-musl-x86_64.so.1") {
+        # Prefer MUSL loader first to match Alpine-built perl/XS; fall back to glibc loader if needed
+        if (-x "$appdir/lib/ld-musl-x86_64.so.1") {
             $LOADER_BIN = "$appdir/lib/ld-musl-x86_64.so.1";
+        } elsif (-x "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2") {
+            $LOADER_BIN = "$appdir/usr/glibc-compat/lib/ld-linux-x86-64.so.2";
         }
         if ($LOADER_BIN) {
-            # For spawn, set env LD_LIBRARY_PATH; no flags needed for the loader
+            # Use loader both as program and argv[0] to satisfy FILE_AND_ARGV_ZERO semantics
             @LOADER_PREFIX = ($LOADER_BIN, $LOADER_BIN);
+        }
+    }
+
+    # Ensure libperl.so soname exists for dynamic loader resolution inside AppImage
+    if ($appdir && -d "$appdir/usr/lib/perl5/core_perl/CORE") {
+        my $core = "$appdir/usr/lib/perl5/core_perl/CORE";
+        if (! -e "$core/libperl.so") {
+            opendir(my $dh, $core);
+            my @cands = grep { /^libperl\.so\./ && -f "$core/$_" } readdir($dh);
+            closedir($dh);
+            if (@cands) {
+                my $target = $cands[0];
+                eval { symlink($target, "$core/libperl.so"); };
+            }
         }
     }
 }
@@ -612,7 +626,7 @@ sub start {
         }
     }
     elsif ($use_login_shell) {
-        # Use login shell but execute the in-bundle perl explicitly (via loader if set)
+        # Use login shell but execute the in-bundle perl explicitly (via loader if available)
         my $cmd = '';
         if (@LOADER_PREFIX) {
             my ($ld0, $ld_argv0) = @LOADER_PREFIX;
@@ -623,7 +637,7 @@ sub start {
         @args = [$SHELL_BIN, $SHELL_NAME, '-l', '-c', $cmd];
         $spawn_env = $ENV{'ASBRU_ENV_FOR_EXTERNAL'};
     } else {
-        # Direct exec of perl + asbru_conn (no shell). Optionally via loader
+        # Direct exec of perl + asbru_conn (no shell). Use loader when available
         if (@LOADER_PREFIX) {
             @args = [@LOADER_PREFIX, $PERL_BIN, $PAC_CONN, $$self{_TMPCFG}, $$self{_UUID}, $isCluster];
         } else {
@@ -635,22 +649,43 @@ sub start {
     $spawn_env .= " ASBRU_SUB_CWD='$subCwd'";
     # Ensure essential runtime env is present for AppImage children (always add/merge)
     if ($ENV{ASBRU_IS_APPIMAGE}) {
-        my @vars = qw(LD_LIBRARY_PATH PERL5LIB GI_TYPELIB_PATH XDG_DATA_DIRS XDG_CONFIG_DIRS GTK_PATH GTK_EXE_PREFIX GTK_DATA_PREFIX GDK_PIXBUF_MODULE_FILE GTK_IM_MODULE GTK_IM_MODULE_FILE PANGO_LIBDIR APPDIR PATH LANG LC_ALL TERM SHELL DISPLAY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_RUNTIME_DIR);
+        # Build a robust child LD_LIBRARY_PATH which includes CORE and all bundled lib dirs, CORE first
+        my $appdir = $ENV{APPDIR} // '';
+        my $ld_existing = $ENV{LD_LIBRARY_PATH} // '';
+        my $ld_child = '';
+        if ($appdir) {
+            my @libdirs = (
+                "$appdir/usr/lib/perl5/core_perl/CORE",
+                "$appdir/lib",
+                "$appdir/usr/local/lib",
+                "$appdir/usr/lib",
+                "$appdir/usr/lib64",
+                "$appdir/usr/lib/x86_64-linux-gnu"
+            );
+            my @ordered = ();
+            foreach my $d (@libdirs) {
+                next unless length $d;
+                push @ordered, $d unless grep { $_ eq $d } @ordered;
+            }
+            $ld_child = join(':', @ordered);
+        }
+        # Append any existing LD_LIBRARY_PATH from parent at the end to preserve host hints
+        if ($ld_existing ne '') {
+            $ld_child = length($ld_child) ? "$ld_child:$ld_existing" : $ld_existing;
+        }
+        # Compose essential runtime env; avoid adding empty values
+        my @vars = qw(PERL5LIB GI_TYPELIB_PATH XDG_DATA_DIRS XDG_CONFIG_DIRS GTK_PATH GTK_EXE_PREFIX GTK_DATA_PREFIX GDK_PIXBUF_MODULE_FILE GTK_IM_MODULE GTK_IM_MODULE_FILE PANGO_LIBDIR APPDIR PATH LANG TERM SHELL DISPLAY WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_RUNTIME_DIR);
         foreach my $k (@vars) {
-            next unless defined $ENV{$k};
+            next unless defined $ENV{$k} && $ENV{$k} ne '';
             my $v = $ENV{$k};
             $spawn_env .= " $k='$v'";
         }
-        # Ensure perl CORE dir is present in LD_LIBRARY_PATH for libperl.so
-        my $appdir = $ENV{APPDIR} // '';
-        if ($appdir) {
-            my $core = "$appdir/usr/lib/perl5/core_perl/CORE";
-            my $ld = $ENV{LD_LIBRARY_PATH} // '';
-            if (index($ld, $core) == -1) {
-                my $newld = $core . ($ld ? ":$ld" : '');
-                $spawn_env .= " LD_LIBRARY_PATH='$newld'";
-            }
-        }
+        # LC_ALL only if non-empty
+        if (defined $ENV{LC_ALL} && $ENV{LC_ALL} ne '') { $spawn_env .= " LC_ALL='$ENV{LC_ALL}'"; }
+        # Ensure LANG always has a sane default to avoid locale warnings
+        if (index($spawn_env, " LANG=") < 0) { $spawn_env .= " LANG='C.UTF-8'"; }
+    # Finally, set the merged LD_LIBRARY_PATH (CORE first)
+    if ($ld_child ne '') { $spawn_env .= " LD_LIBRARY_PATH='$ld_child'"; }
     }
     my @arr_spawn_env = $self->_convertEnv($spawn_env);
     if (($method // '') ne 'PACShell') {
@@ -696,6 +731,13 @@ sub start {
 
     # If this is a Local shell (PACShell), mark as connected immediately to keep UI stable
     if (($method // '') eq 'PACShell') {
+        # Stop pulsing and remove progress bar if present
+        $$self{_PULSE} = 0;
+        if (defined $$self{_GUI}{pb}) {
+            eval { $$self{_GUI}{pb}->hide(); };
+            eval { $$self{_GUI}{bottombox}->remove($$self{_GUI}{pb}); };
+            delete $$self{_GUI}{pb};
+        }
         $$self{CONNECTED} = 1;
         $$self{CONNECTING} = 0;
         if ($$self{_GUI}{status}) {
@@ -716,8 +758,12 @@ sub _convertEnv {
     my $self = shift;
     my $env_string = shift;
     my @matches = ();
-    while ($env_string =~ /(?<envName>\w+)=(?<envValue>(?<quot>['"]?)[^']*?\k{quot})/g) {
-        push @matches, "$+{envName}=$+{envValue}";
+    while ($env_string =~ /(?<envName>\w+)=(?<envValue>(?<quot>['"])(.*?)\k{quot}|[^\s]+)/g) {
+        my $name = $+{envName};
+        my $val  = $+{envValue} // '';
+        # Strip surrounding quotes if present
+        if ($val =~ /^(['"])(.*)\1$/) { $val = $2; }
+        push @matches, "$name=$val";
     }
     return @matches;
 }

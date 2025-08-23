@@ -2,20 +2,18 @@
 
 Here you can find important news on the project
 
-## 23.08.2025 - Version 7.1.0 - Testable and Hardened
+## 23.08.2025 - Version 7.1.0 - Hardened Runtime & Packaging
 
-This release focuses on reliability, security-hardening, and complete automated testing:
+Focus areas: reliability, packaging polish, and automated testing.
 
-- Full protocol coverage in CI using containerized services:
-	- SSH/Telnet baseline via linuxserver/openssh-server
-	- GUI readiness via linuxserver/webtop (VNC-like)
-	- RDP connectivity via linuxserver/rdesktop (xfreerdp recommended for embedding)
-- End-to-end headless application test for asbru_conn with stdout control markers
-- Safer subprocess execution, KeePassXC integration via stdin, and temp cleanup
-- Wayland/X11 guards and improved quit behavior
-- Documentation refresh with logo attribution and cultural symbolism notes
+- Runtime/spawn hardening: CORE-first Perl loader, sanitized env, robust quoting
+- Global Proxy: leaving it empty now uses system proxy env (ALL_PROXY/HTTPS_PROXY/HTTP_PROXY/NO_PROXY)
+- SSH: destinations consistently shown and executed as `user@host`
+- AppImage: MUSL loader preferred; GTK caches rebuilt; desktop/icon metadata validated; AppStream enabled by default
+- Tests: category runner stabilized; protocols + performance PASS; GUI skipped if Gtk4 missing
+- Packaging: RPM and AppImage builds validated; verification script added
 
-Downloads and packages will be published on the releases page.
+Artifacts: `dist/rpm/build/RPMS/noarch/asbru-cm-7.1.0-2.noarch.rpm`, `dist/appimage/build/Asbru-CM.AppImage`
 
 ## 22.08.2025 - Version 7.0.2 - Modernization Completion Release
 

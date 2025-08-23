@@ -3167,6 +3167,14 @@ sub _subst {
             my $val = $$CFG{'defaults'}{'global variables'}{$var}{'value'} // '';
             $string =~ s/<GV:$var>/$val/g;
             $ret = $string;
+        } elsif ($asbru_conn) {
+            # In asbru_conn path, attempt an env fallback, otherwise leave token intact
+            # so upstream preflight can detect and report a helpful error.
+            if (exists $ENV{$var}) {
+                my $val = $ENV{$var} // '';
+                $string =~ s/<GV:$var>/$val/g;
+                $ret = $string;
+            }
         }
     }
 

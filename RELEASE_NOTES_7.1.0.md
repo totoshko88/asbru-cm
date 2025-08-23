@@ -1,3 +1,25 @@
+# Ásbrú Connection Manager 7.1.0 — Hardened Runtime and Packaging
+
+## Highlights
+- Safer spawn/runtime: CORE-first Perl loader, sanitized env, robust quoting
+- Global Proxy: empty means “use system default” (ALL_PROXY/HTTPS_PROXY/HTTP_PROXY/NO_PROXY)
+- SSH formatting: destinations standardized as `user@host`
+- AppImage polish: MUSL loader preference, GTK caches rebuilt, icon/desktop metadata validated
+- Tests: category runner stabilized; protocols + performance green, GUI skipped if Gtk4 missing
+- Packaging: RPM and AppImage builds validated in CI-like flow
+
+## Changes
+- lib/asbru_conn: preflight unresolved placeholders; proxy/jump validation with system fallback
+- t/run_all_tests.pl: positional categories; skip GUI when Gtk4 not present; improved output
+- AppImage scripts: duplicate symlink fix; enforce `Icon=asbru-cm`; verify desktop/icon presence
+
+## Installation
+- RPM: `dist/rpm/build/RPMS/noarch/asbru-cm-7.1.0-2.noarch.rpm`
+- AppImage: `dist/appimage/build/Asbru-CM.AppImage` (executable)
+
+## Notes
+- AppImage now bundles AppStream metadata by default for better discovery.
+- Wayland/Xwayland handling refined; X11 force action available from desktop file.
 # Ásbrú Connection Manager 7.1.0 (Modernization Fork)
 
 Highlights:
