@@ -1,83 +1,63 @@
-# Ásbrú Connection Manager - Modernized Fork
+# Ásbrú Connection Manager — Modernized Fork
 
-[<img src="https://github.com/totoshko88/asbru-cm/blob/master/res/asbru-logo-256.png?raw=true" align="right" width="200px" height="200px" />](https://github.com/totoshko88/asbru-cm/tree/master)
+[<img src="https://github.com/totoshko88/asbru-cm/blob/master/res/asbru-logo-256.png?raw=true" align="right" width="200" height="200" />](https://github.com/totoshko88/asbru-cm/tree/master)
 
-## A free and open-source connection manager - Modernized for PopOS 24.04 and Wayland
+## A free and open-source connection manager (updated for PopOS 24.04 and Wayland)
 
-> **Note**: This is a modernized fork of the original [asbru-cm/asbru-cm](https://github.com/asbru-cm/asbru-cm) project, updated to work with modern Linux distributions including PopOS 24.04, GTK4, and Wayland display servers.
+> Note: This is a modernized fork of the original [asbru-cm/asbru-cm](https://github.com/asbru-cm/asbru-cm) project, updated for modern Linux distributions including PopOS 24.04, GTK4, and Wayland.
 
-**Ásbrú Connection Manager** is a user interface that helps organizing remote terminal sessions and automating repetitive tasks.
+Ásbrú Connection Manager is a user interface that helps organize remote terminal sessions and automate repetitive tasks.
 
-## 🚀 Why This Fork?
+> Motivation / Case study: The background and reasons behind this modernization are described here —
+> https://builder.aws.com/content/31O9whqNkNVmcFCTX7Uce1q5vTu/the-asbru-and-kirodev-case-study
 
-The original Ásbrú Connection Manager project has compatibility issues with modern Linux distributions. This fork addresses these problems and represents a real-world modernization success story.
+## ✅ Tested environments (up front)
 
-<!-- External case-study link removed until officially published/verified -->
+- openSUSE Tumbleweed (20250727)
+  - Kernel: 6.15.8-1-default x86_64
+  - Desktop: KDE Plasma on Wayland (XDG_SESSION_TYPE=wayland)
+  - Perl: 5.42.0
+  - Tooling: rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
 
-### 🔧 **Critical Fixes Applied**
+- PopOS 24.04 LTS
+  - Desktop: COSMIC on Wayland
+  - RDP embedding verified under Wayland/Xwayland
 
-- ✅ **Dark Theme Support**: Proper dark theme implementation with background and text color adaptation
-- ✅ **Wayland Compatibility**: Full support for Wayland display servers including COSMIC desktop
-- ✅ **GTK Warnings Eliminated**: Fixed critical GTK widget management issues that caused application crashes
-- ✅ **RDP Embedding Enhanced**: Advanced window embedding with automatic Xwayland fallback for Wayland compatibility
-- ✅ **Tab Management**: Fixed missing close buttons and tab creation issues
-- ✅ **Tray Integration**: StatusNotifierItem (SNI) support for modern desktop environments
+Connection tests and UI smoke checks were executed; protocol mocks are skipped if Test::MockObject is missing. See `RELEASE_NOTES_7.1.0.md` for highlights and full change log.
 
-### 🆕 **Modern Features**
+## 📦 Installation
 
-- Global Proxy: leaving it empty now uses system proxy env (ALL_PROXY/HTTPS_PROXY/HTTP_PROXY/NO_PROXY)
-- Safer spawn/runtime: CORE-first Perl loader, sanitized env, robust quoting
-- AppImage polish: MUSL loader preference, rebuilt GTK caches, icon/desktop metadata validated
-- Tests: category runner stabilized; protocols + performance PASS; GUI skipped if Gtk4 missing
-
-
-## Tested on this system
-
-This fork has been validated on the maintainer's workstation:
-
-- OS: openSUSE Tumbleweed (20250727)
-- Kernel: 6.15.8-1-default x86_64
-- Desktop: KDE Plasma on Wayland (XDG_SESSION_TYPE=wayland)
-- Perl: 5.42.0
-- Tooling: rpmbuild 4.20.1, appimagetool (continuous), podman 5.6.0
-
-Connection tests and UI smoke checks were executed; protocol mocks are skipped if Test::MockObject is missing.
-
-See `RELEASE_NOTES_7.1.0.md` for 7.1.0 highlights and full change log.
-
-## 📦 Quick Installation
-
-### AppImage (recommended)
+### AppImage (recommended for any distro)
 ```bash
 wget https://github.com/totoshko88/asbru-cm/releases/latest/download/Asbru-CM.AppImage
 chmod +x Asbru-CM.AppImage
 ./Asbru-CM.AppImage
 ```
 
-### RPM (openSUSE / RPM-based)
+### PopOS / Ubuntu (DEB)
+1) Download the .deb from Releases:
+   https://github.com/totoshko88/asbru-cm/releases
+
+2) Install with apt (auto-resolves dependencies):
+```bash
+sudo apt install ./asbru-cm_<version>_all.deb
+```
+
+Alternative (dpkg then fix deps):
+```bash
+sudo dpkg -i asbru-cm_<version>_all.deb || sudo apt -f install
+```
+
+### openSUSE / RPM-based (RPM)
 ```bash
 wget https://github.com/totoshko88/asbru-cm/releases/download/v7.1.0/asbru-cm-7.1.0-2.noarch.rpm
 sudo zypper install ./asbru-cm-7.1.0-2.noarch.rpm   # or: sudo dnf install ./asbru-cm-7.1.0-2.noarch.rpm
 ```
 
-### DEB (Debian/Ubuntu)
-1) Download the .deb from the Releases page:
-  https://github.com/totoshko88/asbru-cm/releases
-
-2) Install it with apt (auto-resolves dependencies):
-```bash
-sudo apt install ./asbru-cm_<version>_all.deb
-```
-
-Alternative (dpkg + fix deps):
-```bash
-sudo dpkg -i asbru-cm_<version>_all.deb || sudo apt -f install
-```
-
 For other distros, grab assets from the latest Release page:
 https://github.com/totoshko88/asbru-cm/releases
 
-### From Source
+### From source
 ```bash
 git clone https://github.com/totoshko88/asbru-cm.git
 cd asbru-cm
@@ -149,7 +129,7 @@ This fork includes **intelligent automatic Wayland embedding support** that **wo
 - **Xwayland Integration**: Leverages existing Xwayland infrastructure for maximum compatibility
 
 ### Proven Results  
-✅ **Tested Successfully**: RDP connections embed perfectly in tabs on PopOS 24.04 COSMIC + Wayland  
+✅ **Tested Successfully**: RDP connections embed perfectly in tabs on PopOS 24.04 COSMIC + Wayland
 ✅ **No Crashes**: Eliminated segmentation faults that occurred with pure Wayland GtkSocket usage  
 ✅ **Full Functionality**: All RDP features work including clipboard, sound redirection, and dynamic resolution
 
@@ -176,12 +156,11 @@ rdesktop -X 52442142 -g 740x443 -u 'user' -p 'password' server:3389
 # Results in: "Connection established using SSL" ✅
 ```
 
-## 📋 Tested On
+## 📋 Additional compatibility notes
 
-- ✅ PopOS 24.04 LTS (COSMIC Desktop)
-- ✅ Ubuntu 24.04 LTS
-- ✅ Wayland display server
-- ✅ GTK3 and GTK4 environments
+- Ubuntu 24.04 LTS
+- Wayland display server
+- GTK3 and GTK4 environments
 
 ## 🔗 Original Project
 
@@ -203,3 +182,6 @@ Issues and pull requests specific to this modernization fork are welcome. For ge
 
 [license-badge]: https://img.shields.io/badge/License-GPL--3-blue.svg?style=flat
 [license-url]: LICENSE
+
+<img width="3840" height="2160" alt="KDE Tumbleweed" src="https://github.com/user-attachments/assets/ece61534-feec-4962-b299-cfaad370a0c4" />
+<img width="3840" height="2160" alt="KDE Tumbleweed Dark Keepass" src="https://github.com/user-attachments/assets/90c32163-f3a9-40d3-b41b-18991161c2bf" />
