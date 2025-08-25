@@ -11,6 +11,9 @@
 > Motivation / Case study: The background and reasons behind this modernization are described here —
 > https://builder.aws.com/content/31O9whqNkNVmcFCTX7Uce1q5vTu/the-asbru-and-kirodev-case-study
 
+<img width="3840" height="2160" alt="KDE Tumbleweed" src="https://github.com/user-attachments/assets/ece61534-feec-4962-b299-cfaad370a0c4" />
+<img width="3840" height="2160" alt="KDE Tumbleweed Dark Keepass" src="https://github.com/user-attachments/assets/90c32163-f3a9-40d3-b41b-18991161c2bf" />
+
 ## ✅ Tested environments (up front)
 
 - openSUSE Tumbleweed (20250727)
@@ -183,5 +186,3 @@ Issues and pull requests specific to this modernization fork are welcome. For ge
 [license-badge]: https://img.shields.io/badge/License-GPL--3-blue.svg?style=flat
 [license-url]: LICENSE
 
-<img width="3840" height="2160" alt="KDE Tumbleweed" src="https://github.com/user-attachments/assets/ece61534-feec-4962-b299-cfaad370a0c4" />
-<img width="3840" height="2160" alt="KDE Tumbleweed Dark Keepass" src="https://github.com/user-attachments/assets/90c32163-f3a9-40d3-b41b-18991161c2bf" />
